@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Btn } from "@sada/ui";
+import { Btn, Bulle } from "@sada/ui";
 
 /** State of an entity, as built by the server (`state` on the page payload). The server sends
  *  stable keys only: `states.<code>` and `states.actions.<key>` are translated here. */
@@ -75,8 +75,11 @@ export function StateTag({ state }: { state?: EntityState | null }) {
   const label = state.level === "running" ? "running" : state.level === "failed" ? "failed" : "attention";
   const tone = state.level === "running" ? "bg-warn-bg text-warn" : "bg-err-bg text-[#7a1f20]";
   return (
-    <span title={t(`states.${state.code}`)} className={`inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-[0.8rem] font-bold ${tone}`}>
-      {t(`states.tag.${label}`)}
-    </span>
+    // The tag says how bad it is; the bubble says why. The tag takes the focus so keyboard users get it too.
+    <Bulle texte={t(`states.${state.code}`)}>
+      <span tabIndex={0} className={`inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-[0.8rem] font-bold focus-visible:outline-2 focus-visible:outline-leaf ${tone}`}>
+        {t(`states.tag.${label}`)}
+      </span>
+    </Bulle>
   );
 }

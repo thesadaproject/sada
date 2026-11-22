@@ -2,7 +2,8 @@ import { useEffect, useState, type CSSProperties, type FormEvent, type ReactNode
 import { Link, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api, type Habillage as Etat, type HabillageOptions } from "../api";
-import { Btn, Card, Field, Kicker, Pill, Segmented, Tabs, inputClass } from "@sada/ui";
+import { Btn, Bulle, Card, Field, Kicker, Pill, Segmented, Tabs, inputClass } from "@sada/ui";
+import { usePolling } from "../usePolling";
 import { idOnglet, idPanneau } from "@sada/ui";
 
 /** Branding of an imported video (dars, lecture, khutba): the mosque's identity over the picture.
@@ -31,15 +32,15 @@ export default function Habillage() {
     api.habillage(kid).then((e) => { setEtat(e); setO(e.options); }).catch((e) => setErreur(e?.message ?? t("common.error")));
   }, [kid, t]);
 
-  // While rendering (or translating the subtitle tracks), the status is polled every 2 s; the form
-  // keeps what is being typed.
+  // While rendering (or translating the subtitle tracks), the status is polled every 2 s (paused
+  // while the tab is hidden); the form keeps what is being typed.
   const renduEnCours = etat?.status === "en_cours";
   const traductionEnCours = etat?.translation?.status === "en_cours";
-  useEffect(() => {
-    if (!renduEnCours && !traductionEnCours) return;
-    const h = window.setInterval(() => { api.habillage(kid).then(setEtat).catch(() => {}); }, 2000);
-    return () => window.clearInterval(h);
-  }, [renduEnCours, traductionEnCours, kid]);
+  usePolling(
+    () => api.habillage(kid).then(setEtat),
+    2000,
+    { enabled: renduEnCours || traductionEnCours, immediate: false },
+  );
 
   /** Relit l'état après une action (traduction lancée), sans toucher au formulaire en cours. */
   const rafraichir = () => { api.habillage(kid).then(setEtat).catch(() => {}); };
@@ -156,11 +157,13 @@ export default function Habillage() {
                     <Field label={t("habillage.position")}>
                       <div className="grid w-fit grid-cols-2 gap-1.5 rounded-[10px] border border-line bg-paper-2 p-1.5">
                         {POSITIONS.map((p) => (
-                          <button key={p} type="button" onClick={() => maj({ logo_pos: p })}
-                            title={t(`habillage.positions.${p}`)} aria-label={t(`habillage.positions.${p}`)} aria-pressed={o.logo_pos === p}
+                          <Bulle key={p} texte={t(`habillage.positions.${p}`)}>
+                          <button type="button" onClick={() => maj({ logo_pos: p })}
+                            aria-label={t(`habillage.positions.${p}`)} aria-pressed={o.logo_pos === p}
                             className={`relative h-11 w-[78px] cursor-pointer rounded-[6px] border ${o.logo_pos === p ? "border-deep bg-white shadow-[inset_0_-2px_0_var(--color-leaf)]" : "border-transparent bg-white/50 hover:bg-white"}`}>
                             <span className={`absolute size-2.5 rounded-full ${o.logo_pos === p ? "bg-deep" : "bg-muted/50"} ${p[0] === "t" ? "top-1.5" : "bottom-1.5"} ${p[1] === "l" ? "left-1.5" : "right-1.5"}`} />
                           </button>
+                          </Bulle>
                         ))}
                       </div>
                       <span className="mt-1 block text-[0.82rem] text-muted">{t(`habillage.positions.${o.logo_pos}`)}</span>
