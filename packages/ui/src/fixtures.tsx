@@ -11,7 +11,7 @@ export const PRIERES = [
   { cle: "dhuhr", nom: "Dhuhr", arabe: "الظهر", adhan: "12:26", iqama: "12:46" },
   { cle: "asr", nom: "Asr", arabe: "العصر", adhan: "14:38", iqama: "14:53" },
   { cle: "maghrib", nom: "Maghrib", arabe: "المغرب", adhan: "16:52", iqama: "16:57" },
-  { cle: "isha", nom: "Isha", arabe: "العشاء", adhan: "18:20", iqama: "18:40" },
+  { cle: "isha", nom: "Isha", arabe: "العشاء", adhan: "18:20", iqama: "18:37" },
 ];
 
 export const ARABE_LONG = "مسجد الشيخ عبد الرحمن بن ناصر السعدي للتعليم والدعوة والإرشاد بمدينة ليون";

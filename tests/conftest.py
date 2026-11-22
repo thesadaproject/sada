@@ -401,3 +401,10 @@ def _clean_test_schemas():
     _drop_test_schemas()  # leftovers of an interrupted run
     yield
     _drop_test_schemas()
+
+
+@pytest.fixture(autouse=True)
+def _no_public_bundle(monkeypatch, tmp_path_factory):
+    """The tests do not depend on a built React bundle: without it the public pages fall back to the
+    server-rendered ones. `test_prayer_public_react.py` points `SADA_PUBLIC_DIST` at a bundle of its own."""
+    monkeypatch.setenv("SADA_PUBLIC_DIST", str(tmp_path_factory.getbasetemp() / "no-public-bundle"))

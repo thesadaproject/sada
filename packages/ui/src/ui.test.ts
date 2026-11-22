@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MOIS_HIJRI, MOIS_HIJRI_COURT, accentStyle, cibleCompteARebours, contraste, encreSur, formatHijri, formatRestant } from "./index";
+import { MOIS_HIJRI, MOIS_HIJRI_COURT, accentStyle, cibleCompteARebours, contraste, encreSur, formatHijri, formatRestant, decalageIqama } from "./index";
 
 describe("accent par mosquée", () => {
   it("choisit une encre lisible (contraste >= 4.5) quelle que soit la couleur", () => {
@@ -40,5 +40,19 @@ describe("compte à rebours", () => {
   it("formate HH:MM:SS sans valeur négative", () => {
     expect(formatRestant(4723)).toBe("01:18:43");
     expect(formatRestant(-5)).toBe("00:00:00");
+  });
+});
+
+describe("iqama en décalage", () => {
+  it("« +N » pour un décalage rond de 5 à 60 minutes", () => {
+    expect(decalageIqama("05:42", "05:52")).toBe("+10");
+    expect(decalageIqama("16:52", "16:57")).toBe("+5");
+    expect(decalageIqama("12:26", "13:26")).toBe("+60");
+  });
+  it("sinon null : l'heure est alors affichée en petit", () => {
+    expect(decalageIqama("18:20", "18:37")).toBeNull();
+    expect(decalageIqama("18:20", "20:30")).toBeNull();
+    expect(decalageIqama("18:20", "18:20")).toBeNull();
+    expect(decalageIqama("18:20", "18:15")).toBeNull();
   });
 });

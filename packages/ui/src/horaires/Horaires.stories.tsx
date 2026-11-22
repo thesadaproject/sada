@@ -19,9 +19,9 @@ function Ecran({ tv = false, iqama = true, accent, titre = "Mosquée de la Paix"
     </Cadran>
   );
   const liste = (
-    <PrayerList tv={tv} titre="Aujourd'hui" entetes={iqama ? ["Adhan", "Iqama"] : undefined}>
+    <PrayerList tv={tv} titre="Aujourd'hui">
       {prieres.map((p) => (
-        <PrayerRow key={p.cle} {...p} colonneIqama={iqama} suivante={p === cible} tv={tv} />
+        <PrayerRow key={p.cle} {...p} suivante={p === cible} tv={tv} />
       ))}
     </PrayerList>
   );
