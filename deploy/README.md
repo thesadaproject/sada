@@ -101,7 +101,7 @@ The Dockerfile copies `web/dist`, which is built from `web/` (`npm --prefix web 
 i.e. `make front`). Build and push:
 
 ```sh
-make front                                  # needs `npm ci` in web/ the first time
+make front                                  # needs `npm ci` at the repo root the first time (workspaces web + packages/ui)
 docker build -t ghcr.io/<owner>/sada:<tag> .
 docker push ghcr.io/<owner>/sada:<tag>
 ```

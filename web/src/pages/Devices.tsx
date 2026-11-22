@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
-import { Btn, Card, Field, Kicker, inputClass } from "../ui";
+import { Btn, Card, Field, Kicker, inputClass } from "@sada/ui";
 
 /** Studio devices: the mosque's PC that streams on its own. Pairing (the code shown on the device),
  *  the list with its state, renaming, key rotation, revocation, the day's incidents and the schedule

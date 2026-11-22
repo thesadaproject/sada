@@ -1,0 +1,5 @@
+{
+  "extends": "../../web/tsconfig.app.json",
+  "compilerOptions": { "tsBuildInfoFile": "./node_modules/.tmp/tsc.tsbuildinfo" },
+  "include": ["src", ".storybook"]
+}

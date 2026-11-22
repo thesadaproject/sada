@@ -57,31 +57,41 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: package-lock.json
       - name: Build the front end (served by the back office, checked by the route tests)
-        run: npm --prefix web ci && npm --prefix web run build
+        run: npm ci && npm run build
       - name: Download the rendering engine
         run: .venv/bin/python -c "from sada.backoffice.template_render import fetch_engine; fetch_engine()"
       - name: Test
         run: .venv/bin/python -m pytest -q
 
   web:
-    name: Front end (lint + build)
+    name: Front end (lint + build) + design system (tests + Storybook)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: web
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: package-lock.json
       - run: npm ci
       - run: npm run lint
       - run: npm run build
+      - name: "@sada/ui : types et tests"
+        run: npm -w @sada/ui run typecheck && npm -w @sada/ui run test
+      - name: "@sada/ui : Storybook (dev uniquement, jamais dans l'image)"
+        run: npm -w @sada/ui run build-storybook
+      - run: npx playwright install --with-deps chromium
+      - name: "@sada/ui : test visuel (chaque story s'affiche, sans erreur ni débordement)"
+        run: npm -w @sada/ui run visuel -- --out "$RUNNER_TEMP/captures"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: sada-ui-captures
+          path: ${{ runner.temp }}/captures
+          retention-days: 7
 
   audit:
     name: Dependency audit (pip-audit + npm audit)
@@ -98,7 +108,7 @@ jobs:
         with:
           node-version: 22
       - name: npm audit (production dependencies)
-        run: npm --prefix web audit --omit=dev --audit-level=high
+        run: npm audit --omit=dev --audit-level=high
 
   release:
     name: Release (release-please)
@@ -143,8 +153,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: web/package-lock.json
-      - run: npm --prefix web ci && npm --prefix web run build
+          cache-dependency-path: package-lock.json
+      - run: npm ci && npm run build
       # main-<run number>-<short sha>: an orderable tag, picked up by Flux image automation
       # (ImagePolicy in the private gitops repo selects the highest run number).
       # A release adds its semver tag (Flux deploys those); other main builds stay main-<run>-<sha>.

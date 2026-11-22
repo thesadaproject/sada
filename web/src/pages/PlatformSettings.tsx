@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api, type PlatformMosque } from "../api";
-import { Bulle, Btn, Card, Dialogue, Field, Segmented, Tabs, Title, inputClass, toucherEnLigne } from "../ui";
-import { idOnglet, idPanneau } from "../onglets";
+import { Bulle, Btn, Card, Dialogue, Field, Segmented, Tabs, Title, inputClass, toucherEnLigne } from "@sada/ui";
+import { idOnglet, idPanneau } from "@sada/ui";
 
 /** Settings of the installation itself, never of a mosque: replays bucket, folders of the machine,
  *  public address, language model, transcription (and, self-hosted, the orchestrator of the single

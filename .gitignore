@@ -27,3 +27,9 @@ auto.crt
 
 # preprod: local secrets (agent token, stream key)
 deploy/preprod/.env
+
+# design system: Storybook build and local visual captures
+packages/ui/storybook-static/
+packages/ui/captures/
+/node_modules/
+packages/ui/node_modules/

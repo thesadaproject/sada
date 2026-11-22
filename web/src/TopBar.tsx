@@ -4,7 +4,7 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api, type Session } from "./api";
 import { LANGUAGES, setLanguage } from "./i18n";
-import { Deroulant, itemMenuActif, itemMenuBase, itemMenuRepos } from "./ui";
+import { Deroulant, itemMenuActif, itemMenuBase, itemMenuRepos } from "@sada/ui";
 
 const itemMenu = (actif = false) => `${itemMenuBase} ${actif ? itemMenuActif : itemMenuRepos}`;
 

@@ -5,9 +5,9 @@ import Player from "../Player";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
 import { currentSession } from "../session";
-import { Btn, Card, Field, Kicker, Pill, Segmented, Title, inputClass } from "../ui";
+import { Btn, Card, Field, Kicker, Pill, Segmented, Title, inputClass } from "@sada/ui";
 import { State } from "../State";
-import { idOnglet, idPanneau } from "../onglets";
+import { idOnglet, idPanneau } from "@sada/ui";
 import { dateFr, mmss } from "../format";
 
 /** Sheet for a khutba, same grammar as the clip sheet.

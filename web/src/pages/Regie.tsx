@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
 import { playMonitor, type MonitorState } from "../monitor";
-import { Btn } from "../ui";
+import { Btn } from "@sada/ui";
 import { currentSession } from "../session";
 
 /** Control room (“Régie”): two monitors, the scene grid and the transport of the live.

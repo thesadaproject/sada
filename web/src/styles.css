@@ -1,35 +1,13 @@
 @import "tailwindcss";
 
-/* Charte reprise telle quelle du back-office en gabarits : papier, encre verte, feuille, rouge direct.
-   Instrument Serif + Source Sans 3 + Amiri. */
-@theme {
-  --color-paper: #f7f3ea;
-  --color-paper-2: #efe8d8;
-  --color-ink: #12261e;
-  --color-muted: #5e6b63;
-  --color-line: #ded5c1;
-  --color-leaf: #e2c27a;
-  --color-leaf-2: #cfa95a;
-  --color-green: #3d6b57;
-  --color-deep: #1c3a2e;
-  --color-deeper: #12261e;
-  --color-night: #0b1a14;
-  --color-live: #9e2a2b;
-  --color-warn: #b7791f;
-  --color-warn-bg: #fbf3e2;
-  --color-err-bg: #fbe9e7;
-  --color-night-ink: #f0ead9;
-  --color-night-muted: #b3b8a6;
-  --color-night-link: #e8dcc0;
-  --color-dot-off: #6b7a70;
-  --color-live-off: #f3c7c2;
-  --font-serif: "EB Garamond", "Instrument Serif", Georgia, "Times New Roman", serif;
-  --font-sans: "Source Sans 3 Variable", "Source Sans 3", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  --font-arabic: "Amiri", "Traditional Arabic", "Noto Naskh Arabic", serif;
-}
-
+/* La charte (couleurs, polices) vit dans @sada/ui ; les composants du paquet sont scannés par Tailwind. */
+@import "@sada/ui/theme.css";
+@source "../../packages/ui/src";
+@source not "../../packages/ui/src/**/*.stories.tsx";
+@source not "../../packages/ui/src/fixtures.tsx";
 /* Les règles de base doivent vivre dans @layer base : hors couche, elles l'emportent sur tout utilitaire
    Tailwind (c'est ce qui rendait les liens de la barre vert foncé sur fond nuit). */
+
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;

@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "../api";
 import { auditActionKey } from "../i18n";
 import { liste } from "../format";
-import { Btn, Card, Field, inputClass } from "../ui";
+import { Btn, Card, Field, inputClass } from "@sada/ui";
 
 const TAILLE = 8;   // one page fits on screen with its pagination, without scrolling
 

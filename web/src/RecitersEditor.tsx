@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Btn, inputClass } from "./ui";
+import { Btn, inputClass } from "@sada/ui";
 
 /** Compact editor of the tarawih reciters: the ordered roster (up, remove, add) and, below, the
  *  nights that have their own list. Values are plain arrays; the parent keeps them as JSON. */

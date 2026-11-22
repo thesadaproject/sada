@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
 import { State } from "../State";
-import { Btn, Field, Tabs, inputClass } from "../ui";
-import { idOnglet, idPanneau } from "../onglets";
+import { Btn, Field, Tabs, inputClass } from "@sada/ui";
+import { idOnglet, idPanneau } from "@sada/ui";
 import { Apercu, CalcFields, selectClass } from "../PrayerFields";
 import { ADHANS, PRIERES, calcDepuis, calcVersServeur, moisCourant, type Calc } from "../prayerForm";
 
