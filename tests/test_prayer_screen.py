@@ -106,7 +106,7 @@ def test_the_month_table_and_pdf_stay_reachable(env):
     h = c.get(BASE + "/page").text
     month = dt.date.today().strftime("%Y-%m")
     assert f'href="{BASE}/page?month={month}"' in h and f"{BASE}/export?format=pdf&amp;month={month}" in h
-    assert "<table>" in c.get(BASE + "/page?month=" + month).text
+    assert "<table" in c.get(BASE + "/page?month=" + month).text
 
 
 def test_everything_is_escaped_and_nothing_comes_from_a_third_party(env):

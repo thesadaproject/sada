@@ -297,7 +297,7 @@ def test_the_public_page_shows_the_month_with_its_downloads_and_escapes_everythi
     r = client(env).get(PUBLIC + "/page?month=2027-03")
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
     assert "<script>" not in r.text and "&lt;script&gt;" in r.text
-    assert r.text.count('class="fri"') == 4 and "13:00 / 14:15" in r.text
+    assert r.text.count('<tr class="fri') == 4 and "13:00" in r.text and "14:15" in r.text
     for href in (
         f"{PUBLIC}/export?format=pdf&amp;month=2027-03",
         f"{PUBLIC}/export?format=csv&amp;month=2027-03",
@@ -308,10 +308,29 @@ def test_the_public_page_shows_the_month_with_its_downloads_and_escapes_everythi
         assert f'href="{href}"' in r.text, href
     assert "token" not in r.text.lower() and "mawaqit" not in r.text.lower()
     assert client(env).get(PUBLIC + "/page?month=2027-13").status_code == 422
-    fr = client(env).get(PUBLIC + "/page?month=2027-03", headers={"X-Sada-Lang": "fr"})
-    assert "Télécharger le PDF" in fr.text and 'lang="fr"' in fr.text
-    ar = client(env).get(PUBLIC + "/page?month=2027-03", headers={"X-Sada-Lang": "ar"})
-    assert 'dir="rtl"' in ar.text
+
+
+def test_the_month_page_is_french_whatever_the_reader_with_arabic_names_and_the_frame_of_the_screen(env):
+    _choose(env)
+    for headers in ({}, {"Accept-Language": "en"}, {"X-Sada-Lang": "ar"}):
+        h = __import__("html").unescape(client(env).get(PUBLIC + "/page?month=2027-03", headers=headers).text)
+        assert 'lang="fr"' in h and 'dir="ltr"' in h and "Télécharger le PDF" in h and "Mars 2027" in h
+        for word in ("Fajr", "Chourouk", "Hégire", "Lun. 1", "Ven. 5", "Jumu'a", "الفجر", "الشروق", "العشاء"):
+            assert word in h, word
+        for english in ("Sunrise", "Download the", "Sun 1", "March"):
+            assert english not in h, english
+    assert "prayer-screen." in h and "fonts." in h and "<style" not in h and "system-ui" not in h  # the screen's frame
+    assert 'class="emblem"' in h and "1 Chawwal 1448" in h  # Sada's mark; Hijri worded as in the PDF
+
+
+def test_ramadan_odd_nights_are_marked_on_the_month_page_without_naming_one(env):
+    _choose(env)
+    feb = client(env).get(PUBLIC + "/page?month=2027-02").text
+    mar = client(env).get(PUBLIC + "/page?month=2027-03").text
+    odd = r'<tr class="[^"]*odd'
+    assert len(re.findall(odd, feb)) == 1 and len(re.findall(odd, mar)) == 4  # the five odd nights, none singled out
+    assert "Nuit 21" in feb and "Nuit 27" in mar and "Nuit 29" in mar
+    assert "Destin" not in feb + mar and "Qadr" not in feb + mar
 
 
 def test_a_page_spanning_two_months_has_a_dividing_line_naming_the_new_one(env):

@@ -156,7 +156,9 @@ def prayer_times_page(slug: str, request: Request, conn: ConnDep, month: str = "
             status_code=422,
             headers={"Cache-Control": "no-store"},
         )
-    page = public_page.render(slug, mosque, month, rows, prayer_times.read(conn, mosque))
+    page = public_page.render(
+        slug, mosque, month, rows, prayer_times.read(conn, mosque), prayer_times.identity_of(conn, mosque)
+    )
     return HTMLResponse(
         page, headers={"Cache-Control": edge.public_cache_control(), "Vary": "Accept-Language, X-Sada-Lang"}
     )
