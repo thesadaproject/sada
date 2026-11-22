@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import datetime as dt
 import io
-import math
 import re
 from pathlib import Path
 from urllib.parse import quote
@@ -348,20 +347,13 @@ def _logo(c: canvas.Canvas, x: float, y: float, width: float, color) -> float:
     return h * k
 
 
-def _star(c: canvas.Canvas, cx: float, cy: float, r: float, color) -> None:
-    """An eight-pointed star (two squares), the small ornament of the odd nights."""
-    pts = []
-    for k in range(16):
-        a = math.pi / 8 * k
-        rr = r if k % 2 == 0 else r * 0.62
-        pts.append((cx + rr * math.cos(a), cy + rr * math.sin(a)))
-    p = c.beginPath()
-    p.moveTo(*pts[0])
-    for q in pts[1:]:
-        p.lineTo(*q)
-    p.close()
+def _moon(c: canvas.Canvas, cx: float, cy: float, r: float, color, ground) -> None:
+    """A small crescent, the ornament of the odd nights (a moon: a star reads as a sun at this size): a
+    disc, then a second one, offset, in the colour of the row's ground."""
     c.setFillColor(color)
-    c.drawPath(p, stroke=0, fill=1)
+    c.circle(cx, cy, r, stroke=0, fill=1)
+    c.setFillColor(ground)
+    c.circle(cx + r * 0.5, cy + r * 0.2, r * 0.82, stroke=0, fill=1)
 
 
 class Look:
@@ -383,7 +375,6 @@ class Look:
         self.odd = hx(odd) if b else ODDNIGHT
         self.friday_tag = hx(ident.on_light(pal["accent2"], friday if a else "#f5ead1"))
         self.odd_tag = hx(ident.on_light(pal["accent2"], odd if b else "#e4ede7"))
-        self.star = hx(pal["accent"]) if a else LEAF2
         self.logo = logo  # a PIL image of the mosque's logo, or None
 
 
@@ -575,7 +566,7 @@ def _footer(c: canvas.Canvas, st: dict, f: dict[str, str], url: str, L: dict) ->
     if not h:
         c.setFillColor(DEEPER)
         c.setFont(f["serif"], 14)
-        c.drawRightString(_W - _MARGIN, 18 * mm, "Sada")
+        c.drawRightString(_W - _MARGIN, 18 * mm, "Sadā")
 
 
 def _page(
@@ -593,8 +584,25 @@ def _page(
     top = _H - _HEADER_H - 8 * mm
     bottom = _FOOTER_H + _LEGEND_H + 3 * mm
     starts = {i for i in range(1, len(month_rows)) if month_rows[i]["date"].month != month_rows[i - 1]["date"].month}
+    if starts:  # a page over two months names both, the first one too
+        starts.add(0)
     row_h = min(_MAX_ROW, (top - _HEAD_ROW - bottom - len(starts) * _MONTH_ROW) / len(month_rows))
     fs = min(11.5, max(8.5, row_h / mm * 1.45))  # the text grows with the rows, within reason
+
+    # The Hijri column is as wide as its longest text (and the night tag on Ramadan pages) needs; the room
+    # it does not use goes to the times, so there is no empty stretch before Fajr.
+    hij_need = 0.0
+    for r in month_rows:
+        h = Gregorian.fromdate(r["date"]).to_hijri()
+        w = stringWidth(f"{h.day} {hijri_month(h, lang)} {h.year}", f["sans-bold"], fs - 0.5)
+        if h.month == RAMADAN and h.day in ODD_NIGHT_EVES:
+            w += stringWidth(L["night"].format(n=h.day + 1), f["sans-bold"], max(6.5, min(8, fs - 3))) + 9 * mm
+        hij_need = max(hij_need, w)
+    hij_w = min(widths[1], max(30 * mm, hij_need + 4 * mm))
+    spare = widths[1] - hij_w
+    widths[1] = hij_w
+    for k in range(2, len(widths)):  # the times share what the Hijri column gives back
+        widths[k] += spare / (len(widths) - 2)
 
     c.setFillColor(DEEP)
     c.rect(left, top - _HEAD_ROW, total, _HEAD_ROW, stroke=0, fill=1)
@@ -671,12 +679,13 @@ def _page(
             tx = left + widths[0] + widths[1] - 2 * mm
             c.setFillColor(look.odd_tag)
             c.drawRightString(tx, base, tag)
-            _star(
+            _moon(
                 c,
                 tx - stringWidth(tag, f["sans-bold"], tag_size) - 2.6 * mm,
                 base + tag_size * 0.3,
-                1.5 * mm,
-                look.star,
+                1.3 * mm,
+                look.odd_tag,
+                fill,
             )
         y -= row_h
     c.setStrokeColor(LINE)

@@ -189,7 +189,7 @@ def _text(html: str) -> str:
     return re.sub(r"<[^>]+>", " ", html)
 
 
-def test_an_unknown_mosque_gets_a_french_night_page_with_the_emblem_and_a_way_out(env):
+def test_an_unknown_mosque_gets_a_french_night_page_with_the_wordmark_and_a_way_out(env):
     c = client(env)
     for headers in ({}, {"Accept-Language": "en"}, {"X-Sada-Lang": "en"}):  # French whatever the reader's language
         r = c.get("/api/v1/public/mosques/nobody/prayer-times/page", headers=headers)
@@ -198,7 +198,7 @@ def test_an_unknown_mosque_gets_a_french_night_page_with_the_emblem_and_a_way_ou
         h = r.text
         assert 'lang="fr"' in h and "Page introuvable" in h and "n'existe pas" in __import__("html").unescape(h)
         assert "not found" not in _text(h).lower() and "Not found" not in h  # no English left
-        assert 'class="emblem"' in h and 'class="refuse"' in h  # Sada's emblem, on the dark ground
+        assert 'class="wordmark"' in h and 'class="refuse"' in h  # Sada's word-mark, on the dark ground
         assert 'href="https://sadakhutbah.org"' in h
         assert "prayer-screen." in h and "fonts." in h  # same stylesheet and typefaces as the screen
 
@@ -223,11 +223,11 @@ def test_a_mawaqit_mosque_page_says_so_in_french_and_links_to_its_page(env):
     h = r.text
     assert "Horaires sur Mawaqit" in h and "Voir sur Mawaqit" in h
     assert 'href="https://mawaqit.net/fr/some-mosque-city"' in h and 'rel="noopener"' in h
-    assert 'href="https://sadakhutbah.org"' in h and 'class="emblem"' in h
+    assert 'href="https://sadakhutbah.org"' in h and 'class="wordmark"' in h
 
 
 def test_a_bad_month_gets_the_same_page_in_french_with_a_422(env):
     _choose(env, "computed")
     r = client(env).get(URL + "/page?month=abc")
     assert r.status_code == 422 and "Mois invalide" in r.text and "2027-03" in r.text
-    assert 'class="emblem"' in r.text and "A month looks like" not in r.text
+    assert 'class="wordmark"' in r.text and "A month looks like" not in r.text

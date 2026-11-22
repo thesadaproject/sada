@@ -320,7 +320,7 @@ def test_the_month_page_is_french_whatever_the_reader_with_arabic_names_and_the_
         for english in ("Sunrise", "Download the", "Sun 1", "March"):
             assert english not in h, english
     assert "prayer-screen." in h and "fonts." in h and "<style" not in h and "system-ui" not in h  # the screen's frame
-    assert 'class="emblem"' in h and "1 Chawwal 1448" in h  # Sada's mark; Hijri worded as in the PDF
+    assert 'class="wordmark"' in h and "1 Chawwal 1448" in h  # Sada's word-mark; Hijri worded as in the PDF
 
 
 def test_ramadan_odd_nights_are_marked_on_the_month_page_without_naming_one(env):
@@ -342,3 +342,25 @@ def test_a_page_spanning_two_months_has_a_dividing_line_naming_the_new_one(env):
     # a page of a single month needs none
     march = _pages(c.get(CONSOLE + "?format=pdf&month=2027-03"))[0]
     assert march.count("Mars") == 1 and "Mars 2027" in march
+
+
+def test_the_month_page_groups_the_downloads_in_one_menu_and_keeps_the_hijri_on_one_line(env):
+    _choose(env)
+    h = client(env).get(PUBLIC + "/page?month=2027-03").text
+    menu = re.search(r'<details class="dlmenu">.*?</details>', h, re.S).group(0)
+    assert "Télécharger</summary>" in menu and menu.count("<a ") == 3  # PDF, CSV, Ramadan
+    assert re.search(r'<a class="alt" href="[^"]*/page">Écran des horaires</a>', h)  # the screen, a plain link
+    assert 'class="btn main"' not in h  # no stack of big buttons ahead of the table
+    short = re.findall(r'<span class="hj"[^>]*>([^<]*)</span>', h)
+    assert short and all(len(s) <= 10 for s in short)  # "21 Jum. I", "3 Chaab."
+    assert not any("Joumada" in s or "al-" in s for s in short)  # abbreviated, never cut over three lines
+    assert 'class="jm"' in h and "<i>/</i>" in h  # Jumu'a times on one nowrap line
+
+
+def test_the_pdf_odd_night_mark_is_a_moon_and_a_two_month_page_names_both_months(env):
+    from sada.backoffice import prayer_export
+
+    assert hasattr(prayer_export, "_moon") and not hasattr(prayer_export, "_star")
+    c = _choose(env)
+    ramadan = _pages(c.get(CONSOLE + "?format=pdf&start=2027-02-08&end=2027-03-08"))[0]
+    assert ramadan.count("Février") == 1 and ramadan.index("Février") < ramadan.index("Lun. 8")  # first month named too

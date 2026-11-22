@@ -146,14 +146,24 @@ def _rows(today: dict) -> str:
     return "".join(out)
 
 
-#: Sada's emblem (static/emblem.svg), inline: the public host serves no /static, and a page that
-#: refuses must not depend on a second request to show who is speaking.
-EMBLEM = (
-    '<svg class="emblem" viewBox="0 0 64 64" aria-hidden="true" focusable="false">'
-    '<circle cx="32" cy="32" r="31" fill="#0F2A19"/>'
-    '<path d="M40.5 17.5a15 15 0 1 0 0 29 13 13 0 1 1 0-29z" fill="#D9C48A"/>'
-    '<circle cx="46.5" cy="26" r="2.6" fill="#D9C48A"/></svg>'
+_LOGOS = Path(__file__).resolve().parent.parent.parent / "assets" / "logo"
+
+
+def _svg(name: str) -> str:
+    try:
+        return (_LOGOS / name).read_text(encoding="utf-8").strip()
+    except OSError:  # a build without the logo files: the pages still work, just without the mark
+        return '<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="صدى" viewBox="0 0 1 1"></svg>'
+
+
+#: Sada's mark is the Arabic word صدى (assets/logo/sada-mark-or.svg, the one the PDF uses), inline: the
+#: public host serves no /static, and a page that refuses must not depend on a second request to show who
+#: is speaking. The crescent of static/emblem.svg is the back office's neutral emblem, not Sada's logo.
+WORDMARK = _svg("sada-mark-or.svg").replace(
+    'role="img" aria-label="صدى"', 'class="wordmark" role="img" aria-label="Sadā" focusable="false"', 1
 )
+#: The tab icon of every public page (assets/logo/favicon.svg), as a data URI: no second request either.
+FAVICON = "data:image/svg+xml," + quote(_svg("favicon.svg"), safe="")
 SITE = "sadakhutbah.org"
 
 
@@ -163,7 +173,8 @@ def doc(title: str, body: str, data: str = "", style: str = "") -> str:
     return (
         '<!doctype html><html lang="fr" dir="ltr"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
-        '<meta name="color-scheme" content="dark"><link rel="icon" href="data:,">'
+        '<meta name="color-scheme" content="dark">'
+        f'<link rel="icon" type="image/svg+xml" href="{FAVICON}">'
         f'<title>{escape(title)}</title><link rel="stylesheet" href="{FONTS}">'
         f'<link rel="stylesheet" href="{CSS}"></head><body{st}>{body}{data}</body></html>'
     )
@@ -177,8 +188,8 @@ def logo_img(slug: str, identity: dict) -> str:
 
 
 def brand() -> str:
-    """Sada's discreet mark in the foot: emblem and name, never a link on the screen itself."""
-    return f'<span class="brand">{EMBLEM}<span>Sada</span></span>'
+    """Sada's discreet mark in the foot: the word-mark alone, never a link on the screen itself."""
+    return f'<span class="brand">{WORDMARK}</span>'
 
 
 def render(slug: str, mosque: dict, payload: dict, month: str) -> str:
@@ -199,7 +210,7 @@ def render(slug: str, mosque: dict, payload: dict, month: str) -> str:
 </section>
 <section class="next" id="next" aria-label="Prochaine prière">
 <p class="kicker" id="next-kicker">Prochaine prière</p>
-<p class="nextname"><span id="next-fr">—</span> <span class="ar" id="next-ar" lang="ar" dir="rtl"></span></p>
+<p class="nextname"><span class="nn"><span id="next-fr">—</span><small class="tmrw" id="next-day" hidden>demain</small></span><span class="ar" id="next-ar" lang="ar" dir="rtl"></span></p>
 <p class="count" id="count" aria-hidden="true">--:--:--</p>
 <p class="sr" id="next-sr" role="status" aria-live="polite"></p>
 </section>
@@ -207,8 +218,8 @@ def render(slug: str, mosque: dict, payload: dict, month: str) -> str:
 {status}<div class="cols" id="cols" aria-hidden="true"{"" if today["iqama"] else " hidden"}><span></span><span>Adhan</span><span>Iqama</span></div>
 <ul class="rows{"" if today["iqama"] else " noiqama"}" id="rows">{_rows(today)}</ul>
 </section>
-<footer class="foot"><nav class="links" aria-label="Calendriers"><a href="{base}/page?month={escape(month)}">Calendrier du mois</a>
-<a href="{base}/export?format=pdf&amp;month={escape(month)}" download>Calendrier PDF</a></nav>{brand()}</footer>
+<footer class="foot"><nav class="links" aria-label="Calendriers"><a class="btn quiet" href="{base}/page?month={escape(month)}">Calendrier du mois</a>
+<a class="btn quiet" href="{base}/export?format=pdf&amp;month={escape(month)}" download>Calendrier PDF</a></nav>{brand()}</footer>
 </div>"""
     data = (
         f'<script type="application/json" id="ps-data">{_json_in_html(payload)}</script>'

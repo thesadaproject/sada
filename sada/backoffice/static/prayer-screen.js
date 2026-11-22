@@ -84,14 +84,15 @@
       li.classList.toggle("past", !!past && !mine);
     });
     if (!ev) {
-      $("next-fr").textContent = "—"; $("next-ar").textContent = ""; $("count").textContent = "";
+      $("next-fr").textContent = "—"; $("next-ar").textContent = ""; $("next-day").hidden = true; $("count").textContent = "";
       $("next-kicker").textContent = "Pas d'horaire à venir";
       return;
     }
     var nm = NAMES[ev.p];
     var tomorrow = ev.day === 1 ? " (demain)" : "";
     $("next-kicker").textContent = ev.kind === "iqama" ? "Iqama dans" : "Prochaine prière dans";
-    $("next-fr").textContent = nm[0] + tomorrow;
+    $("next-fr").textContent = nm[0];
+    $("next-day").hidden = ev.day !== 1;  /* "demain", small, under the name: it must not push the countdown */
     $("next-ar").textContent = nm[1];
     $("count").textContent = hms(ev.at - n.s);
     var key = ev.kind + ev.p + ev.day;

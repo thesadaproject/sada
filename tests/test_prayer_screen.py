@@ -253,3 +253,30 @@ def test_the_phone_layout_is_sized_on_the_dynamic_viewport_with_safe_areas():
     phone = css[css.index("Phone, portrait") :]
     assert "100dvh" in phone and "safe-area-inset-bottom" in phone and "clamp(" in phone
     assert "http" not in phone and "url(" not in phone  # nothing external
+
+
+def test_sadas_mark_is_the_arabic_wordmark_never_a_crescent_and_the_tab_icon_is_sadas(env):
+    _choose(env)
+    h = client(env).get(BASE + "/page").text
+    assert 'class="wordmark"' in h and 'aria-label="Sadā"' in h
+    assert "M40.5 17.5" not in h and 'class="emblem"' not in h  # the old crescent is the back office's emblem
+    assert 'rel="icon" type="image/svg+xml" href="data:image/svg+xml,' in h
+    assert ">Sada<" not in h  # never the bare name
+
+
+def test_tomorrow_is_a_small_word_under_the_name_and_the_footer_links_are_buttons(env):
+    _choose(env)
+    h = client(env).get(BASE + "/page").text
+    assert 'id="next-day"' in h and "demain" in re.search(r'<small[^>]*id="next-day"[^>]*>(.*?)</small>', h).group(1)
+    assert len(re.findall(r'<a class="btn quiet"', re.search(r'<nav class="links".*?</nav>', h, re.S).group(0))) == 2
+    js = open(prayer_screen.__file__.replace("prayer_screen.py", "static/prayer-screen.js")).read()
+    assert '"next-day"' in js and 'textContent = nm[0] + tomorrow' not in js  # "demain" no longer pushes the countdown
+
+
+def test_the_tv_grid_has_chourouk_under_adhan_and_the_arabic_beside_the_latin_name():
+    css = (__import__("pathlib").Path(prayer_screen.__file__).parent / "static" / "prayer-screen.css").read_text()
+    assert ".row.sun .ad" not in css.split("Chourouk is a time")[1].split("\n")[1]  # no span over the Iqama column
+    nm = re.search(r"^\.nm \{[^}]*\}", css, re.M).group(0)
+    assert "flex-direction: row" in nm and "baseline" in nm
+    assert re.search(r"\.nm \.ar \{[^}]*line-height: 1\.[3-9]", css)  # room for the Arabic: no clipped Dhuhr
+    assert "lining-nums tabular-nums" in css and ".clock, .count, .row time" in css  # one face for all the figures

@@ -18,7 +18,7 @@ from hijridate import Gregorian
 from . import identity
 from . import prayer_export as export
 from .prayer_labels import DEFAULT_LANG, PRAYER_AR, labels
-from .prayer_screen import EMBLEM, SITE, doc, logo_img
+from .prayer_screen import SITE, WORDMARK, doc, logo_img
 
 
 def _shift(month: str, n: int) -> str:
@@ -31,7 +31,7 @@ def _shift(month: str, n: int) -> str:
 
 def refused(body: dict, status: int, lang: str = DEFAULT_LANG) -> str:
     """The page of a refusal: an unknown or unpublished mosque (404), a Mawaqit mosque (404, linking to its
-    page), a malformed month (422). Sada's night frame, the emblem, a sentence in the mosque's language
+    page), a malformed month (422). Sada's night frame, the word-mark, a sentence in the mosque's language
     and a way out to sadakhutbah.org.
 
     Which of a missing and an unpublished mosque it is stays unsaid: the answer is the same."""
@@ -48,10 +48,11 @@ def refused(body: dict, status: int, lang: str = DEFAULT_LANG) -> str:
         title, text, actions = L["missing_title"], L["missing_text"], ""
     site = f'<a class="btn{"" if actions else " main"}" href="https://{SITE}" rel="noopener">{SITE}</a>'
     body_html = (
-        f'<main class="refuse" role="main">{EMBLEM}<h1>{escape(title)}</h1><p>{escape(text)}</p>'
-        f'<div class="actions">{actions}{site}</div><span class="site">Sada</span></main>'
+        f'<main class="refuse" role="main"><header class="mark">{WORDMARK}</header>'
+        f'<section class="card"><h1>{escape(title)}</h1><p>{escape(text)}</p>'
+        f'<div class="actions">{actions}{site}</div></section></main>'
     )
-    return doc(f"{title} · Sada", body_html)
+    return doc(f"{title} · Sadā", body_html)
 
 
 def render(
@@ -90,10 +91,11 @@ def render(
         fri = d.weekday() == 4
         night = h.month == export.RAMADAN and h.day in export.ODD_NIGHT_EVES  # sober mark, no single night named
         t = r["times"]
-        jum = [f'<span class="nw">{escape(x)}</span>' for x in r["jumua"]] if fri and r["jumua"] else []
-        dhuhr = " / ".join(jum) if jum else escape(t["dhuhr"] or "-")
+        jum = [escape(x) for x in r["jumua"]] if fri and r["jumua"] else []
+        # Jumu'a times on one line, never wrapped: a second line would stretch the row
+        dhuhr = f'<span class="jm">{"<i>/</i>".join(jum)}</span>' if jum else escape(t["dhuhr"] or "-")
         hij_full = escape(export.hijri_text(d, lang))
-        hij_short = escape(f"{h.day} {export.hijri_month(h, lang)}")
+        hij_short = escape(f"{h.day} {L['hijri_short'][h.month - 1]}")
         tag = f'<span class="tag">{escape(L["night"].format(n=h.day + 1))}</span>' if night else ""
         cls = " ".join(c for c in ("fri" if fri else "", "odd" if night else "", "today" if d == today else "") if c)
         cells = "".join(
@@ -101,7 +103,7 @@ def render(
             for k, v in (("fajr", t["fajr"]), ("sunrise", t["sunrise"]), ("dhuhr", t["dhuhr"]), ("asr", t["asr"]),
                          ("maghrib", t["maghrib"]), ("isha", t["isha"]))
         )  # fmt: skip
-        jumua = f' <span class="tag">{escape(L["jumua"])}</span>' if fri else ""
+        jumua = f' <span class="tag jt">{escape(L["jumua"])}</span>' if fri else ""
         lines.append(
             f'<tr class="{cls}"><th scope="row" class="d"><span class="gd">{escape(L["weekdays"][d.weekday()])} {d.day}</span>{jumua}'
             f'<span class="hj" aria-hidden="true">{hij_short}</span></th>'
@@ -113,11 +115,13 @@ def render(
         else f'<p class="none" role="status">{escape(P["empty"])}</p>'
     )
     q = f"month={month}"
+    # One discreet menu for the three downloads (no script: a <details>), the screen as a secondary link.
     buttons = (
-        f'<p class="dl"><a class="btn main" href="{base}/export?format=pdf&amp;{q}" download>{escape(P["pdf"])}</a>'
-        f'<a class="btn" href="{base}/export?format=csv&amp;{q}" download>{escape(P["csv"])}</a>'
-        f'<a class="btn" href="{base}/export?format=pdf&amp;ramadan=1" download>{escape(P["ramadan"])}</a>'
-        f'<a class="btn" href="{base}/page">{escape(P["screen"])}</a></p>'
+        f'<div class="dl"><details class="dlmenu"><summary class="btn">{escape(P["download"])}</summary>'
+        f'<div class="menu"><a href="{base}/export?format=pdf&amp;{q}" download>{escape(P["pdf"])}</a>'
+        f'<a href="{base}/export?format=csv&amp;{q}" download>{escape(P["csv"])}</a>'
+        f'<a href="{base}/export?format=pdf&amp;ramadan=1" download>{escape(P["ramadan"])}</a></div></details>'
+        f'<a class="alt" href="{base}/page">{escape(P["screen"])}</a></div>'
     )
     nav = (
         f'<nav class="months" aria-label="{escape(title)}"><a class="btn" href="{base}/page?month={prev_m}" rel="prev" '
@@ -129,7 +133,7 @@ def render(
         f'<div class="monthpage"><header class="mhead"><div class="who">{logo_img(slug, who)}<div>'
         f'<p class="kicker">{escape(P["kicker"])}</p><h1 class="mosque">{name}</h1><p class="sub">{sub}</p></div></div></header>'
         f"<main>{nav}{buttons}{table}</main>"
-        f'<footer class="foot"><span class="brand">{EMBLEM}<span>Sada</span></span></footer></div>'
+        f'<footer class="foot"><span class="brand">{WORDMARK}</span></footer></div>'
     )
     style = identity.css_vars(who.get("accent", ""), who.get("accent2", ""))
     return doc(f"{mosque.get('name') or ''} - {title}", body, "", style)

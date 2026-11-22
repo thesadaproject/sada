@@ -64,6 +64,11 @@ LABELS: dict[str, dict] = {
             "Dhou al-qa'da",
             "Dhou al-hijja",
         ),  # fmt: skip
+        # one-line forms for a narrow column (the month page on a phone)
+        "hijri_short": (
+            "Mouh.", "Safar", "Rab. I", "Rab. II", "Jum. I", "Jum. II",
+            "Rajab", "Chaab.", "Ram.", "Chaw.", "D. qa.", "D. hij.",
+        ),  # fmt: skip
         "jumua": "Jumu'a",
         "night": "Nuit {n}",
         "legend_friday": "Prière du vendredi (Jumu'a)",
@@ -85,8 +90,9 @@ LABELS: dict[str, dict] = {
             "mawaqit_button": "Voir sur Mawaqit",
             "month_title": "Mois invalide",
             "month_text": "Un mois s'écrit ainsi : 2027-03 (l'année, un tiret, le mois).",
-            "site": "Découvrir Sada",
+            "site": "Découvrir Sadā",
             "kicker": "Horaires de prière",
+            "download": "Télécharger",
             "screen": "Écran des horaires",
             "pdf": "Télécharger le PDF",
             "csv": "Télécharger le CSV",
@@ -138,6 +144,10 @@ LABELS: dict[str, dict] = {
             "Dhu al-Qa'dah",
             "Dhu al-Hijjah",
         ),  # fmt: skip
+        "hijri_short": (
+            "Muh.", "Safar", "Rab. I", "Rab. II", "Jum. I", "Jum. II",
+            "Rajab", "Sha.", "Ram.", "Shaw.", "Dhu Q.", "Dhu H.",
+        ),  # fmt: skip
         "jumua": "Jumu'a",
         "night": "Night {n}",
         "legend_friday": "Friday prayer",
@@ -157,8 +167,9 @@ LABELS: dict[str, dict] = {
             "mawaqit_button": "See on Mawaqit",
             "month_title": "Invalid month",
             "month_text": "A month looks like 2027-03 (the year, a dash, the month).",
-            "site": "Discover Sada",
+            "site": "Discover Sadā",
             "kicker": "Prayer times",
+            "download": "Download",
             "screen": "Times screen",
             "pdf": "Download the PDF",
             "csv": "Download the CSV",
