@@ -31,12 +31,12 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       {children}
       {pending && (
         <Dialogue label={t("common.confirmTitle")} onFermer={() => answer(false)}
-          boite="grid w-[min(460px,calc(100dvw-2rem))] gap-4 rounded-[10px] border border-line bg-white p-5">
+          boite="grid w-[min(460px,calc(100dvw-2rem))] gap-4 rounded-[10px] border border-leaf/80 bg-night p-5 text-night-ink! shadow-2xl">
           <p className="m-0 text-[1rem] leading-[1.5]">{pending.message}</p>
           <div className="flex flex-wrap justify-end gap-2">
             {/* Cancel takes the focus: showModal() focuses the first focusable element. */}
-            <Btn variante="ghost" onClick={() => answer(false)}>{t("common.cancel")}</Btn>
-            <Btn variante={pending.danger === false ? "plein" : "danger"} onClick={() => answer(true)}>
+            <Btn variante="light" onClick={() => answer(false)}>{t("common.cancel")}</Btn>
+            <Btn variante={pending.danger === false ? "leaf" : "danger"} onClick={() => answer(true)}>
               {pending.action ?? t("common.confirm")}
             </Btn>
           </div>
