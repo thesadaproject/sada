@@ -80,6 +80,7 @@ const vues = [
   ["mois-mobile", "v=month&month=2026-11", MOBILE],
   ["mois-ramadan-mobile", "v=month&month=2027-03", MOBILE],
   ["mois-bureau", "v=month&month=2026-11", BUREAU],
+  ["mois-decembre-bureau", "v=month&month=2026-12", BUREAU],
   ["mois-ramadan-bureau", "v=month&month=2027-03&accent=%237b1e3a&logo=1", BUREAU],
   ["404-mobile", "v=404", MOBILE],
   ["404-tv", "v=404", TV],

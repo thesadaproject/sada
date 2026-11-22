@@ -57,17 +57,24 @@ export function Mois({ boot, tv }: { boot: Boot; tv: boolean }) {
     const na = L.hijri_months[a.mois - 1];
     const nb = L.hijri_months[b.mois - 1];
     detail =
-      a.annee === b.annee && a.mois === b.mois ? `${na} ${a.annee}` : a.annee === b.annee ? `${na} - ${nb} ${a.annee}` : `${na} ${a.annee} - ${nb} ${b.annee}`;
+      a.annee === b.annee && a.mois === b.mois ? `${na} ${a.annee}` : a.annee === b.annee ? `${na} – ${nb} ${a.annee}` : `${na} ${a.annee} – ${nb} ${b.annee}`;
   }
 
+  const nomMois = (mois: string) => {
+    const [an, mm] = mois.split("-").map(Number);
+    const nom = L.months[mm - 1];
+    return `${nom.charAt(0).toUpperCase()}${nom.slice(1)}${an === annee ? "" : ` ${an}`}`;
+  };
+  const prec = decaler(boot.month, -1);
+  const suiv = decaler(boot.month, 1);
   const q = `month=${boot.month}`;
   const exp = `${boot.api}/prayer-times/export`;
   return (
     <div className="grid gap-4">
       <nav aria-label={titre} className="flex items-center justify-between gap-3 text-(--s-fg)">
-        <a className={lien} href={`?month=${decaler(boot.month, -1)}`} rel="prev" aria-label={L.page.prev}>←</a>
+        <a className={lien} href={`?month=${prec}`} rel="prev" aria-label={`${L.page.prev} : ${nomMois(prec)}`}>‹ {nomMois(prec)}</a>
         <span aria-hidden />
-        <a className={lien} href={`?month=${decaler(boot.month, 1)}`} rel="next" aria-label={L.page.next}>→</a>
+        <a className={lien} href={`?month=${suiv}`} rel="next" aria-label={`${L.page.next} : ${nomMois(suiv)}`}>{nomMois(suiv)} ›</a>
       </nav>
       {donnees === "erreur" ? (
         <p role="alert" className="m-0 text-(--s-muted)">{L.page.empty}</p>
@@ -82,7 +89,7 @@ export function Mois({ boot, tv }: { boot: Boot; tv: boolean }) {
           jours={jours}
           enteteJour={L.col.date}
           actions={
-            <details className="mt-3 md:hidden">
+            <details className="mt-3">
               <summary className={`${lien} cursor-pointer list-none`}>{L.page.download} ▾</summary>
               <div className="mt-2 grid gap-2 rounded-[10px] border border-(--s-line) bg-(--s-card) p-2">
                 <a className={lien} href={`${exp}?format=pdf&${q}`} download>{L.page.pdf}</a>
@@ -104,12 +111,6 @@ export function Mois({ boot, tv }: { boot: Boot; tv: boolean }) {
           }
         />
       )}
-      <nav aria-label={L.page.download} className="hidden flex-wrap gap-3 md:flex">
-        <a className={lien} href={`${exp}?format=pdf&${q}`} download>{L.page.pdf}</a>
-        <a className={lien} href={`${exp}?format=csv&${q}`} download>{L.page.csv}</a>
-        <a className={lien} href={`${exp}?format=pdf&ramadan=1`} download>{L.page.ramadan}</a>
-        {!tv && <a className={lien} href={location.pathname}>{L.page.screen}</a>}
-      </nav>
     </div>
   );
 }
