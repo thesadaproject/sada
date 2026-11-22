@@ -141,6 +141,13 @@ jobs:
           branch=$(jq -r '.headBranchName // empty' <<<"$PR" 2>/dev/null || true)
           if [ -z "$branch" ]; then echo "no release PR branch"; exit 0; fi
           gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"
+      # A release made with GITHUB_TOKEN fires no `release` event: start the prod smoke test by hand.
+      - name: Prod smoke test of the release
+        if: steps.rp.outputs.release_created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.rp.outputs.tag_name }}
+        run: gh workflow run prod-smoke.yml --repo "$GITHUB_REPOSITORY" --ref main -f version="$TAG"
 
   image:
     name: Docker image (ghcr)

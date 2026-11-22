@@ -1,0 +1,48 @@
+name: Prod smoke test
+
+# Checks that sadakhutbah.org really serves the public pages (page, bundle, exports) once a release is
+# deployed. A failure fails the job, and GitHub notifies the owner.
+on:
+  release:
+    types: [published]
+  # a release-please release is created with GITHUB_TOKEN, which fires no `release` event: the release
+  # job of ci.yml dispatches this workflow itself
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version (or tag) to wait for. Empty = the latest release.
+        required: false
+  schedule:
+    - cron: "17 6 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prod-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: Public pages on prod
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Version to wait for
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          version="${EVENT_TAG:-$INPUT_VERSION}"
+          if [ -z "$version" ]; then
+            version=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName')
+          fi
+          echo "waiting for $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Wait for the deployment, then check the public pages
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: python3 scripts/smoke_prod.py --expect-version "$VERSION" --wait 900
