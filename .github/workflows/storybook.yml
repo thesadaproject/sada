@@ -1,0 +1,48 @@
+name: Storybook (GitHub Pages)
+
+# The design system's catalogue (@sada/ui), published at https://thesadaproject.github.io/sada/
+# on every push to main. Can be run by hand to preview a branch.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/ui/**"
+      - "package-lock.json"
+      - ".github/workflows/storybook.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm -w @sada/ui run build-storybook
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: packages/ui/storybook-static
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
