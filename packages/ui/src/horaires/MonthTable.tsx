@@ -1,13 +1,16 @@
-/** Tableau du mois : un jour par ligne, une colonne par prière (nom latin + arabe en sous-titre).
- *  Pur : l'appelant fournit libellés et heures formatés. Hauteur naturelle ; sur mobile le tableau
- *  défile dans son propre cadre, jamais la page. */
+/** Tableau du mois, dans le style des listes de la console : une surface blanche filetée de rayon 10,
+ *  bandeau de tête sur fond papier-2, lignes séparées par un filet, date en marge (jour de la semaine en
+ *  capitales minuscules, numéro en EB Garamond), Vendredi en gras, aujourd'hui teinté de l'accent.
+ *  Pur : l'appelant fournit libellés et heures formatés.
+ *  Sans débordement à 390 px : colonnes fixes, une heure « HH:MM » par cellule ; la date hégirienne
+ *  (mois abrégé) passe sous le jour du mois, et ne prend sa propre colonne qu'à partir de md. */
 export type MonthColumn = { cle: string; nom: string; arabe: string };
 export type MonthDay = {
   /** « 22 » */
   jour: string;
   /** « dim. » */
   semaine: string;
-  /** Jour hégirien facultatif ; la colonne n'existe que si au moins un jour en porte un. */
+  /** Date hégirienne courte, mois abrégé (« 11 Jou. I »). */
   hijri?: string;
   /** heures par clé de colonne ; une clé absente s'affiche « — ». */
   heures: Record<string, string>;
@@ -15,7 +18,9 @@ export type MonthDay = {
   vendredi?: boolean;
 };
 
-export function MonthTable({ titre, sousTitre, colonnes, jours, enteteJour = "Jour", enteteHijri = "Hégire", tv = false }: {
+export function MonthTable({ surtitre, titre, sousTitre, colonnes, jours, enteteJour = "Jour", enteteHijri = "Hégire", tv = false }: {
+  /** Petit titre en capitales vertes au-dessus du titre (« Horaires de prière »). */
+  surtitre?: string;
   titre: string;
   sousTitre?: string;
   colonnes: MonthColumn[];
@@ -25,43 +30,63 @@ export function MonthTable({ titre, sousTitre, colonnes, jours, enteteJour = "Jo
   tv?: boolean;
 }) {
   const avecHijri = jours.some((j) => j.hijri);
-  const cell = tv ? "px-4 py-3 text-[1.6rem]" : "px-2.5 py-2 text-[0.95rem]";
+  const cell = tv ? "px-4 py-3 text-[1.7rem]" : "px-0.5 py-1.5 text-[0.85rem] md:px-3 md:py-2 md:text-[0.95rem]";
+  const tete = tv ? "px-4 py-3" : "px-0.5 py-2 md:px-3";
+  const hijriCol = tv ? "table-cell" : "hidden md:table-cell";
   return (
     <section>
-      <h1 className={`m-0 font-serif font-normal ${tv ? "text-[3.4rem]" : "text-[1.9rem]"}`}>{titre}</h1>
+      {surtitre && (
+        <p className={`m-0 mb-2 font-semibold uppercase leading-none tracking-[0.12em] text-(--s-kicker) ${tv ? "text-[1.3rem]" : "text-[0.75rem]"}`}>{surtitre}</p>
+      )}
+      <h1 className={`m-0 font-serif font-normal text-(--s-title) ${tv ? "text-[4rem] leading-[1.1]" : "text-[2.1rem] leading-[1.1]"}`}>{titre}</h1>
       {sousTitre && (
-        <p lang="ar" dir="rtl" className={`sada-arabe m-0 text-(--s-muted) ${tv ? "text-[2rem]" : "text-[1.1rem]"}`}>
+        <p lang="ar" dir="rtl" className={`sada-arabe m-0 text-(--s-muted) ${tv ? "text-[2.2rem]" : "text-[1.2rem]"}`}>
           {sousTitre}
         </p>
       )}
-      <div className="mt-4 overflow-x-auto rounded-xl border border-(--s-line)">
-        <table className="w-full border-collapse text-center">
+      <div className="mt-4 overflow-hidden rounded-[10px] border border-(--s-line) bg-(--s-card)">
+        <table className="w-full table-fixed border-collapse text-center">
+          <colgroup>
+            <col className={tv ? "w-[9rem]" : "w-[3.7rem] md:w-[7rem]"} />
+            {avecHijri && <col className={`${hijriCol} ${tv ? "w-[11rem]" : "md:w-[8rem]"}`} />}
+            {colonnes.map((c) => <col key={c.cle} />)}
+          </colgroup>
           <thead>
-            <tr>
-              <th scope="col" className={`${cell} text-start font-semibold text-(--s-muted)`}>{enteteJour}</th>
-              {avecHijri && <th scope="col" className={`${cell} font-semibold text-(--s-muted)`}>{enteteHijri}</th>}
+            <tr className="bg-(--s-head)">
+              <th scope="col" className={`${tete} text-start text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-(--s-kicker) ${tv ? "pl-8 text-[1.2rem]" : "pl-3 md:pl-5"}`}>{enteteJour}</th>
+              {avecHijri && (
+                <th scope="col" className={`${hijriCol} ${tete} text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-(--s-kicker) ${tv ? "text-[1.2rem]" : ""}`}>{enteteHijri}</th>
+              )}
               {colonnes.map((c) => (
-                <th key={c.cle} scope="col" className={`${cell} font-semibold`}>
-                  <span className="block">{c.nom}</span>
-                  <span lang="ar" dir="rtl" className="sada-arabe block text-[0.85em] font-normal text-(--s-muted)">{c.arabe}</span>
+                <th key={c.cle} scope="col" className={`${tete} font-semibold text-(--s-fg)`}>
+                  <span className={`block leading-tight ${tv ? "font-serif text-[1.9rem] font-normal" : "font-serif text-[0.72rem] font-normal tracking-tight md:text-[1rem] md:tracking-normal"}`}>{c.nom}</span>
+                  <span lang="ar" dir="rtl" className={`sada-arabe block font-normal text-(--s-muted) ${tv ? "text-[1.5rem]" : "text-[0.8rem] md:text-[0.95rem]"}`}>{c.arabe}</span>
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-(--s-line)">
             {jours.map((j) => (
               <tr
                 key={j.jour}
                 aria-current={j.aujourdhui ? "date" : undefined}
-                style={j.aujourdhui ? { background: "var(--accent)", color: "var(--accent-ink)" } : undefined}
-                className={`border-t border-(--s-line) ${j.vendredi && !j.aujourdhui ? "bg-(--s-card) font-semibold" : ""}`}
+                style={j.aujourdhui ? { background: "var(--s-actif)" } : undefined}
+                className={`border-t border-(--s-line) ${j.vendredi && !j.aujourdhui ? "bg-(--s-head) font-semibold" : ""}`}
               >
-                <th scope="row" className={`${cell} text-start font-semibold whitespace-nowrap`}>
-                  {j.semaine} {j.jour}
+                <th
+                  scope="row"
+                  style={j.aujourdhui ? { boxShadow: "inset 4px 0 0 var(--accent)" } : undefined}
+                  className={`${cell} text-start font-normal ${tv ? "pl-8" : "pl-3 md:pl-5"}`}
+                >
+                  <span className="flex items-baseline gap-x-1.5">
+                    <span className={`font-serif leading-none tabular-nums text-(--s-title) ${tv ? "text-[2.4rem]" : "text-[1.2rem]"}`}>{j.jour}</span>
+                    <span className={`font-semibold uppercase leading-none tracking-[0.1em] text-(--s-muted) ${tv ? "text-[1.1rem]" : "text-[0.58rem]"}`}>{j.semaine}</span>
+                  </span>
+                  {j.hijri && !tv && <span className="block text-[0.68rem] font-normal leading-tight text-(--s-muted) md:hidden">{j.hijri}</span>}
                 </th>
-                {avecHijri && <td className={`${cell} ${j.aujourdhui ? "" : "text-(--s-muted)"}`}>{j.hijri ?? ""}</td>}
+                {avecHijri && <td className={`${hijriCol} ${cell} font-normal text-(--s-muted)`}>{j.hijri ?? ""}</td>}
                 {colonnes.map((c) => (
-                  <td key={c.cle} className={cell}>{j.heures[c.cle] ?? "—"}</td>
+                  <td key={c.cle} className={`${cell} tabular-nums`}>{j.heures[c.cle] ?? "—"}</td>
                 ))}
               </tr>
             ))}

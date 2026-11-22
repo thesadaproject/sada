@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { MOIS_HIJRI_COURT } from "./hijri";
 
 /** Données et cadres communs aux stories (jamais embarqués dans le paquet publié : seul index.ts est exporté). */
 export const BORDEAUX = "#7b1e3a";
@@ -29,7 +30,8 @@ export function jours(n = 30) {
     return {
       jour: String(i + 1),
       semaine: sem[(i + 0) % 7],
-      hijri: String(((i + 11) % 29) + 1),
+      // 20 Joumada al-oula 1448 = le 22 novembre ; les deux premiers jours sont en Rabi' ath-thani.
+      hijri: i < 2 ? `${i + 28} ${MOIS_HIJRI_COURT[3]}` : `${i - 1} ${MOIS_HIJRI_COURT[4]}`,
       vendredi: (i + 0) % 7 === 5,
       aujourdhui: i === 21,
       heures: { fajr: h(6, 21), chourouk: h(7, 58), dhuhr: h(12, 26), asr: h(14, 38), maghrib: h(16, 52), isha: h(18, 20) },

@@ -6,7 +6,8 @@ export function formatRestant(secondes: number): string {
 }
 
 /** Compte à rebours vers la prochaine prière (jamais Chourouk : le choix se fait en amont, cf.
- *  cibleCompteARebours). Pur : `restant` est en secondes, l'appelant le fait avancer. */
+ *  cibleCompteARebours). Pur : `restant` est en secondes, l'appelant le fait avancer.
+ *  Nom latin (EB Garamond) et arabe (Amiri) sur la même ligne. */
 export function Countdown({ libelle, nom, arabe, restant, tv = false }: {
   /** « Prochaine prière » */
   libelle: string;
@@ -16,17 +17,17 @@ export function Countdown({ libelle, nom, arabe, restant, tv = false }: {
   tv?: boolean;
 }) {
   return (
-    <div className="text-center">
-      <p className={`m-0 font-semibold uppercase tracking-[0.12em] text-(--s-muted) ${tv ? "text-[1.3rem]" : "text-[0.75rem]"}`}>{libelle}</p>
-      <p className={`m-0 mt-1 font-serif ${tv ? "text-[3.4rem]" : "text-[1.6rem]"}`}>
-        {nom}
+    <div>
+      <p className={`m-0 mb-2 font-semibold uppercase leading-none tracking-[0.12em] text-(--s-kicker) ${tv ? "text-[1.3rem]" : "text-[0.75rem]"}`}>{libelle}</p>
+      <p className={`m-0 flex items-baseline gap-x-4 font-serif leading-tight text-(--s-title) ${tv ? "text-[4rem]" : "text-[1.55rem]"}`}>
+        <span>{nom}</span>
         {arabe && (
-          <span lang="ar" dir="rtl" className="sada-arabe ms-3 text-(--s-muted)">
+          <span lang="ar" dir="rtl" className="sada-arabe text-(--s-muted)">
             {arabe}
           </span>
         )}
       </p>
-      <p role="timer" className={`m-0 font-semibold leading-tight ${tv ? "text-[5rem]" : "text-[2.4rem]"}`}>
+      <p role="timer" className={`m-0 font-semibold leading-tight text-(--s-fg) ${tv ? "mt-2 text-[6.5rem]" : "text-[2.4rem]"}`}>
         {formatRestant(restant)}
       </p>
     </div>

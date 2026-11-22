@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accentStyle, cibleCompteARebours, contraste, encreSur, formatRestant } from "./index";
+import { MOIS_HIJRI, MOIS_HIJRI_COURT, accentStyle, cibleCompteARebours, contraste, encreSur, formatHijri, formatRestant } from "./index";
 
 describe("accent par mosquée", () => {
   it("choisit une encre lisible (contraste >= 4.5) quelle que soit la couleur", () => {
@@ -17,6 +17,17 @@ describe("accent par mosquée", () => {
   });
   it("pose --accent et --accent-ink", () => {
     expect(accentStyle("#7b1e3a")).toMatchObject({ "--accent": "#7b1e3a", "--accent-ink": "#f7f3ea" });
+  });
+});
+
+describe("date hégirienne", () => {
+  it("abrège le mois par défaut, le nom entier sur demande", () => {
+    expect(formatHijri(20, 5, 1448)).toBe("20 Jou. I 1448");
+    expect(formatHijri(20, 5, 1448, false)).toBe("20 Joumada al-oula 1448");
+  });
+  it("12 mois, chacun avec une abréviation", () => {
+    expect(MOIS_HIJRI).toHaveLength(12);
+    expect(MOIS_HIJRI_COURT).toHaveLength(12);
   });
 });
 

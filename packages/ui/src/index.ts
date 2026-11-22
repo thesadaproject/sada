@@ -5,7 +5,8 @@ export * from "./onglets";
 export { Logo } from "./Logo";
 export { accentStyle, contraste, encreSur, luminance } from "./accent";
 // Horaires de prière : purs, pilotés par props.
-export { Surface } from "./horaires/Surface";
+export { Surface, Entete, Cadran } from "./horaires/Surface";
+export { MOIS_HIJRI, MOIS_HIJRI_COURT, formatHijri } from "./hijri";
 export { PrayerRow, PrayerList, cibleCompteARebours } from "./horaires/PrayerRow";
 export type { PrayerRowProps } from "./horaires/PrayerRow";
 export { Clock } from "./horaires/Clock";

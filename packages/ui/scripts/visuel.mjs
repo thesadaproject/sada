@@ -40,8 +40,10 @@ const navigateur = await chromium.launch(process.env.CHROMIUM ? { executablePath
 let echecs = 0;
 for (const h of histoires) {
   const tv = /\btv\b/i.test(h.name) || /^tv/i.test(h.name.replace(/\s/g, ""));
+  // La galerie de la console se juge pleine largeur, comme une page de bureau (1440 px).
+  const bureau = /galerie/i.test(h.id);
   const ctx = await navigateur.newContext({
-    viewport: tv ? { width: 1920, height: 1080 } : { width: 390, height: 844 },
+    viewport: tv ? { width: 1920, height: 1080 } : bureau ? { width: 1440, height: 900 } : { width: 390, height: 844 },
     deviceScaleFactor: 2,
   });
   const page = await ctx.newPage();

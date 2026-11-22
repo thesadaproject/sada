@@ -41,22 +41,33 @@
   --space-8: 2rem;
 }
 
-/* Surfaces des composants d'horaires : nuit (écran) ou ivoire (page imprimable). */
+/* Surfaces des composants d'horaires : même langage que la console.
+   ivoire = page papier (fond --color-paper, listes blanches filetées, kicker vert) ;
+   nuit   = écran sombre (fond --color-night, listes --color-deeper filetées de blanc 10 %, kicker or).
+   --s-actif : teinte de l'accent à 18 %, jamais plus : l'encre reste lisible quelle que soit la couleur. */
 .sada-nuit {
   --s-bg: var(--color-night);
-  --s-card: rgb(255 255 255 / 0.05);
+  --s-card: var(--color-deeper);
+  --s-head: rgb(255 255 255 / 0.05);
   --s-fg: var(--color-night-ink);
-  --s-muted: #c9ceba;
-  --s-line: rgb(240 234 217 / 0.16);
+  --s-title: #fff;
+  --s-muted: var(--color-night-muted);
+  --s-line: rgb(255 255 255 / 0.1);
+  --s-kicker: var(--color-leaf);
+  --s-actif: color-mix(in srgb, var(--accent) 18%, transparent);
   background: var(--s-bg);
   color: var(--s-fg);
 }
 .sada-ivoire {
   --s-bg: var(--color-paper);
   --s-card: #fff;
+  --s-head: color-mix(in srgb, var(--color-paper-2) 55%, transparent);
   --s-fg: var(--color-ink);
-  --s-muted: #4d5a52;
+  --s-title: var(--color-deeper);
+  --s-muted: var(--color-muted);
   --s-line: var(--color-line);
+  --s-kicker: var(--color-green);
+  --s-actif: color-mix(in srgb, var(--accent) 18%, transparent);
   background: var(--s-bg);
   color: var(--s-fg);
 }

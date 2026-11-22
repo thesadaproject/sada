@@ -1,28 +1,42 @@
-import { Clock, Countdown, ErrorPage, MonthTable, PrayerList, PrayerRow, Surface, cibleCompteARebours } from "../index";
+import { Cadran, Clock, Countdown, ErrorPage, Entete, MonthTable, PrayerList, PrayerRow, Surface, cibleCompteARebours } from "../index";
 import { ARABE_LONG, BORDEAUX, Cadre, PRIERES, VERT, jours } from "../fixtures";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 
-/** Écran complet assemblé à partir des composants : les variantes ci-dessous ne changent que les props. */
+const DATE = "dimanche 22 novembre 2026";
+const HIJRI = "20 Jou. I 1448";
+
+/** Écran complet assemblé à partir des composants : les variantes ci-dessous ne changent que les props.
+ *  Mobile = une page de la console (papier, « live » nuit, liste filetée) ; TV = l'écran nuit/or/ivoire. */
 function Ecran({ tv = false, iqama = true, accent, titre = "Mosquée de la Paix" }: {
   tv?: boolean; iqama?: boolean; accent?: string; titre?: string;
 }) {
   const prieres = PRIERES.map((p) => ({ ...p, iqama: iqama ? p.iqama : undefined }));
   const cible = cibleCompteARebours(prieres);
+  const cadran = (
+    <Cadran tv={tv}>
+      <Clock kicker="Heure locale" heure="11:07" date={DATE} hijri={HIJRI} tv={tv} />
+      {cible && <Countdown libelle="Prochaine prière" nom={cible.nom} arabe={cible.arabe} restant={4723} tv={tv} />}
+    </Cadran>
+  );
+  const liste = (
+    <PrayerList tv={tv} titre="Aujourd'hui" entetes={iqama ? ["Adhan", "Iqama"] : undefined}>
+      {prieres.map((p) => (
+        <PrayerRow key={p.cle} {...p} suivante={p === cible} tv={tv} />
+      ))}
+    </PrayerList>
+  );
   return (
     <Cadre tv={tv}>
-      <Surface tv={tv} accent={accent} className={tv ? "min-h-[1080px]" : ""}>
-        <div className={tv ? "grid grid-cols-[2fr_3fr] items-center gap-16" : "flex flex-col gap-6"}>
-          <div className={`flex flex-col ${tv ? "gap-10" : "gap-6"}`}>
-            <h1 lang="ar" dir="rtl" className={`sada-arabe m-0 text-center font-normal ${tv ? "text-[3rem]" : "text-[1.4rem]"}`}>{titre}</h1>
-            <Clock heure="11:07" date="dimanche 22 novembre 2026" hijri="20 Joumada al-oula 1448" tv={tv} />
-            {cible && <Countdown libelle="Prochaine prière" nom={cible.nom} arabe={cible.arabe} restant={4723} tv={tv} />}
+      <Surface plein tv={tv} theme={tv ? "nuit" : "ivoire"} accent={accent} entete={<Entete mosquee={titre} tv={tv} />}>
+        <h1 className="sr-only">{titre}</h1>
+        {tv ? (
+          <div className="grid flex-1 grid-cols-[2fr_3fr] items-stretch gap-16">
+            <div className="flex flex-col justify-center">{cadran}</div>
+            {liste}
           </div>
-          <PrayerList tv={tv} entetes={iqama ? ["Adhan", "Iqama"] : undefined}>
-            {prieres.map((p) => (
-              <PrayerRow key={p.cle} {...p} suivante={p === cible} tv={tv} />
-            ))}
-          </PrayerList>
-        </div>
+        ) : (
+          <div className="grid gap-4">{cadran}{liste}</div>
+        )}
       </Surface>
     </Cadre>
   );
@@ -43,11 +57,12 @@ export const TvAccentBordeaux: S = { render: () => <Ecran tv accent={BORDEAUX} /
 export const TvAccentVert: S = { render: () => <Ecran tv accent={VERT} /> };
 export const TvArabeLong: S = { render: () => <Ecran tv titre={ARABE_LONG} /> };
 
-function Mois({ tv = false, accent, theme = "nuit" }: { tv?: boolean; accent?: string; theme?: "nuit" | "ivoire" }) {
+function Mois({ tv = false, accent, theme = "ivoire" }: { tv?: boolean; accent?: string; theme?: "nuit" | "ivoire" }) {
   return (
     <Cadre tv={tv}>
-      <Surface tv={tv} accent={accent} theme={theme}>
+      <Surface plein tv={tv} accent={accent} theme={theme} entete={<Entete mosquee="Mosquée de la Paix" tv={tv} />}>
         <MonthTable
+          surtitre="Horaires de prière"
           titre="Novembre 2026"
           sousTitre="نوفمبر ٢٠٢٦"
           colonnes={PRIERES.map(({ cle, nom, arabe }) => ({ cle, nom, arabe }))}
@@ -59,13 +74,13 @@ function Mois({ tv = false, accent, theme = "nuit" }: { tv?: boolean; accent?: s
   );
 }
 export const MoisMobile: S = { name: "Mois / mobile", render: () => <Mois /> };
-export const MoisMobileIvoire: S = { name: "Mois / mobile ivoire bordeaux", render: () => <Mois theme="ivoire" accent={BORDEAUX} /> };
-export const MoisTv: S = { name: "Mois / TV", render: () => <Mois tv /> };
+export const MoisMobileBordeaux: S = { name: "Mois / mobile bordeaux", render: () => <Mois accent={BORDEAUX} /> };
+export const MoisTv: S = { name: "Mois / TV", render: () => <Mois tv theme="nuit" /> };
 
 function Erreur({ tv = false, accent }: { tv?: boolean; accent?: string }) {
   return (
     <Cadre tv={tv}>
-      <Surface tv={tv} accent={accent} className={tv ? "min-h-[1080px]" : "min-h-[700px]"}>
+      <Surface plein theme="nuit" tv={tv} accent={accent}>
         <ErrorPage
           tv={tv}
           titre="Mosquée introuvable"
