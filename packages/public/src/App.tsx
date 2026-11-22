@@ -8,11 +8,12 @@ import { Mois } from "./Mois";
 const TV = "(min-width: 1100px) and (orientation: landscape)";
 
 /** Écran de télévision : paysage et assez large. Sinon, la mise en page mobile (une page de la console). */
-function useTv(): boolean {
-  const [tv, setTv] = useState(() => window.matchMedia(TV).matches);
+function useTv(actif: boolean): boolean {
+  const [large, setLarge] = useState(() => window.matchMedia(TV).matches);
+  const tv = actif && large;
   useEffect(() => {
     const m = window.matchMedia(TV);
-    const f = () => setTv(m.matches);
+    const f = () => setLarge(m.matches);
     m.addEventListener("change", f);
     return () => m.removeEventListener("change", f);
   }, []);
@@ -40,7 +41,7 @@ function useTv(): boolean {
 }
 
 export function App({ boot }: { boot: Boot }) {
-  const tv = useTv();
+  const tv = useTv(boot.view === "screen");
   if (boot.view === "error" && boot.error) return <Erreur boot={boot} tv={tv} />;
   return (
     <Surface

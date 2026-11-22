@@ -105,9 +105,9 @@ for (const [nom, requete, viewport] of vues) {
   }));
   const pb = [...erreurs];
   if (m.doc > m.vue) pb.push(`débordement horizontal ${m.doc} > ${m.vue}`);
-  if (/^(mobile-|404|422)/.test(nom) && !nom.startsWith("mois") && m.haut > m.vh) pb.push(`défilement vertical ${m.haut} > ${m.vh}`);
+  if (/^(mobile-|mois-.*mobile|404|422)/.test(nom) && m.haut > m.vh) pb.push(`défilement vertical ${m.haut} > ${m.vh}`);
   if (nom.startsWith("tv") && m.haut > m.vh) pb.push(`écran TV plus haut que la fenêtre ${m.haut}`);
-  if (m.plein || m.boutons) pb.push("bouton plein écran / kiosque");
+  if (m.plein || (m.boutons && !nom.startsWith("mois"))) pb.push("bouton plein écran / kiosque");
   if (/404/.test(nom) && rep.status() !== 404) pb.push(`statut ${rep.status()}`);
   if (/422/.test(nom) && rep.status() !== 422) pb.push(`statut ${rep.status()}`);
   if (process.env.DUMP) {

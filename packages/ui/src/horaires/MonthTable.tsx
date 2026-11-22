@@ -22,7 +22,7 @@ export type MonthDay = {
   repere?: string;
 };
 
-export function MonthTable({ surtitre, titre, sousTitre, colonnes, jours, enteteJour = "Jour", colonneJumua = "dhuhr", legende, detail, actions, tv = false }: {
+export function MonthTable({ surtitre, titre, sousTitre, colonnes, jours, enteteJour = "Jour", colonneJumua = "dhuhr", legende, detail, actions, tv = false, compact = false }: {
   /** Petit titre en capitales vertes au-dessus du titre (« Horaires de prière »). */
   surtitre?: string;
   titre: string;
@@ -39,9 +39,11 @@ export function MonthTable({ surtitre, titre, sousTitre, colonnes, jours, entete
   /** Sous le titre, avant le tableau (menu « Télécharger » en mobile). */
   actions?: React.ReactNode;
   tv?: boolean;
+  /** Téléphone : une semaine à la fois, titre et lignes resserrés pour tenir dans 390x844 sans défilement. */
+  compact?: boolean;
 }) {
-  const cell = tv ? "px-4 py-3 text-[1.7rem]" : "px-0.5 py-1.5 text-[0.85rem] md:px-3 md:py-2 md:text-[0.95rem]";
-  const tete = tv ? "px-4 py-3" : "px-0.5 py-2 md:px-3";
+  const cell = tv ? "px-4 py-3 text-[1.7rem]" : `px-0.5 ${compact ? "py-1" : "py-1.5"} text-[0.85rem] md:px-3 md:py-2 md:text-[0.95rem]`;
+  const tete = tv ? "px-4 py-3" : `px-0.5 ${compact ? "py-1" : "py-2"} md:px-3`;
   return (
     <section>
       {surtitre && (
@@ -55,7 +57,7 @@ export function MonthTable({ surtitre, titre, sousTitre, colonnes, jours, entete
         </p>
       )}
       {actions}
-      <div className="mt-4 overflow-hidden rounded-[10px] border border-(--s-line) bg-(--s-card)">
+      <div className={`${compact ? "mt-2" : "mt-4"} overflow-hidden rounded-[10px] border border-(--s-line) bg-(--s-card)`}>
         <table className="w-full table-fixed border-collapse text-center">
           <colgroup>
             <col className={tv ? "w-[14rem]" : "w-[4.4rem] md:w-[9rem]"} />
@@ -113,17 +115,19 @@ export function MonthTable({ surtitre, titre, sousTitre, colonnes, jours, entete
 
 /** Légende du tableau : repères (vendredi, nuits impaires) et note. Aucune nuit n'est désignée : la note dit
  *  seulement où Laylat al-Qadr est recherchée. Chaque élément est facultatif. */
-export function Legende({ vendredi, nuitsImpaires, note, nuitsImpairesNote, tv = false }: {
+export function Legende({ vendredi, nuitsImpaires, note, nuitsImpairesNote, tv = false, compact = false }: {
   vendredi?: string;
   nuitsImpaires?: string;
   note?: string;
   nuitsImpairesNote?: string;
   tv?: boolean;
+  /** Téléphone : texte et marges réduits. */
+  compact?: boolean;
 }) {
-  const taille = tv ? "text-[1.4rem]" : "text-[0.82rem]";
+  const taille = tv ? "text-[1.4rem]" : compact ? "text-[0.74rem] leading-snug" : "text-[0.82rem]";
   if (!vendredi && !nuitsImpaires && !note) return null;
   return (
-    <div className={`mt-4 grid gap-1 text-(--s-muted) ${taille}`}>
+    <div className={`${compact ? "mt-2" : "mt-4"} grid gap-1 text-(--s-muted) ${taille}`}>
       <ul className="m-0 flex list-none flex-wrap gap-x-5 gap-y-1 p-0">
         {vendredi && (
           <li className="flex items-center gap-2">

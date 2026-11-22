@@ -73,3 +73,18 @@ export function decaler(mois: string, n: number): string {
   const t = a * 12 + (m - 1) + n;
   return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, "0")}`;
 }
+
+/** Semaines civiles (lundi à dimanche) d'un mois : indices des lignes (`debut`..`fin`) et dates. Les semaines
+ *  de bord sont partielles (le 1er un dimanche : semaine d'un seul jour). */
+export function semainesDuMois(dates: string[]): { debut: number; fin: number; dates: string[] }[] {
+  const sortie: { debut: number; fin: number; dates: string[] }[] = [];
+  dates.forEach((d, i) => {
+    if (!sortie.length || jourSemaine(d) === 0) sortie.push({ debut: i, fin: i, dates: [d] });
+    else {
+      const w = sortie[sortie.length - 1];
+      w.fin = i;
+      w.dates.push(d);
+    }
+  });
+  return sortie;
+}
