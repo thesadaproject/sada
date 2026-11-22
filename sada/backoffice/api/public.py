@@ -17,7 +17,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from ... import prayer_calc as calc
 from ...i18n import _
-from .. import edge, orm, prayer_screen, prayer_times, public_page
+from .. import branding, edge, orm, prayer_screen, prayer_times, public_page
 from .. import prayer_export as export
 from ..context import ConnDep
 from ..models import Mosque
@@ -177,6 +177,28 @@ def prayer_times_days(slug: str, request: Request, conn: ConnDep, first: str = Q
     except ValueError:
         return _json({"error": _("refused"), "message": _("Use ?date=YYYY-MM-DD or ?month=YYYY-MM.")}, 422)
     return _json(prayer_screen.days(conn, mosque, day), cache=True)
+
+
+@router.get("/public/mosques/{slug}/logo")
+def public_logo(slug: str, request: Request, conn: ConnDep):
+    """The mosque's logo, only when it published its times and chose to show the logo on them."""
+    wait = _limiter.hit(client_ip(request))
+    if wait:
+        return _json({"error": _("too many requests")}, 429, Retry_After=int(wait) + 1)
+    mosque, refused = _published(conn, slug)
+    if refused or not prayer_times.identity_of(conn, mosque)["logo"]:
+        return Response("Not Found", status_code=404, headers=_NOT_FOUND)
+    f = branding.path_for(mosque)
+    return Response(
+        f.read_bytes(),
+        media_type=branding.EXT.get(f.suffix.lower(), "application/octet-stream"),
+        headers={
+            "Cache-Control": "public, max-age=300",
+            # an SVG opened on its own must never run anything: it is an image, nothing else
+            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 _ASSET = re.compile(r"^(prayer-screen\.(css|js)|fonts\.css|fonts/[A-Za-z0-9_-]+\.woff2)$")

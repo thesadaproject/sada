@@ -62,11 +62,13 @@ export default function PrayerSettings({ d, onSaved }: { d: any; onSaved: () => 
     if (source === "computed") {
       return [...base, { cle: "calc", label: t("prayer.tabs.calc") }, { cle: "adjust", label: t("prayer.tabs.adjust") },
               { cle: "times", label: t("prayer.tabs.times"), eteint: !enregistre },
+              { cle: "look", label: t("prayer.tabs.look"), eteint: !enregistre },
               { cle: "export", label: t("prayer.tabs.export"), eteint: !enregistre }];
     }
     if (source === "manual") {
       return [...base, { cle: "times", label: t("prayer.tabs.times"), eteint: !enregistre },
               { cle: "import", label: t("prayer.tabs.import"), eteint: !enregistre },
+              { cle: "look", label: t("prayer.tabs.look"), eteint: !enregistre },
               { cle: "export", label: t("prayer.tabs.export"), eteint: !enregistre }];
     }
     return base;
@@ -232,6 +234,7 @@ export default function PrayerSettings({ d, onSaved }: { d: any; onSaved: () => 
           <Grille key={`${source}-${i18n.language}`} source={source} />
         )}
         {actif === "import" && enregistre && <Import />}
+        {actif === "look" && enregistre && <Apparence d={d} onSaved={onSaved} />}
         {actif === "export" && enregistre && <Exporter pageUrl={d.public ? pageAdresse : ""} />}
       </div>
       {(actif === "source" || actif === "calc" || actif === "adjust") && (
@@ -241,6 +244,57 @@ export default function PrayerSettings({ d, onSaved }: { d: any; onSaved: () => 
           {msg && <span role={msg.ok ? "status" : "alert"} className={`text-[0.9rem] ${msg.ok ? "text-deep" : "text-[#7a1f20]"}`}>{msg.texte}</span>}
         </div>
       )}
+    </div>
+  );
+}
+
+/** The mosque's look on its public pages: one or two accent colours and its logo. Sada stays the frame;
+ *  the server derives a readable ink from whatever colour is chosen (nothing to check here). */
+function Apparence({ d, onSaved }: { d: any; onSaved: () => void }) {
+  const { t } = useTranslation();
+  const SADA = "#e2c27a", SADA2 = "#3d6b57";
+  const [a, setA] = useState<string>(d.identity?.accent || "");
+  const [b, setB] = useState<string>(d.identity?.accent2 || "");
+  const [logo, setLogo] = useState<boolean>(!!d.identity?.show_logo);
+  const [msg, setMsg] = useState<Message>(null);
+  const [enCours, setEnCours] = useState(false);
+  const modifie = a !== (d.identity?.accent || "") || b !== (d.identity?.accent2 || "") || logo !== !!d.identity?.show_logo;
+  const enregistrer = async () => {
+    setEnCours(true); setMsg(null);
+    try {
+      await api.prayerIdentity({ accent: a, accent2: b, show_logo: logo });
+      setMsg({ ok: true, texte: t("prayer.look.saved") });
+      onSaved();
+    } catch (e: any) { setMsg({ ok: false, texte: e.message }); } finally { setEnCours(false); }
+  };
+  const couleur = (id: string, label: string, v: string, set: (x: string) => void, defaut: string) => (
+    <div className="grid gap-1">
+      <label htmlFor={id} className="text-[0.9rem] font-semibold">{label}</label>
+      <div className="flex items-center gap-2">
+        <input id={id} type="color" value={v || defaut} onChange={(e) => { set(e.target.value); setMsg(null); }}
+          className="h-10 w-14 cursor-pointer rounded border border-line bg-white p-0.5" />
+        <code className="text-[0.85rem] text-muted">{v || t("prayer.look.reset")}</code>
+      </div>
+    </div>
+  );
+  return (
+    <div className="grid gap-3.5">
+      <p className="m-0 max-w-[90ch] text-[0.9rem] text-muted">{t("prayer.look.intro")}</p>
+      <div className="flex flex-wrap items-end gap-6">
+        {couleur("look-accent", t("prayer.look.accent"), a, setA, SADA)}
+        {couleur("look-accent2", t("prayer.look.accent2"), b, setB, SADA2)}
+        <Btn variante="ghost" onClick={() => { setA(""); setB(""); setMsg(null); }} disabled={!a && !b}>{t("prayer.look.reset")}</Btn>
+      </div>
+      <label className="flex items-center gap-2 text-[0.92rem]">
+        <input type="checkbox" checked={logo} disabled={!d.has_logo} onChange={(e) => { setLogo(e.target.checked); setMsg(null); }} />
+        {t("prayer.look.showLogo")}
+      </label>
+      {!d.has_logo && <p className="m-0 text-[0.85rem] text-muted">{t("prayer.look.noLogo")}</p>}
+      <p className="m-0 text-[0.85rem] text-muted">{t("prayer.look.svgNote")} {t("prayer.look.contrast")}</p>
+      <div className="flex flex-wrap items-center gap-3">
+        <Btn onClick={enregistrer} disabled={enCours || !modifie}>{enCours ? t("prayer.look.saving") : t("prayer.look.save")}</Btn>
+        {msg && <span role={msg.ok ? "status" : "alert"} className={`text-[0.9rem] ${msg.ok ? "text-deep" : "text-[#7a1f20]"}`}>{msg.texte}</span>}
+      </div>
     </div>
   );
 }

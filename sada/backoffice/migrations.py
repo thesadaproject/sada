@@ -273,6 +273,19 @@ def _studio_nom_propose(conn: sa.Connection) -> None:
     _add_columns(conn, "device_pairings", (("suggested_name", "TEXT NOT NULL DEFAULT ''"),))
 
 
+def _horaires_identite(conn: sa.Connection) -> None:
+    """Migration 24 : identité de la mosquée sur les pages publiques d'horaires (couleurs d'accent, logo)."""
+    _add_columns(
+        conn,
+        "prayer_settings",
+        (
+            ("accent", "TEXT NOT NULL DEFAULT ''"),
+            ("accent2", "TEXT NOT NULL DEFAULT ''"),
+            ("show_logo", "INTEGER NOT NULL DEFAULT 0"),
+        ),
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "schéma initial", _baseline),
     Migration(2, "khutbas : colonnes dars (kind, title, series, session_no)", _khutbas_dars),
@@ -299,6 +312,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(21, "horaires de prière propres à la mosquée et choix de la source", _horaires_propres),
     Migration(22, "studio : appareils, appairage, exclusivité du flux, alertes", _studio_appareils),
     Migration(23, "studio : nom de la machine proposé à l'appairage", _studio_nom_propose),
+    Migration(24, "horaires : identité de la mosquée (couleurs d'accent, logo)", _horaires_identite),
 )
 
 #: numéros pris par une autre branche pas encore fusionnée : le trou est voulu, pas un oubli.

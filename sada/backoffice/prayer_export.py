@@ -39,6 +39,7 @@ from reportlab.pdfgen import canvas
 from reportlab.pdfgen.pathobject import PDFPathObject
 
 from ..i18n import _, translate
+from . import identity as ident
 from . import prayer_times as pt
 from .prayer_labels import DEFAULT_LANG, PRAYER_AR, labels
 from .prayer_times import NoTimes
@@ -219,8 +220,9 @@ _COLS = (  # (column key of the label table, width in mm, alignment)
     ("maghrib", 19, "center"),
     ("isha", 15, "center"),
 )
-ODD_NIGHT_EVES = (20, 22, 24, 26, 28)  # the odd nights 21..29 begin at Maghrib of the day before
-LAYLAT_AL_QADR_EVE = 26  # the night of the 27th
+#: The odd nights 21..29 begin at Maghrib of the day before. No single night is designated: scholars
+#: differ on Laylat al-Qadr, so the last ten nights are marked soberly and the legend says so.
+ODD_NIGHT_EVES = (20, 22, 24, 26, 28)
 
 _FONTS = Path(__file__).resolve().parent.parent.parent / "assets" / "fonts"
 _LOGO = Path(__file__).resolve().parent.parent.parent / "assets" / "logo" / "sada-mark-or.svg"
@@ -362,6 +364,47 @@ def _star(c: canvas.Canvas, cx: float, cy: float, r: float, color) -> None:
     c.drawPath(p, stroke=0, fill=1)
 
 
+class Look:
+    """The colours of one printed calendar: Sada's by default, the mosque's accents when it set them.
+
+    Sada stays the frame (dark header band, column band, fonts); the accents colour the rule under the
+    header, the titles, the Friday line and the odd nights. Every text colour is derived so that it
+    reads on the surface it is drawn on (see `identity`)."""
+
+    def __init__(self, accent: str = "", accent2: str = "", logo=None) -> None:
+        a, b = bool(accent), bool(accent2)
+        pal = ident.palette(accent, accent2)
+        hx = colors.HexColor
+        self.accent = hx(pal["accent"]) if a else LEAF2  # rule under the header, Friday bar
+        self.title = hx(pal["on_dark"])  # titles on the dark bands
+        friday = ident.mix("#ffffff", pal["accent"], 0.35)
+        odd = ident.mix("#ffffff", pal["accent2"], 0.15)
+        self.friday = hx(friday) if a else FRIDAY
+        self.odd = hx(odd) if b else ODDNIGHT
+        self.friday_tag = hx(ident.on_light(pal["accent2"], friday if a else "#f5ead1"))
+        self.odd_tag = hx(ident.on_light(pal["accent2"], odd if b else "#e4ede7"))
+        self.star = hx(pal["accent"]) if a else LEAF2
+        self.logo = logo  # a PIL image of the mosque's logo, or None
+
+
+def _logo_image(mosque: dict):
+    """The mosque's logo as a PIL image (PNG, JPEG, WebP); None for SVG or when it is missing: the Sada
+    mark then stays alone in the header."""
+    from . import branding
+
+    f = branding.path_for(mosque)
+    if f.suffix.lower() == ".svg" or not f.is_file():
+        return None
+    try:
+        from PIL import Image
+
+        im = Image.open(f)
+        im.load()
+        return im.convert("RGBA")
+    except Exception:  # unreadable image: the page prints without it
+        return None
+
+
 def _fit(text: str, font: str, size: float, room: float, floor: float = MIN_FONT) -> float:
     while size > floor and stringWidth(text, font, size) > room:
         size -= 0.5
@@ -404,17 +447,41 @@ def _is_ramadan(month_rows: list[dict]) -> bool:
     return all(Gregorian.fromdate(r["date"]).to_hijri().month == RAMADAN for r in month_rows)
 
 
-def _header(c: canvas.Canvas, mosque: dict, month_rows: list[dict], f: dict[str, str], L: dict, lang: str) -> None:
+def _mosque_logo(c: canvas.Canvas, im, right: float, middle: float, box: float) -> float:
+    """The mosque's logo on an ivory plate (it may be dark on transparent: the plate keeps it readable),
+    centred on `middle`, right edge at `right`. Returns the width taken."""
+    from reportlab.lib.utils import ImageReader
+
+    pad = 2.5 * mm
+    inner = box - 2 * pad
+    k = min(inner / im.width, inner / im.height)
+    w, h = im.width * k, im.height * k
+    pw, ph = w + 2 * pad, h + 2 * pad
+    x, y = right - pw, middle - ph / 2
+    c.setFillColor(IVORY)
+    c.roundRect(x, y, pw, ph, 2.5 * mm, stroke=0, fill=1)
+    c.drawImage(ImageReader(im), x + pad, y + pad, w, h, mask="auto")
+    return pw
+
+
+def _header(
+    c: canvas.Canvas, mosque: dict, month_rows: list[dict], f: dict[str, str], L: dict, lang: str, look: Look
+) -> None:
     first, last = month_rows[0]["date"], month_rows[-1]["date"]
     c.setFillColor(DEEPER)
     c.rect(0, _H - _HEADER_H, _W, _HEADER_H, stroke=0, fill=1)
-    c.setFillColor(LEAF2)
+    c.setFillColor(look.accent)
     c.rect(0, _H - _HEADER_H - 1.2 * mm, _W, 1.2 * mm, stroke=0, fill=1)
-    logo_w = 40 * mm
-    logo_h = _logo(c, _W - _MARGIN - logo_w, _H - _HEADER_H / 2 - 7 * mm, logo_w, LEAF)
+    if look.logo is not None:  # the mosque's mark here; Sada's stays in the foot
+        taken = _mosque_logo(c, look.logo, _W - _MARGIN, _H - _HEADER_H / 2, 32 * mm)
+        logo_h = taken
+        logo_w = taken
+    else:
+        logo_w = 40 * mm
+        logo_h = _logo(c, _W - _MARGIN - logo_w, _H - _HEADER_H / 2 - 7 * mm, logo_w, LEAF)
     room = _W - 2 * _MARGIN - (logo_w + 8 * mm if logo_h else 0)
 
-    c.setFillColor(LEAF)
+    c.setFillColor(look.title)
     c.setFont(f["sans-bold"], 8.5)
     text = c.beginText(_MARGIN, _H - 12 * mm)
     text.setFont(f["sans-bold"], 8.5)
@@ -438,21 +505,20 @@ def _header(c: canvas.Canvas, mosque: dict, month_rows: list[dict], f: dict[str,
             title, sub = _gregorian_span(first, last, L), hijri_span(month_rows, lang)
         else:
             sub = hijri_span(month_rows, lang)
-    c.setFillColor(LEAF)
+    c.setFillColor(look.title)
     c.setFont(f["serif"], 19)
     c.drawString(_MARGIN, _H - 34 * mm, title)
-    c.setFillColor(NIGHT_MUTED)
+    c.setFillColor(IVORY)  # the Hijri span is information, not decoration: full ivory on the dark band
     c.setFont(f["sans"], 10.5)
     c.drawString(_MARGIN, _H - 41 * mm, sub)
 
 
-def _legend(c: canvas.Canvas, y: float, f: dict[str, str], ramadan: bool, left: float, L: dict) -> None:
+def _legend(c: canvas.Canvas, y: float, f: dict[str, str], ramadan: bool, left: float, L: dict, look: Look) -> None:
     x = left
     c.setFont(f["sans"], 8)
-    items = [(FRIDAY, LEAF2, L["legend_friday"])]
+    items = [(look.friday, look.accent, L["legend_friday"])]
     if ramadan:
-        items.append((ODDNIGHT, GREEN, L["legend_odd_nights"]))
-        items.append((DEEP, LEAF, L["legend_qadr"].format(n=27)))
+        items.append((look.odd, look.odd_tag, L["legend_odd_nights"]))
     for fill, edge, text in items:
         c.setFillColor(fill)
         c.setStrokeColor(edge)
@@ -461,10 +527,14 @@ def _legend(c: canvas.Canvas, y: float, f: dict[str, str], ramadan: bool, left: 
         c.setFillColor(MUTED)
         c.drawString(x + 8 * mm, y, text)
         x += 8 * mm + stringWidth(text, f["sans"], 8) + 6 * mm
-    if ramadan:
+    if ramadan:  # one line: what the marks mean, and that no single night is designated
+        note = f"{L['legend_note']} {L['legend_maghrib']}"
+        room = _W - 2 * left
+        if stringWidth(note, f["sans"], 6.2) > room:
+            note = L["legend_note"]
         c.setFillColor(MUTED)
-        c.setFont(f["sans"], 7.2)
-        c.drawString(left, y - 4.6 * mm, L["legend_note"])
+        c.setFont(f["sans"], _fit(note, f["sans"], 7.2, room, 6.2))
+        c.drawString(left, y - 4.6 * mm, note)
 
 
 def _footer(c: canvas.Canvas, st: dict, f: dict[str, str], url: str, L: dict) -> None:
@@ -508,14 +578,17 @@ def _footer(c: canvas.Canvas, st: dict, f: dict[str, str], url: str, L: dict) ->
         c.drawRightString(_W - _MARGIN, 18 * mm, "Sada")
 
 
-def _page(c: canvas.Canvas, mosque: dict, st: dict, month_rows: list[dict], url: str, lang: str) -> None:
+def _page(
+    c: canvas.Canvas, mosque: dict, st: dict, month_rows: list[dict], url: str, lang: str, look: Look | None = None
+) -> None:
+    look = look or Look()
     f = _fontset()
     L = labels(lang)
     widths = [w * mm for _k, w, _a in _COLS]
     total = sum(widths)
     left = (_W - total) / 2
     ramadan_page = any(Gregorian.fromdate(r["date"]).to_hijri().month == RAMADAN for r in month_rows)  # legend
-    _header(c, mosque, month_rows, f, L, lang)
+    _header(c, mosque, month_rows, f, L, lang, look)
 
     top = _H - _HEADER_H - 8 * mm
     bottom = _FOOTER_H + _LEGEND_H + 3 * mm
@@ -525,7 +598,7 @@ def _page(c: canvas.Canvas, mosque: dict, st: dict, month_rows: list[dict], url:
 
     c.setFillColor(DEEP)
     c.rect(left, top - _HEAD_ROW, total, _HEAD_ROW, stroke=0, fill=1)
-    c.setFillColor(LEAF)
+    c.setFillColor(look.title)
     x = left
     for (key, _w, align), w in zip(_COLS, widths, strict=True):
         ar = PRAYER_AR.get(key)
@@ -544,7 +617,7 @@ def _page(c: canvas.Canvas, mosque: dict, st: dict, month_rows: list[dict], url:
             name = L["months"][d.month - 1].capitalize()
             c.setFillColor(DEEP)
             c.rect(left, y - _MONTH_ROW, total, _MONTH_ROW, stroke=0, fill=1)
-            c.setFillColor(LEAF)
+            c.setFillColor(look.title)
             c.setFont(f["sans-bold"], 9.5)
             c.drawString(
                 left + 3 * mm,
@@ -555,15 +628,14 @@ def _page(c: canvas.Canvas, mosque: dict, st: dict, month_rows: list[dict], url:
         h = Gregorian.fromdate(r["date"]).to_hijri()
         friday = r["date"].weekday() == 4
         night = h.month == RAMADAN and h.day in ODD_NIGHT_EVES
-        qadr = night and h.day == LAYLAT_AL_QADR_EVE
-        fill = DEEP if qadr else ODDNIGHT if night else FRIDAY if friday else BAND if i % 2 else colors.white
+        fill = look.odd if night else look.friday if friday else BAND if i % 2 else colors.white
         c.setFillColor(fill)
         c.rect(left, y - row_h, total, row_h, stroke=0, fill=1)
         c.setStrokeColor(LINE)
         c.setLineWidth(0.3)
         c.line(left, y - row_h, left + total, y - row_h)
         if friday:
-            c.setFillColor(LEAF2)
+            c.setFillColor(look.accent)
             c.rect(left, y - row_h, 1.4 * mm, row_h, stroke=0, fill=1)
         base = y - row_h / 2 - fs * 0.17
         dhuhr = " / ".join(r["jumua"]) if friday and r["jumua"] else r["times"]["dhuhr"]
@@ -577,38 +649,40 @@ def _page(c: canvas.Canvas, mosque: dict, st: dict, month_rows: list[dict], url:
             r["times"]["maghrib"],
             r["times"]["isha"],
         ]
-        ink, muted = (IVORY, NIGHT_MUTED) if qadr else (INK, MUTED)
-        font = f["sans-bold"] if (friday or night) else f["sans"]
+        bold = f["sans-bold"] if (friday or night) else f["sans"]
         x = left
-        for (_key, _w, align), w, text in zip(_COLS, widths, cells, strict=True):
-            c.setFillColor(ink if text else muted)
+        for (key, _w, align), w, text in zip(_COLS, widths, cells, strict=True):
+            c.setFillColor(INK if text else MUTED)
+            # the Hijri date and sunrise are read as much as the prayers: the heavier weight keeps them
+            # from looking pale at this size
+            font = f["sans-bold"] if key in ("hijri", "sunrise") else bold
             _put(c, x, w, base, text or "-", align, font, fs if align == "center" else fs - 0.5)
             x += w
         # the tags: jumu'a on a Friday, the night's number on the odd nights
         tag_size = max(6.5, min(8, fs - 3))
         if friday:
-            c.setFillColor(LEAF if qadr else GREEN)
+            c.setFillColor(look.friday_tag)
             c.setFont(f["sans-bold"], tag_size)
             c.drawRightString(left + widths[0] - 2 * mm, base, jumua_word)
         if night:
-            tag = L["laylat_al_qadr"] if qadr else L["night"].format(n=h.day + 1)
+            tag = L["night"].format(n=h.day + 1)
             tag_size = _fit(tag, f["sans-bold"], tag_size, 22 * mm, 5.5)
             c.setFont(f["sans-bold"], tag_size)
             tx = left + widths[0] + widths[1] - 2 * mm
-            c.setFillColor(LEAF if qadr else GREEN)
+            c.setFillColor(look.odd_tag)
             c.drawRightString(tx, base, tag)
             _star(
                 c,
                 tx - stringWidth(tag, f["sans-bold"], tag_size) - 2.6 * mm,
                 base + tag_size * 0.3,
                 1.5 * mm,
-                LEAF if qadr else LEAF2,
+                look.star,
             )
         y -= row_h
     c.setStrokeColor(LINE)
     c.setLineWidth(0.6)
     c.rect(left, y, total, top - y, stroke=1, fill=0)
-    _legend(c, _FOOTER_H + 9 * mm, f, ramadan_page, left, L)
+    _legend(c, _FOOTER_H + 9 * mm, f, ramadan_page, left, L, look)
     _footer(c, st, f, url, L)
 
 
@@ -629,13 +703,15 @@ def pdf_bytes(conn, mosque: dict, first: dt.date, last: dt.date, base_url: str =
     rows = days(conn, mosque, first, last)
     st = pt.read(conn, mosque)
     url = public_page_url(base_url, mosque["slug"]) if base_url and st.get("public") else ""
+    who = pt.identity_of(conn, mosque)
+    look = Look(who["accent"], who["accent2"], _logo_image(mosque) if who["logo"] else None)
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4, pageCompression=1, invariant=1)
     c.setTitle(_latin(f"{mosque.get('name') or ''} - {first.isoformat()} / {last.isoformat()}"))
     c.setCreator("Sada")
     c.setAuthor("Sada")
     for month_rows in groups(rows):
-        _page(c, mosque, st, month_rows, url, lang)
+        _page(c, mosque, st, month_rows, url, lang, look)
         c.showPage()
     c.save()
     return buf.getvalue()

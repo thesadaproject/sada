@@ -66,11 +66,11 @@ LABELS: dict[str, dict] = {
         ),  # fmt: skip
         "jumua": "Jumu'a",
         "night": "Nuit {n}",
-        "laylat_al_qadr": "Nuit du Destin",
         "legend_friday": "Prière du vendredi (Jumu'a)",
         "legend_odd_nights": "Nuits impaires des dix derniers jours",
-        "legend_qadr": "Nuit du Destin ({n}e nuit)",
-        "legend_note": "Les nuits impaires commencent au Maghrib, la veille au soir.",
+        # No single night is designated: opinions differ, so the legend only says where it is sought.
+        "legend_note": "Laylat al-Qadr est recherchée dans les dix dernières nuits, notamment les nuits impaires.",
+        "legend_maghrib": "Les nuits impaires commencent au Maghrib, la veille au soir.",
         "online": "Horaires en ligne, toujours à jour",
         "scan": "Scannez le code avec votre téléphone.",
         "computed": "Horaires calculés.",
@@ -120,11 +120,10 @@ LABELS: dict[str, dict] = {
         ),  # fmt: skip
         "jumua": "Jumu'a",
         "night": "Night {n}",
-        "laylat_al_qadr": "Laylat al-Qadr",
         "legend_friday": "Friday prayer",
         "legend_odd_nights": "Odd nights of the last ten days",
-        "legend_qadr": "Laylat al-Qadr, night {n}",
-        "legend_note": "The odd nights begin at Maghrib, the evening before.",
+        "legend_note": "Laylat al-Qadr is sought in the last ten nights, especially the odd nights.",
+        "legend_maghrib": "The odd nights begin at Maghrib, the evening before.",
         "online": "Times online, always up to date",
         "scan": "Scan the code with your phone.",
         "computed": "Calculated prayer times.",

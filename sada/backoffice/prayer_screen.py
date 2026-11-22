@@ -108,6 +108,7 @@ def days(conn, mosque: dict, first: dt.date, n: int = SPAN) -> dict:
     return {
         "mosque": mosque.get("name") or "",
         "timezone": pt._tz_key(mosque),
+        "identity": pt.identity_of(conn, mosque),
         "days": [day_card(conn, mosque, st, first + dt.timedelta(days=i)) for i in range(n)],
     }
 

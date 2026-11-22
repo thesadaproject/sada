@@ -99,7 +99,7 @@ def test_a_month_is_one_a4_portrait_page_with_the_mosque_the_days_and_the_jumua(
     assert text.count("13:00 / 14:15") == 4  # the jumu'a times stand in the Dhuhr column
     assert "sadakhutbah.org" in text and "Horaires en ligne" in text  # the Sada footer and the QR code's caption
     assert text.count("Ramadan 1448") == 8  # titled March, not Ramadan: its first eight days are the last ones of it
-    assert "Nuit du Destin" in text and "Nuits impaires" in text
+    assert "Nuit du Destin" not in text and "Nuits impaires" in text  # the legend of March is the Ramadan one
     for day in ("Lun. 1", "Mer. 31"):
         assert day in text
     assert "1 Chawwal 1448" in text
@@ -131,10 +131,11 @@ def test_ramadan_is_one_page_titled_ramadan_1448_with_its_odd_nights(env):
     text = pages[0]
     assert "Ramadan 1448" in text and "8 février - 8 mars 2027" in text
     assert "1 Ramadan 1448" in text and "29 Ramadan 1448" in text
-    assert (
-        text.count("Nuit ") == 6 and text.count("Nuit du Destin") == 2
-    )  # nights 21-29, the 27th being "du Destin", + legend
-    assert "Nuit 21" in text and "Nuit 29" in text and "Nuits impaires" in text
+    assert text.count("Nuit ") == 5  # the odd nights 21-29, each tagged alike: no night is singled out
+    assert "Nuit 21" in text and "Nuit 27" in text and "Nuit 29" in text and "Nuits impaires" in text
+    assert "Destin" not in text.replace("Laylat al-Qadr", "")  # no "Nuit du Destin" tag nor legend
+    assert "Laylat al-Qadr est recherchée dans les dix dernières nuits, notamment les nuits impaires" in text
+    assert "27e nuit" not in text and "27th" not in text
     assert "Ven. 12" in text and len(re.findall(r"Ven\. \d+", text)) == 4 and text.count("Jumu'a") == 5  # + legend
     assert "Horaires de prière" in text
 
