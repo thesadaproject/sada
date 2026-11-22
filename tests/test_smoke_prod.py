@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import sys
 from datetime import date
 from pathlib import Path
 
@@ -9,6 +10,7 @@ _spec = importlib.util.spec_from_file_location(
     "smoke_prod", Path(__file__).resolve().parent.parent / "scripts" / "smoke_prod.py"
 )
 smoke = importlib.util.module_from_spec(_spec)
+sys.modules["smoke_prod"] = smoke  # dataclasses look the module up
 _spec.loader.exec_module(smoke)
 
 PAGE = """<!doctype html><html><head>
