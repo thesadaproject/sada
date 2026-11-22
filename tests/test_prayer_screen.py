@@ -67,7 +67,8 @@ def test_without_an_iqama_none_is_shown_nor_invented(env):
     _choose(env)
     h = client(env).get(BASE + "/page").text
     assert _data(h)["days"][0]["iqama"] == {}
-    assert "ne publie pas d'iqama" in h and "noiqama" in h
+    assert "noiqama" in h
+    assert "ne publie pas d'iqama" not in h and "publie pas d" not in h  # never written on a public screen
     assert not re.search(r'class="iq"(?! hidden)', h)
 
 
@@ -178,10 +179,73 @@ def test_one_column_header_names_adhan_and_iqama_only_when_the_mosque_publishes_
     _choose(env, calc={**CALC, "iqama": {"isha": 10}})
     h = client(env).get(BASE + "/page").text
     cols = re.search(r'<div class="cols[^"]*" id="cols".*?</div>', h, re.S).group(0)
-    assert "Adhan" in cols and "Iqama" in cols and "<span hidden>" not in cols
+    assert "Adhan" in cols and "Iqama" in cols and not cols.rstrip().split(">")[0].endswith(" hidden")
+    assert " hidden>" not in cols
+    assert h.count("Adhan") == 1 and h.count("Iqama") == 1  # once, not on every row
     _choose(env)
-    cols = re.search(r'<div class="cols[^"]*" id="cols".*?</div>', client(env).get(BASE + "/page").text, re.S).group(0)
-    assert "noiqama" in cols and "<span hidden>Iqama</span>" in cols
+    h = client(env).get(BASE + "/page").text
+    cols = re.search(r'<div class="cols[^"]*" id="cols".*?</div>', h, re.S).group(0)
+    assert " hidden>" in cols  # without an iqama, the header is gone altogether
+    assert "Adhan" not in re.sub(r'<div class="cols.*?</div>', "", h, flags=re.S)  # ... and the word shows nowhere
+
+
+def test_the_row_of_a_prayer_carries_no_adhan_label(env):
+    _choose(env, calc={**CALC, "iqama": {"isha": 10}})
+    h = client(env).get(BASE + "/page").text
+    for row in re.findall(r'<li class="row prayer".*?</li>', h, re.S):
+        assert "Adhan" not in row and "Iqama" not in row and 'class="lbl"' not in row
+
+
+def test_the_dates_never_end_on_an_orphan_separator(env):
+    _choose(env)
+    h = client(env).get(BASE + "/page").text
+    dates = re.search(r'<p class="dates">(.*?)</p>', h, re.S).group(1)
+    assert "·" not in dates and "sep" not in dates  # Gregorian and Hijri are two lines, no dot between
+    assert 'id="greg"' in dates and 'id="hijri"' in dates
+
+
+FULLSCREEN = (
+    "html:fullscreen .links",
+    "html:fullscreen .fs",
+    "html.kiosk .links",
+    "html.kiosk .fs",
+    "display-mode: fullscreen",
+)
+
+
+def test_in_full_screen_the_links_the_button_and_the_pointer_are_gone_but_sadas_mark_stays(env):
+    _choose(env)
+    h = client(env).get(BASE + "/page").text
+    # the links and the button are tagged so that CSS can hide them; the brand is outside of both
+    assert re.search(r'<nav class="links".*?</nav>', h, re.S) and 'class="fs"' in h
+    assert re.search(r'<footer class="foot">.*<span class="brand">', h, re.S)
+    assert 'class="brand"' not in re.search(r'<nav class="links".*?</nav>', h, re.S).group(0)
+    css = open(prayer_screen.__file__.replace("prayer_screen.py", "static/prayer-screen.css")).read()
+    for sel in FULLSCREEN:
+        assert sel in css, sel
+    hidden = css[css.index("html:fullscreen .links") :].split("}")[0]
+    assert "display: none" in hidden
+    assert "html.idle" in css and "cursor: none" in css  # the pointer vanishes after a pause
+    assert ".brand" in css and ".brand" not in hidden  # Sada's mark is not part of what is hidden
+    js = open(prayer_screen.__file__.replace("prayer_screen.py", "static/prayer-screen.js")).read()
+    assert "fullscreenchange" in js and '"kiosk"' in js and '"idle"' in js and "kiosk=1" in js
+
+
+def test_the_logo_and_accent_appear_on_the_screen_only_when_chosen(env):
+    c = _choose(env)
+    plain = client(env).get(BASE + "/page").text
+    assert "--accent" not in plain and 'class="logo"' not in plain  # Sada's own colours
+    logo = env["tmp"] / "logo.png"
+    from PIL import Image
+
+    Image.new("RGBA", (40, 40), (10, 100, 50, 255)).save(logo)
+    set_mosque(env["conn"], env["mid"], logo_path=str(logo))
+    c.ecrire("/settings/prayer/identity", {"accent": "#101010", "show_logo": "1"}, methode="PUT")
+    public.reset()
+    h = client(env).get(BASE + "/page").text
+    assert 'class="logo"' in h and f"{BASE.replace('/prayer-times', '')}/logo" in h
+    style = re.search(r'<body style="([^"]*)"', h).group(1)
+    assert "--accent:" in style and "#101010" not in style.split("--accent:")[1].split(";")[0]  # lightened to read
 
 
 def test_the_phone_layout_is_sized_on_the_dynamic_viewport_with_safe_areas():

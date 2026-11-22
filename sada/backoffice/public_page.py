@@ -13,6 +13,8 @@ from urllib.parse import quote
 from .. import i18n
 from ..i18n import _
 from . import prayer_export as export
+from .prayer_labels import DEFAULT_LANG, labels
+from .prayer_screen import EMBLEM, SITE, doc
 
 _STYLE = """
 body{margin:0;font:16px/1.4 system-ui,sans-serif;background:#f4f1e8;color:#1f2a24}
@@ -51,14 +53,29 @@ def _doc(title: str, body: str) -> str:
     )
 
 
-def refused(body: dict, status: int) -> str:
-    """A short page for a mosque that does not publish its times here (a Mawaqit mosque links to its page)."""
-    msg = escape(body.get("message") or body.get("error") or "")
-    link = ""
+def refused(body: dict, status: int, lang: str = DEFAULT_LANG) -> str:
+    """The page of a refusal: an unknown or unpublished mosque (404), a Mawaqit mosque (404, linking to its
+    page), a malformed month (422). Sada's night frame, the emblem, a sentence in the mosque's language
+    (French by default, whatever the reader's browser says) and a way out to sadakhutbah.org.
+
+    Which of a missing and an unpublished mosque it is stays unsaid: the answer is the same."""
+    L = labels(lang)["page"]
     url = body.get("mawaqit_url") or ""
-    if status == 404 and url.startswith("https://"):
-        link = f'<p class="dl"><a class="btn main" href="{escape(url, quote=True)}" rel="noopener">Mawaqit</a></p>'
-    return _doc(msg, f"<header><h1>{msg}</h1></header><main>{link}</main>")
+    if status == 422:
+        title, text, actions = L["month_title"], L["month_text"], ""
+    elif status == 404 and url.startswith("https://"):
+        title, text = L["mawaqit_title"], L["mawaqit_text"]
+        actions = (
+            f'<a class="btn main" href="{escape(url, quote=True)}" rel="noopener">{escape(L["mawaqit_button"])}</a>'
+        )
+    else:
+        title, text, actions = L["missing_title"], L["missing_text"], ""
+    site = f'<a class="btn{"" if actions else " main"}" href="https://{SITE}" rel="noopener">{SITE}</a>'
+    body_html = (
+        f'<main class="refuse" role="main">{EMBLEM}<h1>{escape(title)}</h1><p>{escape(text)}</p>'
+        f'<div class="actions">{actions}{site}</div><span class="site">Sada</span></main>'
+    )
+    return doc(f"{title} · Sada", body_html)
 
 
 def render(slug: str, mosque: dict, month: str, rows: list[dict], st: dict) -> str:
