@@ -66,8 +66,18 @@ LABELS: dict[str, dict] = {
         ),  # fmt: skip
         # one-line forms for a narrow column (the month page on a phone)
         "hijri_short": (
-            "Mouh.", "Safar", "Rab. I", "Rab. II", "Jum. I", "Jum. II",
-            "Rajab", "Chaab.", "Ram.", "Chaw.", "D. qa.", "D. hij.",
+            "Mouh.",
+            "Safar",
+            "Rab. I",
+            "Rab. II",
+            "Jum. I",
+            "Jum. II",
+            "Rajab",
+            "Chaab.",
+            "Ram.",
+            "Chaw.",
+            "D. qa.",
+            "D. hij.",
         ),  # fmt: skip
         "jumua": "Jumu'a",
         "night": "Nuit {n}",
@@ -145,8 +155,18 @@ LABELS: dict[str, dict] = {
             "Dhu al-Hijjah",
         ),  # fmt: skip
         "hijri_short": (
-            "Muh.", "Safar", "Rab. I", "Rab. II", "Jum. I", "Jum. II",
-            "Rajab", "Sha.", "Ram.", "Shaw.", "Dhu Q.", "Dhu H.",
+            "Muh.",
+            "Safar",
+            "Rab. I",
+            "Rab. II",
+            "Jum. I",
+            "Jum. II",
+            "Rajab",
+            "Sha.",
+            "Ram.",
+            "Shaw.",
+            "Dhu Q.",
+            "Dhu H.",
         ),  # fmt: skip
         "jumua": "Jumu'a",
         "night": "Night {n}",

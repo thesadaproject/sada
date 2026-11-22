@@ -106,7 +106,9 @@ def test_the_boot_data_cannot_close_its_script_tag():
 def test_bundle_files_are_served_immutable_under_the_public_prefix(env):
     c = client(env)
     r = c.get("/api/v1/public/assets/p/index-abc.js")
-    assert r.status_code == 200 and "immutable" in r.headers["cache-control"] and "javascript" in r.headers["content-type"]
+    assert (
+        r.status_code == 200 and "immutable" in r.headers["cache-control"] and "javascript" in r.headers["content-type"]
+    )
     assert c.get("/api/v1/public/assets/p/font-x.woff2").headers["content-type"] == "font/woff2"
     assert c.get("/api/v1/public/assets/p/nothing.js").status_code == 404
     assert c.get("/api/v1/public/assets/p/..%2Fapp.py").status_code == 404

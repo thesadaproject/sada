@@ -31,7 +31,12 @@ from .prayer_labels import DEFAULT_LANG, labels
 DEFAULT_DIST = Path(__file__).resolve().parent.parent.parent / "packages" / "public" / "dist"
 PREFIX = "/api/v1/public/assets/p/"
 _FILE = re.compile(r"^[A-Za-z0-9_.-]+\.(js|css|woff2?)$")
-_TYPES = {"js": "text/javascript; charset=utf-8", "css": "text/css; charset=utf-8", "woff2": "font/woff2", "woff": "font/woff"}
+_TYPES = {
+    "js": "text/javascript; charset=utf-8",
+    "css": "text/css; charset=utf-8",
+    "woff2": "font/woff2",
+    "woff": "font/woff",
+}
 #: Keys of the language table the bundle needs (the rest stays on the server).
 _LABEL_KEYS = (
     "page", "col", "weekdays", "months", "hijri_months", "hijri_short", "night", "jumua",

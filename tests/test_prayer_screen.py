@@ -270,7 +270,7 @@ def test_tomorrow_is_a_small_word_under_the_name_and_the_footer_links_are_button
     assert 'id="next-day"' in h and "demain" in re.search(r'<small[^>]*id="next-day"[^>]*>(.*?)</small>', h).group(1)
     assert len(re.findall(r'<a class="btn quiet"', re.search(r'<nav class="links".*?</nav>', h, re.S).group(0))) == 2
     js = open(prayer_screen.__file__.replace("prayer_screen.py", "static/prayer-screen.js")).read()
-    assert '"next-day"' in js and 'textContent = nm[0] + tomorrow' not in js  # "demain" no longer pushes the countdown
+    assert '"next-day"' in js and "textContent = nm[0] + tomorrow" not in js  # "demain" no longer pushes the countdown
 
 
 def test_the_tv_grid_has_chourouk_under_adhan_and_the_arabic_beside_the_latin_name():
