@@ -73,7 +73,7 @@ const fr = {
     noSegments: "La régie n'a pas marqué de changement de récitant cette nuit : pas de chapitres.",
     mode: { audio: "son seul", video: "vidéo" },
   },
-  common: { loading: "Chargement…", empty: "Rien à afficher.", save: "Enregistrer", saving: "Enregistrement…", close: "Fermer", error: "Erreur", browse: "Parcourir…" },
+  common: { loading: "Chargement…", empty: "Rien à afficher.", save: "Enregistrer", saving: "Enregistrement…", close: "Fermer", error: "Erreur", browse: "Parcourir…", cancel: "Annuler", confirm: "Confirmer", confirmTitle: "Confirmer l'action", rangeInvalid: "La date de fin précède la date de début." },
   devices: {
     title: "Appareils", intro: "Les PC de {{mosque}} qui diffusent tout seuls. Un appareil est appairé une seule fois, puis il suit le planning : il ne diffuse que pendant un direct.",
     liveRunning: "Un direct est déjà en cours depuis {{source}}.", liveRunningHint: "Une seule source peut diffuser à la fois : les autres sont refusées.",
@@ -875,7 +875,7 @@ const en: typeof fr = {
     noSegments: "The control room marked no change of reciter that night: no chapters.",
     mode: { audio: "sound only", video: "video" },
   },
-  common: { loading: "Loading…", empty: "Nothing to show.", save: "Save", saving: "Saving…", close: "Close", error: "Error", browse: "Browse…" },
+  common: { loading: "Loading…", empty: "Nothing to show.", save: "Save", saving: "Saving…", close: "Close", error: "Error", browse: "Browse…", cancel: "Cancel", confirm: "Confirm", confirmTitle: "Confirm the action", rangeInvalid: "The end date is before the start date." },
   devices: {
     title: "Devices", intro: "The PCs of {{mosque}} that broadcast on their own. A device is paired once, then follows the schedule: it only streams during a live.",
     liveRunning: "A live is already running from {{source}}.", liveRunningHint: "Only one source can broadcast at a time: the others are refused.",

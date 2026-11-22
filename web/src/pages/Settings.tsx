@@ -5,6 +5,7 @@ import { liste } from "../format";
 import { Btn, Card, Field, Tabs, Title, inputClass, toucher } from "@sada/ui";
 import { idOnglet, idPanneau } from "@sada/ui";
 import { RecitersEditor } from "../RecitersEditor";
+import { useConfirm } from "../confirmContext";
 import PrayerSettings from "./PrayerSettings";
 
 type Message = { ok: boolean; texte: string } | null;
@@ -70,6 +71,7 @@ function depuisServeur(d: any): Record<string, string> {
  *  (replays bucket, folders, public address, model, transcription, orchestrator) lives on the
  *  operator's platform page, never here. */
 export default function Settings() {
+  const confirm = useConfirm();
   const { t, i18n } = useTranslation();
   const [d, setD] = useState<any>(null);
   const [f, setF] = useState<Record<string, string>>({});
@@ -88,6 +90,8 @@ export default function Settings() {
   const [ecransInitial, setEcransInitial] = useState("");
   const [ecranVue, setEcranVue] = useState<string>("avant");
   const [apercu, setApercu] = useState("");
+  // Tarawih period: an end before the start is flagged on both fields (min/max stop the picker).
+  const periodeInvalide = !!f.tw_start && !!f.tw_end && f.tw_end < f.tw_start;
   const [gabarit, setGabarit] = useState<Gabarit>({ present: false, url: "" });
   const [rapport, setRapport] = useState<RapportImport | null>(null);
   const [importe, setImporte] = useState(false);
@@ -190,7 +194,7 @@ export default function Settings() {
   };
 
   const nouvelleCle = async () => {
-    if (entree.has_key && !window.confirm(t("settings.keyConfirm"))) return;
+    if (entree.has_key && !(await confirm({ message: t("settings.keyConfirm"), action: t("settings.keyReset"), danger: false }))) return;
     try {
       const r = await api.newStreamKey();
       setCle({ obs_server: r.obs_server, obs_key: r.obs_key, obs_srt: r.obs_srt });
@@ -286,7 +290,7 @@ export default function Settings() {
       <div className="grid max-w-[520px] gap-3.5">
         <Title>{t("settings.logoTitle")}</Title>
         <p className="m-0 text-[0.9rem] text-muted">{t("settings.logoHint")}</p>
-        <img src={d.mosque.logo} alt={t("settings.logoAlt")} className="size-24 rounded-lg border border-line bg-paper-2 object-contain p-2" />
+        <img src={d.mosque.logo} alt={t("settings.logoAlt")} width="96" height="96" className="size-24 rounded-lg border border-line bg-paper-2 object-contain p-2" />
         {!d.mosque.has_logo && <p className="m-0 text-[0.85rem] text-muted">{t("settings.logoNone")}</p>}
         <div className="flex flex-wrap gap-2">
           <input ref={fichier} type="file" accept=".png,.jpg,.jpeg,.webp,.svg,image/*" className="hidden" onChange={envoyerLogo} />
@@ -442,12 +446,17 @@ export default function Settings() {
             )}
             <div className="grid gap-x-3 gap-y-2 sm:grid-cols-2">
               <Field label={t("settings.tarawihStart")}>
-                <input className={inputClass} type="date" value={f.tw_start} onChange={maj("tw_start")} />
+                <input className={inputClass} type="date" value={f.tw_start} max={f.tw_end || undefined}
+                  aria-invalid={periodeInvalide || undefined} aria-describedby={periodeInvalide ? "tw-periode-erreur" : undefined}
+                  onChange={maj("tw_start")} />
               </Field>
               <Field label={t("settings.tarawihEnd")}>
-                <input className={inputClass} type="date" value={f.tw_end} min={f.tw_start || undefined} onChange={maj("tw_end")} />
+                <input className={inputClass} type="date" value={f.tw_end} min={f.tw_start || undefined}
+                  aria-invalid={periodeInvalide || undefined} aria-describedby={periodeInvalide ? "tw-periode-erreur" : undefined}
+                  onChange={maj("tw_end")} />
               </Field>
             </div>
+            {periodeInvalide && <p id="tw-periode-erreur" className="m-0 text-[0.88rem] text-[#7a1f20]">{t("common.rangeInvalid")}</p>}
           </>}
           {sousTarawih === "times" && <>
             <p className="m-0 max-w-[90ch] text-[0.9rem] text-muted">{t("settings.tarawihTimesHint")}</p>

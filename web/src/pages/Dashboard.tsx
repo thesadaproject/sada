@@ -5,6 +5,7 @@ import { api, ApiError, type Traitement } from "../api";
 import { currentSession } from "../session";
 import { Btn, Card, Kicker, Pill, Title } from "@sada/ui";
 import { dateFr, horloge, mmss } from "../format";
+import { useConfirm } from "../confirmContext";
 
 /** Length of a run, when it has both ends: minutes:seconds. */
 function duree(it: Traitement): string {
@@ -27,6 +28,7 @@ function sansChemin(texte: string, mot: string): string {
  *  Live card, then the three counters, then the latest khutbas and the latest commands. */
 export default function Dashboard() {
   const { t, i18n } = useTranslation();
+  const confirm = useConfirm();
   const [d, setD] = useState<any>(null);
   const [erreur, setErreur] = useState(false);
 
@@ -83,7 +85,7 @@ export default function Dashboard() {
 
   /** Sends a command to the live. The server answers with the re-read state: the card updates without a reload. */
   async function envoyer(c: any, corps: Record<string, string> = {}) {
-    if (c.destructive && !window.confirm(t(`dashboard.confirm.${c.key}`))) return;
+    if (c.destructive && !(await confirm({ message: t(`dashboard.confirm.${c.key}`), action: t(`dashboard.cmd.${c.key}`) }))) return;
     setOccupe(true);
     setRetour(null);
     try {

@@ -7,12 +7,15 @@ import "@fontsource-variable/source-sans-3";
 import "@fontsource/eb-garamond/400.css";
 import "./styles.css";
 import App from "./App";
+import { ConfirmProvider } from "./Confirm";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     {/* The front end is served at the root: no URL prefix to strip. */}
     <BrowserRouter>
-      <App />
+      <ConfirmProvider>
+        <App />
+      </ConfirmProvider>
     </BrowserRouter>
   </StrictMode>,
 );

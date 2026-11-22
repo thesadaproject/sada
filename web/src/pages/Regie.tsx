@@ -4,6 +4,9 @@ import { api } from "../api";
 import { playMonitor, type MonitorState } from "../monitor";
 import { Btn } from "@sada/ui";
 import { currentSession } from "../session";
+import { useConfirm } from "../confirmContext";
+import { nombre } from "../format";
+import { usePolling, useNow } from "../usePolling";
 
 /** Control room (“Régie”): two monitors, the scene grid and the transport of the live.
  *
@@ -40,7 +43,7 @@ function Moniteur({ which, titre, sousTitre, available, sante, antenne, prepa, a
   which: "source" | "program"; titre: string; sousTitre: string; available: boolean; sante: Health; antenne: boolean;
   prepa?: Prepa | null; actions?: React.ReactNode;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const video = useRef<HTMLVideoElement>(null);
   const [muet, setMuet] = useState(true);
   const [etat, setEtat] = useState<MonitorState>("connecting");
@@ -99,7 +102,7 @@ function Moniteur({ which, titre, sousTitre, available, sante, antenne, prepa, a
         {enLigne && <span>{etat === "webrtc" ? "WebRTC" : "HLS"}</span>}
         {sante?.online ? (
           <>
-            {sante.kbps != null && <span>{t("regie.kbps", { n: sante.kbps.toLocaleString() })}</span>}
+            {sante.kbps != null && <span>{t("regie.kbps", { n: nombre(sante.kbps, i18n.language) })}</span>}
             {sante.readers != null && <span>{t("regie.readers", { n: sante.readers })}</span>}
           </>
         ) : !enLigne && <span>&nbsp;</span>}
@@ -143,13 +146,39 @@ export default function Regie() {
   return <RegieEcran />;
 }
 
+/** The status strip's facts. The one-second tick lives here, so the rest of the page does not
+ *  re-render every second (the monitors hold live video). */
+function LiveFacts({ live, lu }: { live: Live; lu: number }) {
+  const { t } = useTranslation();
+  const now = useNow(1000);
+  const horlogeS = secondes(live.clock);
+  const maintenant = horlogeS != null ? horlogeS + (now - lu) / 1000 : null;
+  const debut = secondes(live.session?.started);
+  const duree = live.stream_on && maintenant != null && debut != null ? hms(maintenant - debut) : "—";
+  return (
+    <dl className="m-0 flex min-w-0 flex-wrap gap-x-5 gap-y-1 text-[0.9rem]">
+      {[
+        [t("regie.clock"), maintenant != null ? hms(maintenant % 86400) : "—"],
+        [t("regie.onAirFor"), duree],
+        [t("regie.next"), live.next_session ?? "—"],
+        [t("regie.mode"), live.override ? t("regie.manual") : t("regie.auto")],
+      ].map(([k, v]) => (
+        <div key={k} className="flex items-baseline gap-1.5">
+          <dt className="text-night-muted">{k}</dt>
+          <dd className="m-0 font-semibold text-white tabular-nums">{v}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function RegieEcran() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const [live, setLive] = useState<Live | null>(null);
   const [commandes, setCommandes] = useState<Commande[]>([]);
   const [moniteurs, setMoniteurs] = useState<Record<string, { available: boolean; health: Health }>>({});
   const [lu, setLu] = useState(() => Date.now());
-  const [tic, setTic] = useState(() => Date.now());
   const [occupe, setOccupe] = useState(false);
   const [retour, setRetour] = useState<{ ok: boolean; texte: string } | null>(null);
   const [nom, setNom] = useState("");
@@ -158,35 +187,23 @@ function RegieEcran() {
   // Who already publishes (a device, the OBS key, another control room): one publisher per mosque.
   const [editeur, setEditeur] = useState<{ source: string; label: string; text: string } | null>(null);
 
-  // State refreshed every 3 s; a second ticker moves the clock and the duration in between.
-  useEffect(() => {
-    let vivant = true;
-    let minuteur = 0;
-    const lire = async () => {
-      try {
-        const d = await api.regie();
-        if (!vivant) return;
-        setLive(d.live ?? {}); setLu(Date.now());
-        setCommandes(d.commands ?? []);
-        setMoniteurs(d.monitors ?? {});
-        setEditeur(d.publisher ?? null);
-      } catch {
-        if (vivant) setLive((v) => v ?? { ok: false });
-      }
-      if (vivant) minuteur = window.setTimeout(lire, 3000);
-    };
-    lire();
-    return () => { vivant = false; window.clearTimeout(minuteur); };
-  }, []);
-  useEffect(() => {
-    const id = window.setInterval(() => setTic(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
+  // State refreshed every 3 s, paused while the tab is hidden; the clock ticks in LiveFacts.
+  usePolling(async () => {
+    try {
+      const d = await api.regie();
+      setLive(d.live ?? {}); setLu(Date.now());
+      setCommandes(d.commands ?? []);
+      setMoniteurs(d.monitors ?? {});
+      setEditeur(d.publisher ?? null);
+    } catch {
+      setLive((v) => v ?? { ok: false });
+    }
+  }, 3000);
 
   async function envoyer(key: string, corps: Record<string, string> = {}) {
     const c = commandes.find((x) => x.key === key);
     if (!c) return;
-    if (c.destructive && !window.confirm(t(`dashboard.confirm.${key}`))) return;
+    if (c.destructive && !(await confirm({ message: t(`dashboard.confirm.${key}`), action: t(`dashboard.cmd.${key}`) }))) return;
     setOccupe(true);
     setRetour(null);
     try {
@@ -207,11 +224,6 @@ function RegieEcran() {
   const etat = horsService
     ? t("dashboard.unreachable")
     : (live.state && t(`dashboard.state.${live.state}`, { defaultValue: live.state })) || t("dashboard.liveOff");
-  const ecoule = (tic - lu) / 1000;
-  const horlogeS = secondes(live.clock);
-  const maintenant = horlogeS != null ? horlogeS + ecoule : null;
-  const debut = secondes(live.session?.started);
-  const duree = live.stream_on && maintenant != null && debut != null ? hms(maintenant - debut) : "—";
   const scenes = commandes.find((c) => c.key === "scene")?.choices ?? [];
   const extend = commandes.find((c) => c.key === "extend")?.choices ?? [];
   const a = (key: string) => commandes.some((c) => c.key === key);
@@ -230,21 +242,7 @@ function RegieEcran() {
           <span className={`inline-block size-2.5 shrink-0 rounded-full ${pastille} ${live.stream_on ? "animate-pulse" : ""}`} />
           {etat}
         </p>
-        {!horsService && (
-          <dl className="m-0 flex min-w-0 flex-wrap gap-x-5 gap-y-1 text-[0.9rem]">
-            {[
-              [t("regie.clock"), maintenant != null ? hms(maintenant % 86400) : "—"],
-              [t("regie.onAirFor"), duree],
-              [t("regie.next"), live.next_session ?? "—"],
-              [t("regie.mode"), live.override ? t("regie.manual") : t("regie.auto")],
-            ].map(([k, v]) => (
-              <div key={k} className="flex items-baseline gap-1.5">
-                <dt className="text-night-muted">{k}</dt>
-                <dd className="m-0 font-semibold text-white tabular-nums">{v}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
+        {!horsService && <LiveFacts live={live} lu={lu} />}
         {horsService && <p className="m-0 text-[0.9rem] text-night-muted">{t("dashboard.unreachableHint")}</p>}
       </section>
 
@@ -256,7 +254,7 @@ function RegieEcran() {
           {currentSession()?.user.permissions.includes("admin") && (
             <Btn variante="danger" className="ml-auto min-h-9 px-3 py-1 text-[0.88rem]" disabled={occupe}
                  onClick={async () => {
-                   if (!window.confirm(t("devices.takeoverConfirm", { source: editeur.text }))) return;
+                   if (!(await confirm({ message: t("devices.takeoverConfirm", { source: editeur.text }), action: t("devices.takeover") }))) return;
                    setOccupe(true);
                    try { const r = await api.studioTakeover(); setRetour({ ok: true, texte: r.message }); setEditeur(null); }
                    catch (e: any) { setRetour({ ok: false, texte: e?.message ?? t("common.error") }); }
