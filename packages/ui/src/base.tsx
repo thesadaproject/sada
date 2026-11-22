@@ -1,4 +1,4 @@
-import { cloneElement, isValidElement, useEffect, useId, useRef, useState } from "react";
+import { cloneElement, isValidElement, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { idOnglet, idPanneau } from "./onglets";
 import type { Onglet } from "./onglets";
 import type {
@@ -8,6 +8,7 @@ import type {
   MouseEvent as SourisReact,
   ReactElement,
   ReactNode,
+  Ref,
 } from "react";
 
 /** Card accepts the panel attributes (role, id, aria-labelledby) without adding a wrapper:
@@ -40,7 +41,7 @@ export function Btn({
   variante = "plein",
   className = "",
   ...reste
-}: { children: ReactNode; variante?: "plein" | "ghost" | "leaf" | "danger" | "dangerGhost" | "light" } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+}: { children: ReactNode; variante?: "plein" | "ghost" | "leaf" | "danger" | "dangerGhost" | "light"; ref?: Ref<HTMLButtonElement> } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const styles = {
     plein: "border-deep bg-deep text-white hover:bg-deeper",
     ghost: "border-deep bg-transparent text-deep hover:bg-paper-2",
@@ -237,120 +238,128 @@ export function Segmented({
  * Info-bulle — comme celle de vercel-labs/ui : elle précise son déclencheur au
  * survol ET au focus clavier, Échap la referme (le focus reste où il est), et
  * le texte reste attaché par aria-describedby même quand rien n'est affiché.
+ * Elle reste survolable (WCAG 1.4.13) : le pointeur peut passer du déclencheur
+ * à la bulle sans qu'elle se ferme.
  * ------------------------------------------------------------------------- */
 
 /** Courte précision posée sur un élément (bouton, nom…). Un seul enfant, qui
- *  reçoit aria-describedby ; `actif={false}` ne rend que l'enfant. */
-export function Bulle({ texte, children, actif = true, place = "bas" }: {
+ *  reçoit aria-describedby ; `actif={false}` ne rend que l'enfant. Si le texte
+ *  répète le nom accessible de l'enfant (aria-label identique), la bulle reste
+ *  purement visuelle : elle ne s'ajoute pas en description, on lirait deux fois la même chose. */
+export function Bulle({ texte, children, actif = true, masque = false, place = "bas", aligne = "debut" }: {
   texte: string;
   children: ReactNode;
   actif?: boolean;
+  /** Cache la bulle sans changer le DOM (le déclencheur garde son focus), ex. pendant qu'un menu est ouvert. */
+  masque?: boolean;
   place?: "bas" | "haut";
+  /** Bord de l'enfant sur lequel la bulle s'aligne : `fin` évite de déborder d'un conteneur à droite. */
+  aligne?: "debut" | "fin";
 }) {
   const id = useId();
   const [ouvert, setOuvert] = useState(false);
   // Échap la referme : elle ne revient qu'après une nouvelle entrée du pointeur
   // (mouseenter) ou du focus, pas toute seule.
-  const montre = actif && ouvert;
+  const montre = actif && ouvert && !masque;
+
+  // Échap ferme la bulle où que soit le focus (WCAG 1.4.13 : fermable sans bouger le pointeur).
+  useEffect(() => {
+    if (!montre) return;
+    const touche = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.stopPropagation(); setOuvert(false); }
+    };
+    document.addEventListener("keydown", touche, true);
+    return () => document.removeEventListener("keydown", touche, true);
+  }, [montre]);
 
   const enfant = isValidElement(children) ? (children as ReactElement<Record<string, any>>) : null;
   const avant = (enfant?.props ?? {}) as Record<string, any>;
 
   if (!actif) return <>{children}</>;
 
+  const memeNom = avant["aria-label"] === texte;
   const declencheur = enfant
     ? cloneElement(enfant, {
-        "aria-describedby": [avant["aria-describedby"], id].filter(Boolean).join(" ") || undefined,
-        onFocus: (e: FocusReact) => { avant.onFocus?.(e); setOuvert(true); },
+        "aria-describedby": memeNom ? avant["aria-describedby"] : [avant["aria-describedby"], id].filter(Boolean).join(" ") || undefined,
+        // Au clavier seulement : un clic à la souris donne aussi le focus, la bulle ne doit pas y rester collée.
+        onFocus: (e: FocusReact) => { avant.onFocus?.(e); if (e.currentTarget.matches(":focus-visible")) setOuvert(true); },
         onBlur: (e: FocusReact) => { avant.onBlur?.(e); setOuvert(false); },
-        onMouseEnter: (e: SourisReact) => { avant.onMouseEnter?.(e); setOuvert(true); },
-        onMouseLeave: (e: SourisReact) => { avant.onMouseLeave?.(e); setOuvert(false); },
-        onKeyDown: (e: ToucheReact) => {
-          avant.onKeyDown?.(e);
-          // Échap ferme la bulle, pas la modale derrière elle.
-          if (e.key === "Escape" && montre) { e.stopPropagation(); setOuvert(false); }
-        },
       })
     : children;
 
+  // Les événements du pointeur sont sur l'enveloppe : la bulle en fait partie, donc la survoler
+  // garde le déclencheur « survolé ». Le rembourrage (pt-1.5 / pb-1.5) comble l'espace entre les deux.
   return (
-    <span className="relative inline-flex min-w-0">
+    <span className="relative inline-flex min-w-0"
+      onMouseEnter={() => setOuvert(true)} onMouseLeave={() => setOuvert(false)}>
       {declencheur}
       <span
         role="tooltip"
         id={id}
-        className={`pointer-events-none absolute left-0 z-40 w-max max-w-[16rem] rounded-[6px] bg-night px-2 py-1 text-[0.78rem] leading-snug font-normal text-paper shadow-[0_6px_18px_rgba(10,16,12,0.3)] ${
-          place === "haut" ? "bottom-full mb-1.5" : "top-full mt-1.5"
+        aria-hidden={memeNom || undefined}
+        className={`absolute z-40 w-max max-w-[16rem] ${aligne === "fin" ? "end-0" : "start-0"} ${
+          place === "haut" ? "bottom-full pb-1.5" : "top-full pt-1.5"
         } ${montre ? "" : "hidden"}`}
       >
-        {texte}
+        <span className="block rounded-[6px] bg-night px-2 py-1 text-[0.78rem] leading-snug font-normal text-paper shadow-[0_6px_18px_rgba(10,16,12,0.3)]">
+          {texte}
+        </span>
       </span>
     </span>
   );
 }
 
 /* ---------------------------------------------------------------------------
- * Modale — piège à focus, Échap, retour du focus au déclencheur (mêmes règles
- * que la boîte de dialogue de vercel-labs/ui, sans dépendance).
+ * Modale — l'élément natif <dialog> ouvert par showModal() : le navigateur
+ * rend la page inerte, garde le focus dans la boîte, gère Échap et rend le
+ * focus au déclencheur. Le clic à l'extérieur ferme (closedby="any").
  * ------------------------------------------------------------------------- */
 
-const FOCUSABLES =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), iframe, [tabindex]:not([tabindex="-1"])';
-
-/** Le focus entre dans la boîte à l'ouverture, Tab y tourne en rond, Échap
- *  appelle `onFermer`, et le focus revient au déclencheur à la fermeture. */
-function usePiegeFocus<T extends HTMLElement = HTMLDivElement>(actif: boolean, onFermer: () => void) {
-  const boite = useRef<T | null>(null);
-  // La fermeture change à chaque rendu : on la lit par référence, pas par dépendance.
-  const fermer = useRef(onFermer);
-  useEffect(() => { fermer.current = onFermer; }, [onFermer]);
-
-  useEffect(() => {
-    if (!actif) return;
-    const dedans = boite.current;
-    const avant = document.activeElement as HTMLElement | null;
-    const focusables = () =>
-      Array.from(dedans?.querySelectorAll<HTMLElement>(FOCUSABLES) ?? []).filter((el) => el.getClientRects().length > 0);
-
-    (focusables()[0] ?? dedans)?.focus();
-
-    const touche = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { e.stopPropagation(); fermer.current(); return; }
-      if (e.key !== "Tab" || !dedans) return;
-      const liste = focusables();
-      if (!liste.length) { e.preventDefault(); return; }
-      const premier = liste[0], dernier = liste[liste.length - 1];
-      const ici = document.activeElement;
-      const dehors = !dedans.contains(ici);
-      if (!e.shiftKey && (ici === dernier || dehors)) { e.preventDefault(); premier.focus(); }
-      else if (e.shiftKey && (ici === premier || dehors)) { e.preventDefault(); dernier.focus(); }
-    };
-
-    document.addEventListener("keydown", touche, true);
-    return () => {
-      document.removeEventListener("keydown", touche, true);
-      if (avant && document.contains(avant)) avant.focus();
-    };
-  }, [actif]);
-
-  return boite;
-}
-
-/** Modale du site : voile sombre, boîte centrée, piège à focus, Échap, et focus
- *  rendu au déclencheur à la fermeture. `boite` reprend les classes de la page,
- *  donc rien ne change visuellement. */
+/** Modale du site : voile sombre (::backdrop), boîte centrée (le navigateur borne déjà sa taille à la fenêtre). `boite` reprend les classes de la
+ *  page, donc rien ne change visuellement. `onFermer` est appelé à toute fermeture venue de
+ *  l'utilisateur (Échap, clic à l'extérieur) ; un bouton de la boîte appelle lui-même la sienne. */
 export function Dialogue({ label, onFermer, boite = "", children }: {
   label: string;
   onFermer: () => void;
   boite?: string;
   children: ReactNode;
 }) {
-  const ref = usePiegeFocus(true, onFermer);
+  const ref = useRef<HTMLDialogElement>(null);
+  // La fermeture change à chaque rendu : on la lit par référence, pas par dépendance.
+  const fermer = useRef(onFermer);
+  useEffect(() => { fermer.current = onFermer; }, [onFermer]);
+
+  useLayoutEffect(() => {
+    const d = ref.current;
+    if (!d) return;
+    const surFermeture = () => fermer.current();
+    d.addEventListener("close", surFermeture);
+    if (!d.open) d.showModal();
+    return () => {
+      // Démontage (ou double passage de StrictMode) : pas de rappel de fermeture.
+      d.removeEventListener("close", surFermeture);
+      if (d.open) d.close();
+    };
+  }, []);
+
+  // Safari ne connaît pas closedby : même effet à la main. Le <dialog> est lui-même la cible d'un
+  // clic sur le voile ; on compare donc la position du pointeur à la boîte.
+  const dehors = (e: SourisReact<HTMLDialogElement>) => {
+    if (e.target !== e.currentTarget || "closedBy" in HTMLDialogElement.prototype) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) e.currentTarget.close();
+  };
+
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-night/50 p-4"
-      role="dialog" aria-modal="true" aria-label={label}>
-      <div ref={ref} tabIndex={-1} className={boite}>{children}</div>
-    </div>
+    <dialog
+      ref={ref}
+      aria-label={label}
+      {...({ closedby: "any" } as object)}
+      onClick={dehors}
+      className={`m-auto overscroll-contain text-ink backdrop:overflow-hidden backdrop:overscroll-contain backdrop:bg-night/50 not-open:hidden ${boite}`}
+    >
+      {children}
+    </dialog>
   );
 }
 
@@ -379,7 +388,7 @@ export function Table({ entetes, children }: { entetes: string[]; children: Reac
       <thead>
         <tr>
           {entetes.map((h) => (
-            <th key={h} className={thClass}>{h}</th>
+            <th key={h} scope="col" className={thClass}>{h}</th>
           ))}
         </tr>
       </thead>
@@ -457,19 +466,20 @@ export function Deroulant({ bouton, label, children, aligne = "debut", classeBou
 
   return (
     <div ref={racine} className="relative" onKeyDown={surTouche}>
-      <button
-        ref={declencheur}
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={ouvert}
-        aria-controls={id}
-        aria-label={label}
-        title={label}
-        onClick={() => setOuvert((o) => !o)}
-        className={`cursor-pointer ${classeBouton}`}
-      >
-        {bouton}
-      </button>
+      <Bulle texte={label ?? ""} actif={!!label} masque={ouvert} aligne={aligne}>
+        <button
+          ref={declencheur}
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={ouvert}
+          aria-controls={id}
+          aria-label={label}
+          onClick={() => setOuvert((o) => !o)}
+          className={`cursor-pointer ${classeBouton}`}
+        >
+          {bouton}
+        </button>
+      </Bulle>
       <div
         id={id}
         role="menu"
