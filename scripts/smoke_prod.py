@@ -77,11 +77,7 @@ class _Refs(HTMLParser):
         elif tag == "script" and a.get("id") == "boot":
             self._in_boot = True
             self.boot = ""
-        elif (
-            tag == "link"
-            and a.get("href")
-            and (a.get("rel") == "stylesheet" or a["href"].split("?")[0].endswith(".css"))
-        ):
+        elif tag == "link" and a.get("href") and a.get("rel") in ("stylesheet", "modulepreload", "preload"):
             self.refs.append(a["href"])
 
     def handle_endtag(self, tag):
@@ -97,7 +93,7 @@ def parse_page(html: str) -> tuple[list[str], dict | None]:
     """(.js/.css URLs referenced by the page, boot JSON or None)."""
     parser = _Refs()
     parser.feed(html)
-    refs = [r for r in parser.refs if re.search(r"\.(js|css)(\?|$)", r)]
+    refs = [r for r in parser.refs if not r.startswith("data:") and re.search(r"\.(js|css)(\?|$)", r)]
     try:
         boot = json.loads(parser.boot) if parser.boot else None
     except json.JSONDecodeError:
