@@ -1,5 +1,7 @@
-/* Public prayer-time screen. Palette and fonts are Sada's (web/src/styles.css): night green, paper ink,
-   leaf gold; EB Garamond / Source Sans 3 / Amiri, all served from this site. */
+/* Public prayer-time pages (screen, month, refusals). Palette and fonts are Sada's (web/src/styles.css):
+   night green, paper ink, leaf gold; EB Garamond / Source Sans 3 / Amiri, all served from this site.
+   A mosque brings an accent (and a second one) through the custom properties --accent* set on <body>;
+   the server derives them so the text stays readable (see identity.py). Without them: Sada's gold. */
 :root {
   --night: #0b1a14;
   --deeper: #12261e;
@@ -8,80 +10,116 @@
   --leaf: #e2c27a;
   --ink: #12261e;
   --night-ink: #f0ead9;
-  --night-muted: #b3b8a6;
+  --night-muted: #d3d8c6;
   --line: #2c4a3c;
+  --accent: var(--leaf);        /* accent as text / line on the dark ground */
+  --accent-fill: var(--leaf);   /* accent as a painted surface ... */
+  --accent-ink: var(--ink);     /* ... and the ink written on it */
   --serif: "EB Garamond", "Instrument Serif", Georgia, serif;
   --sans: "Source Sans 3", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --arabic: "Amiri", "Traditional Arabic", "Noto Naskh Arabic", serif;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; background: var(--night); color: var(--night-ink); font: 400 16px/1.4 var(--sans); }
-a { color: var(--leaf); }
-a:focus-visible, button:focus-visible { outline: 3px solid var(--leaf); outline-offset: 3px; }
+a { color: var(--accent); }
+a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 [hidden] { display: none !important; }
 .ar { font-family: var(--arabic); }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* Sada's mark is the Arabic word-mark (inline svg, gold), never a crescent. */
+.wordmark { display: block; height: auto; flex: none; }
+/* One face for every figure of the screen (clock, countdown, grid, month table): lining, tabular, same weight. */
+.clock, .count, .row time, .month td, .month th.d { font-family: var(--sans); font-weight: 600;
+  font-variant-numeric: lining-nums tabular-nums; font-feature-settings: "lnum" 1, "tnum" 1; }
 
 .screen {
   /* One unit for everything: it follows the smaller of the two axes of the window. */
-  --u: min(.95vw, 1.55vh);
-  min-height: 100vh; min-height: 100dvh;
-  padding: calc(var(--u) * 1.6) calc(var(--u) * 3);
+  --u: min(.95vw, 1.7vh);
+  /* Exactly the window: the rows share what is left (their content never decides the page's height). */
+  height: 100vh; height: 100dvh; overflow: hidden;
+  padding: calc(var(--u) * 1.6) calc(var(--u) * 3) calc(var(--u) * 1.2);
   display: grid; gap: calc(var(--u) * 1.2) calc(var(--u) * 3);
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   grid-template-areas: "top top" "clock list" "next list" "foot foot";
-  grid-template-rows: auto 1fr 1fr auto;
+  grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr) auto;
   background: radial-gradient(120% 90% at 20% 0%, var(--deeper) 0%, var(--night) 70%);
 }
 .top { grid-area: top; display: flex; justify-content: space-between; align-items: center; gap: 1em; }
-.mosque { margin: 0; font: 600 calc(var(--u) * 3.4)/1.1 var(--serif); color: var(--leaf); letter-spacing: .01em; }
+.who { display: flex; align-items: center; gap: calc(var(--u) * 1.2); min-width: 0; }
+.logo { height: calc(var(--u) * 4.6); width: auto; max-width: calc(var(--u) * 12); object-fit: contain; border-radius: calc(var(--u) * .6);
+  background: var(--night-ink); padding: calc(var(--u) * .35); }
+.mosque { margin: 0; font: 600 calc(var(--u) * 3.6)/1.1 var(--serif); color: var(--accent); letter-spacing: .01em; }
 .fs { font: 600 calc(var(--u) * 1.3)/1 var(--sans); color: var(--night-ink); background: transparent; border: 1px solid var(--night-muted);
   border-radius: 999px; padding: .6em 1.2em; cursor: pointer; }
 .fs:hover { background: var(--deep); }
 
-.clockbox { grid-area: clock; align-self: end; }
-.clock { display: block; font: 600 calc(var(--u) * 13.5)/1 var(--sans); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
-.dates { margin: calc(var(--u) * .8) 0 0; font: 400 calc(var(--u) * 2.3)/1.3 var(--serif); color: var(--night-ink); }
-.dates #hijri { color: var(--leaf); white-space: nowrap; }
+/* The left block (clock on top, next prayer at the bottom) spans exactly the height of the grid on the right. */
+.clockbox { grid-area: clock; align-self: start; }
+.clock { display: block; font-size: calc(var(--u) * 12); line-height: 1; letter-spacing: 0; }
+.dates { margin: calc(var(--u) * .9) 0 0; font: 400 calc(var(--u) * 2.5)/1.3 var(--serif); color: var(--night-ink); }
+.dates span { display: block; }  /* Gregorian, then Hijri: two lines, so no separator can end up alone at a line's end */
+.dates #hijri { color: var(--accent); }
 
-.next { grid-area: next; align-self: start; background: var(--deep); border: 1px solid var(--line); border-radius: calc(var(--u) * 1.2);
-  padding: calc(var(--u) * 1.6) calc(var(--u) * 2.2); }
-.kicker { margin: 0; font: 600 calc(var(--u) * 1.4)/1.2 var(--sans); text-transform: uppercase; letter-spacing: .12em; color: var(--night-muted); }
-.nextname { margin: calc(var(--u) * .4) 0 0; font: 600 calc(var(--u) * 4)/1.1 var(--serif); display: flex; gap: .5em; align-items: baseline; flex-wrap: wrap; }
-.nextname .ar { font-size: 1.1em; font-weight: 400; color: var(--leaf); }
-.count { margin: calc(var(--u) * .4) 0 0; font: 600 calc(var(--u) * 7)/1 var(--sans); font-variant-numeric: tabular-nums; color: var(--leaf); }
+.next { grid-area: next; align-self: end; margin: 0; background: var(--deep); border: 1px solid var(--accent2, var(--line));
+  border-radius: calc(var(--u) * 1.2); padding: calc(var(--u) * 1.8) calc(var(--u) * 2.4); }
+.kicker { margin: 0; font: 600 calc(var(--u) * 1.5)/1.2 var(--sans); text-transform: uppercase; letter-spacing: .12em; color: var(--night-muted); }
+.nextname { margin: calc(var(--u) * .4) 0 0; font: 600 calc(var(--u) * 4.4)/1.1 var(--serif); display: flex; gap: .5em 1em; align-items: baseline; flex-wrap: wrap; }
+.nextname .ar { font-size: 1.1em; font-weight: 400; line-height: 1.2; color: var(--accent); }
+.nn { display: flex; flex-direction: column; }
+.tmrw { font: 600 .32em/1.2 var(--sans); text-transform: uppercase; letter-spacing: .14em; color: var(--night-muted); }
+.count { margin: calc(var(--u) * .4) 0 0; font-size: calc(var(--u) * 7.6); line-height: 1; color: var(--accent); }
 
-.list { grid-area: list; align-self: stretch; display: flex; flex-direction: column; justify-content: center; }
-.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: calc(var(--u) * .55); }
-.row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: calc(var(--u) * 1);
-  padding: calc(var(--u) * .6) calc(var(--u) * 1.6); border: 1px solid var(--line); border-radius: calc(var(--u) * 1);
-  background: rgba(28, 58, 46, .45); }
-.rows.noiqama .row { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); }
-.nm { display: flex; flex-direction: column; }
-.nm .fr { font: 600 calc(var(--u) * 2.5)/1.15 var(--serif); }
-.nm .ar { font-size: calc(var(--u) * 2); line-height: 1.1; color: var(--night-muted); }
-.ad, .iq { display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
-.lbl { font: 600 calc(var(--u) * 1.05)/1.2 var(--sans); text-transform: uppercase; letter-spacing: .1em; color: var(--night-muted); }
-.row time { font: 600 calc(var(--u) * 3.2)/1.05 var(--sans); font-variant-numeric: tabular-nums; }
+/* The list fills the height it is given: no empty band under it on a 16:9 screen. */
+.list { grid-area: list; align-self: stretch; display: flex; flex-direction: column; justify-content: flex-start; min-height: 0; }
+.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: calc(var(--u) * .6); flex: 1 1 auto; min-height: 0;
+  grid-auto-rows: minmax(0, 1fr); }
+.row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); align-items: center; gap: calc(var(--u) * 1);
+  padding: calc(var(--u) * .6) calc(var(--u) * 1.8); border: 1px solid var(--line); border-radius: calc(var(--u) * 1);
+  background: rgba(28, 58, 46, .55); }
 .rows:not(.noiqama) .row { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr); }
-.rows:not(.noiqama) .row time { font-size: calc(var(--u) * 2.7); }
-.rows:not(.noiqama) .row.sun time { font-size: calc(var(--u) * 2.4); }
+/* Latin name and Arabic name side by side on one baseline (as on the phone); the Arabic line is given room
+   (Amiri's marks reach far above and below), so the row never clips it. */
+.nm { display: flex; flex-direction: row; align-items: baseline; flex-wrap: wrap; gap: 0 calc(var(--u) * 1.2); min-width: 0; }
+.nm .fr { font: 600 calc(var(--u) * 2.7)/1.25 var(--serif); }
+.nm .ar { font-size: calc(var(--u) * 2.3); line-height: 1.4; color: var(--night-ink); }
+.ad, .iq { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.lbl { font: 600 calc(var(--u) * 1.15)/1.2 var(--sans); text-transform: uppercase; letter-spacing: .1em; color: var(--night-muted); }
+.row time { font-size: calc(var(--u) * 3.6); line-height: 1.05; }
+.rows:not(.noiqama) .row time { font-size: calc(var(--u) * 3.2); }
+/* The one column header that names Adhan and Iqama, above the rows; absent without an iqama. Same grid, same
+   padding (and the row's border) as a row, centred like the times it sits over. */
+.cols { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr); gap: calc(var(--u) * 1);
+  padding: 0 calc(var(--u) * 1.8) calc(var(--u) * .5); border: 1px solid transparent; border-width: 0 1px;
+  font: 600 calc(var(--u) * 1.25)/1.2 var(--sans); text-transform: uppercase; letter-spacing: .12em; color: var(--night-muted);
+  text-align: center; }
+.cols span:first-child { visibility: hidden; }
 .row.sun { background: transparent; border-style: dashed; }
-.row.sun time { font-size: calc(var(--u) * 2.8); color: var(--night-muted); }
-.row.sun .nm .fr { font-size: calc(var(--u) * 2.2); }
-.row.jumua { border-color: var(--leaf); }
-.row.past { opacity: .72; }
-.row.now { background: var(--leaf); border-color: var(--leaf); color: var(--ink); opacity: 1; }
-.row.now .ar, .row.now .lbl { color: var(--ink); }
-.none, .note { margin: calc(var(--u) * 1) 0 0; color: var(--night-muted); font-size: calc(var(--u) * 1.6); }
+.row.sun time { color: var(--night-ink); font-weight: 600; }
+.row.sun .nm .fr { font-size: calc(var(--u) * 2.4); }
+.row.jumua { border-color: var(--accent); }
+.row.past { opacity: .82; }
+.row.now { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--accent-ink); opacity: 1; }
+.row.now .ar, .row.now .lbl { color: var(--accent-ink); }
+.none { margin: calc(var(--u) * 1) 0 0; color: var(--night-muted); font-size: calc(var(--u) * 1.8); }
+/* Chourouk is a time, not a prayer: it stands under ADHAN like the others (no iqama). Jumu'a gets both columns. */
+.row.jumua .ad { grid-column: 2 / -1; }
 
-.foot { grid-area: foot; display: flex; flex-wrap: wrap; gap: 1.5em; justify-content: center; font-size: calc(var(--u) * 1.4); }
-.plain { max-width: 40rem; margin: 20vh auto; padding: 0 1rem; text-align: center; }
+.foot { grid-area: foot; display: flex; flex-wrap: wrap; gap: 1.2em 2em; justify-content: space-between; align-items: center; font-size: calc(var(--u) * 1.4);
+  color: var(--night-muted); }
+.foot .links { display: flex; flex-wrap: wrap; gap: .8em; }
+.brand { display: inline-flex; align-items: center; }
+.brand .wordmark { height: calc(var(--u) * 3.2); width: auto; }
+
+/* Full screen (the Fullscreen API, F11, or a kiosk launched with ?kiosk=1): a display, not a web page.
+   No links, no button, and the pointer disappears after a few idle seconds. Sada's mark stays. */
+html:fullscreen .links, html:fullscreen .fs, html.kiosk .links, html.kiosk .fs { display: none !important; }
+@media (display-mode: fullscreen) { .links, .fs { display: none !important; } }
+html.kiosk .foot, html:fullscreen .foot { justify-content: center; }
+html.idle, html.idle * { cursor: none !important; }
 
 /* Phone, portrait: everything on one screen, no scrolling. The height budget is the dynamic viewport
    (dvh, so Safari's floating bar is accounted for) and sizes are clamp()ed on it. The TV layout above is
-   untouched; the column header "Adhan / Iqama" replaces the label of every row. */
-.cols { display: none; }
+   untouched; the column header "Adhan / Iqama" sits once above the rows. */
 @media (max-aspect-ratio: 1/1) {
   .screen {
     --u: 1dvh;
@@ -94,36 +132,124 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--leaf); outline-
     gap: clamp(6px, 1.4dvh, 14px);
   }
   .top { justify-content: center; }
+  .who { justify-content: center; }
+  .logo { height: clamp(24px, 4.4dvh, 40px); }
   .mosque { font-size: clamp(16px, 2.8dvh, 24px); text-align: center; }
   .fs { display: none; }
-  .clockbox { align-self: start; text-align: center; }
+  .clockbox { align-self: start; text-align: center; padding: 0; }
   .clock { font-size: clamp(38px, 8.2dvh, 78px); }
   .dates { margin: 2px 0 0; font-size: clamp(12px, 1.9dvh, 17px); line-height: 1.25; }
-  .dates .sep { display: none; }
-  .dates span { display: block; }
-  .next { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 12px;
+  .next { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 12px; margin: 0;
     padding: clamp(6px, 1.2dvh, 12px) clamp(10px, 2dvh, 16px); border-radius: 12px; }
   .kicker { grid-column: 1; font-size: clamp(9px, 1.35dvh, 12px); }
-  .nextname { grid-column: 1; margin: 1px 0 0; font-size: clamp(17px, 2.9dvh, 26px); flex-wrap: nowrap; gap: .4em; }
+  .nextname { grid-column: 1; margin: 1px 0 0; font-size: clamp(17px, 2.9dvh, 26px); flex-wrap: nowrap; gap: .4em .8em; align-items: center; }
+  .nextname .ar { line-height: 1.2; }
+  .tmrw { font-size: .5em; }
   .count { grid-column: 2; grid-row: 1 / span 2; margin: 0; font-size: clamp(24px, 4.6dvh, 42px); }
   .list { justify-content: flex-start; min-height: 0; }
-  .cols { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 8px;
-    padding: 0 clamp(10px, 2dvh, 16px) clamp(2px, .5dvh, 4px); font: 600 clamp(9px, 1.3dvh, 12px)/1.2 var(--sans);
-    text-transform: uppercase; letter-spacing: .1em; color: var(--night-muted); text-align: right; }
-  .cols.noiqama { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); }
-  .cols span:first-child { visibility: hidden; }
-  .rows { flex: 1 1 auto; min-height: 0; grid-auto-rows: minmax(0, 1fr); gap: clamp(3px, .7dvh, 7px); }
+  .cols { gap: 8px; padding: 0 clamp(10px, 2dvh, 16px) clamp(2px, .5dvh, 4px); font-size: clamp(9px, 1.3dvh, 12px); }
+  .rows { gap: clamp(3px, .7dvh, 7px); }
   .row, .rows:not(.noiqama) .row { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
     padding: 0 clamp(10px, 2dvh, 16px); gap: 8px; border-radius: 10px; min-height: 0; }
   .rows.noiqama .row { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); }
-  .nm { flex-direction: row; align-items: baseline; gap: .6em; }
-  .nm .fr, .rows:not(.noiqama) .nm .fr, .row.sun .nm .fr { font-size: clamp(15px, 2.6dvh, 23px); line-height: 1.1; }
+  .nm { flex-wrap: nowrap; gap: .6em; }
+  .nm .fr, .row.sun .nm .fr { font-size: clamp(15px, 2.6dvh, 23px); line-height: 1.1; }
   .nm .ar { font-size: clamp(14px, 2.4dvh, 21px); line-height: 1.1; }
   .row .lbl { display: none; }
-  .row time, .rows:not(.noiqama) .row time, .row.sun time, .rows:not(.noiqama) .row.sun time { font-size: clamp(17px, 3dvh, 27px); }
-  .none, .note { margin: 4px 0 0; font-size: clamp(11px, 1.6dvh, 14px); text-align: center; }
-  .foot { gap: 1.2em; font-size: clamp(11px, 1.6dvh, 14px); }
+  .row time, .rows:not(.noiqama) .row time { font-size: clamp(17px, 3dvh, 27px); }
+  .none { margin: 4px 0 0; font-size: clamp(11px, 1.6dvh, 14px); text-align: center; }
+  .foot { gap: .6em 1.2em; font-size: clamp(11px, 1.6dvh, 14px); justify-content: space-between; }
+  .brand .wordmark { height: clamp(18px, 3.2dvh, 28px); }
+  .foot .links { gap: 8px; }
+  .foot .btn { padding: .5em 1em; font-size: clamp(11px, 1.6dvh, 14px); }
 }
 @media (prefers-reduced-motion: no-preference) { .row { transition: background .3s, color .3s; } }
-@media print { .fs, .foot { display: none; } }
-.row.jumua .ad, .row.sun .ad { grid-column: 2 / -1; }
+@media print { .fs, .foot .links { display: none; } }
+
+/* ---- refusal pages (unknown or unpublished mosque, Mawaqit, bad month): Sada's night page ---- */
+.refuse { min-height: 100vh; min-height: 100dvh; display: grid; grid-template-rows: auto 1fr; justify-items: center; text-align: center;
+  padding: clamp(1.5rem, 5vh, 3rem) 1.25rem 2rem;
+  background: radial-gradient(120% 90% at 20% 0%, var(--deeper) 0%, var(--night) 70%); }
+.refuse .mark .wordmark { width: clamp(110px, 16vw, 168px); }
+.refuse .card { align-self: center; display: grid; justify-items: center; gap: .9rem; max-width: 30rem; margin-bottom: 8vh; }
+.refuse h1 { margin: 0; font: 600 clamp(1.9rem, 4.6vw, 3rem)/1.1 var(--serif); color: var(--accent); text-wrap: balance; }
+.refuse p { margin: 0; max-width: 28rem; font-size: clamp(1.05rem, 2.2vw, 1.25rem); line-height: 1.5; text-wrap: balance; }
+.refuse .actions { display: flex; flex-wrap: wrap; gap: .75rem; justify-content: center; margin-top: .5rem; }
+.btn { display: inline-block; padding: .7em 1.3em; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent);
+  text-decoration: none; font-weight: 600; }
+.btn.main { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--accent-ink); }
+.btn:hover { filter: brightness(1.08); }
+/* A discreet button of the frame (footer links of the screen): outline in the line colour, ivory text. */
+.btn.quiet { padding: .5em 1.1em; border-color: var(--line); color: var(--night-ink); background: rgba(28, 58, 46, .35); }
+.btn.quiet:hover { border-color: var(--accent); filter: none; }
+
+/* ---- the month page: same frame as the screen, a table in ivory on night panels ---- */
+.monthpage { max-width: 1100px; margin: 0 auto; padding: 1.4rem 1rem 1rem; min-height: 100vh; display: flex; flex-direction: column; }
+.monthpage main { flex: 1; }
+.mhead .who { display: flex; align-items: center; gap: 1rem; }
+.mhead .logo { height: 3.6rem; width: auto; max-width: 9rem; }
+.mhead .mosque { font-size: clamp(1.6rem, 4vw, 2.6rem); }
+.mhead .kicker { margin: 0 0 .15rem; }
+/* Same face as the title (EB Garamond, semibold), only smaller and in the accent: no second typeface. */
+.mhead .sub { margin: .2rem 0 0; font: 600 1.1rem/1.3 var(--serif); color: var(--accent); }
+.months { display: flex; justify-content: center; align-items: center; gap: 1.2rem; margin: 1.2rem 0 .6rem; }
+.months strong { font: 600 clamp(1.4rem, 3.4vw, 2rem)/1 var(--serif); color: var(--accent); min-width: 9ch; text-align: center; }
+.dl { display: flex; flex-wrap: wrap; gap: .4rem 1.4rem; justify-content: center; align-items: center; margin: .4rem 0 1rem; }
+.dlmenu { position: relative; }
+.dlmenu summary { list-style: none; cursor: pointer; padding: .5em 1.1em; font-size: .95rem; }
+.dlmenu summary::-webkit-details-marker { display: none; }
+.dlmenu summary::after { content: "▾"; margin-left: .5em; font-size: .8em; }
+.dlmenu[open] summary { background: var(--deep); }
+.dlmenu .menu { position: absolute; z-index: 5; left: 50%; transform: translateX(-50%); top: calc(100% + .4rem); min-width: 15rem;
+  display: grid; background: var(--deeper); border: 1px solid var(--line); border-radius: 12px; padding: .3rem; box-shadow: 0 8px 24px rgba(0, 0, 0, .45); }
+.dlmenu .menu a { color: var(--night-ink); text-decoration: none; padding: .6em .9em; border-radius: 8px; white-space: nowrap; }
+.dlmenu .menu a:hover, .dlmenu .menu a:focus-visible { background: var(--deep); color: var(--accent); }
+.dl .alt { color: var(--night-muted); font-size: .95rem; text-underline-offset: 3px; }
+.dl .alt:hover { color: var(--accent); }
+.wrap { overflow-x: auto; }
+.month { width: 100%; border-collapse: separate; border-spacing: 0 3px; font-variant-numeric: tabular-nums; }
+.month th, .month td { text-align: center; padding: .45rem .35rem; background: rgba(28, 58, 46, .55); color: var(--night-ink); }
+.month thead th { background: var(--deep); vertical-align: bottom; padding-bottom: .5rem; }
+.month thead .fr { display: block; font: 600 .95rem/1.2 var(--sans); color: var(--accent); }
+.month thead .ar { display: block; font-size: 1.1rem; line-height: 1.2; color: var(--night-ink); }
+.month tbody td { font: 600 1.05rem/1.2 var(--sans); }
+.month .d, .month .h { text-align: left; }
+.month tbody th.d { font: 600 1rem/1.2 var(--sans); white-space: nowrap; }
+.month .h { font: 400 .95rem/1.2 var(--sans); }
+.month tr > :first-child { border-radius: 8px 0 0 8px; padding-left: .8rem; }
+.month tr > :last-child { border-radius: 0 8px 8px 0; padding-right: .8rem; }
+.month .hj { display: none; }
+.month .tag { display: inline-block; margin-left: .5rem; font: 600 .72rem/1 var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.month tr.fri > * { box-shadow: inset 0 1px 0 var(--accent), inset 0 -1px 0 var(--accent); }
+.month tr.fri > :first-child { box-shadow: inset 3px 0 0 var(--accent), inset 0 1px 0 var(--accent), inset 0 -1px 0 var(--accent); }
+.month tr.odd > * { background: rgba(61, 107, 87, .55); }
+.month tr.today > * { background: var(--accent-fill); color: var(--accent-ink); }
+.month tr.today .tag, .month tr.today .hj { color: var(--accent-ink); }
+.nw, .jm { white-space: nowrap; }
+.jm i { font-style: normal; opacity: .6; margin: 0 .25em; }
+.monthpage .foot { justify-content: center; margin-top: 1.4rem; }
+@media (max-width: 640px) {
+  .monthpage { padding: .9rem .5rem .8rem; }
+  .month th, .month td { padding: .4rem .15rem; }
+  .month .h, .month thead .h { display: none; }
+  .month tbody td { font-size: .86rem; }
+  .month thead .fr { font-size: .72rem; }
+  .month thead .ar { font-size: .85rem; }
+  .month tbody th.d { font-size: .82rem; white-space: normal; }
+  .month tbody th.d .gd { display: block; }
+  .month .hj { display: block; font: 400 .66rem/1.15 var(--sans); color: var(--night-muted); margin-top: 1px; white-space: nowrap; }
+  .month .tag { margin-left: 0; font-size: .6rem; }
+  .month .tag.jt { display: none; }  /* the Friday row is already ruled in the accent, and its Dhuhr cell shows the Jumu'a times */
+  .month .jm { font-size: .74rem; letter-spacing: -.02em; }
+  .month .jm i { margin: 0 .08em; }
+  .month tr > :first-child { padding-left: .45rem; }
+  .month tr > :last-child { padding-right: .7rem; }
+  .dlmenu .menu { min-width: 13.5rem; }
+  .mhead .who { justify-content: center; text-align: center; }
+}
+@media print {
+  html, body, .refuse, .monthpage { background: #fff !important; color: #000 !important; }
+  .month th, .month td { background: #fff !important; color: #000 !important; border-bottom: 1px solid #ccc; }
+  .month thead .fr, .mhead .mosque, .months strong { color: #000 !important; }
+  .months a, .dl, .foot { display: none !important; }
+}

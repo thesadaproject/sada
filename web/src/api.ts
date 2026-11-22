@@ -258,6 +258,8 @@ export const api = {
   tarawih: (corps: Record<string, unknown>) => ecrire<any>("PUT", "/settings/tarawih", corps),
   /** Prayer times: the source and its options, a calculated preview (nothing saved), the Mawaqit deduction. */
   prayerSave: (corps: Record<string, unknown>) => ecrire<any>("PUT", "/settings/prayer", corps),
+  prayerIdentity: (corps: { accent: string; accent2: string; show_logo: boolean }) =>
+    ecrire<any>("PUT", "/settings/prayer/identity", corps),
   prayerPreview: (calc: Record<string, unknown>, month: string) => ecrire<any>("POST", "/settings/prayer/preview", { calc, month }),
   prayerDeduce: (mawaqit_url: string) => ecrire<any>("POST", "/settings/prayer/deduce", { mawaqit_url }),
   prayerDays: (month: string) => demande<any>(`/settings/prayer/days?month=${encodeURIComponent(month)}`),

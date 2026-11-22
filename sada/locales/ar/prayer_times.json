@@ -81,5 +81,8 @@
   "{n} day(s) imported.": "تم استيراد {n} يومًا.",
   "{value} is not a date (YYYY-MM-DD or DD/MM/YYYY).": "{value} ليس تاريخًا (YYYY-MM-DD أو DD/MM/YYYY).",
   "{value} is not a time (HH:MM).": "{value} ليس وقتًا (HH:MM).",
-  "{value} is not in {month}.": "{value} ليس ضمن {month}."
+  "{value} is not in {month}.": "{value} ليس ضمن {month}.",
+  "A colour looks like #1a7f5a.": "اللون يُكتب هكذا: #1a7f5a.",
+  "Choose the source of the prayer times first.": "اختر أولًا مصدر أوقات الصلاة.",
+  "Look of the public pages saved.": "تم حفظ مظهر الصفحات العامة."
 }

@@ -49,7 +49,7 @@
     });
     $("rows").classList.toggle("noiqama", !any);
     var cols = $("cols");
-    if (cols) { cols.classList.toggle("noiqama", !any); cols.lastElementChild.hidden = !any; }
+    if (cols) cols.hidden = !any;  /* no iqama today: no "Adhan / Iqama" header at all */
   }
 
   /* Upcoming moments from today's and tomorrow's data, as seconds since today's midnight. */
@@ -84,14 +84,15 @@
       li.classList.toggle("past", !!past && !mine);
     });
     if (!ev) {
-      $("next-fr").textContent = "—"; $("next-ar").textContent = ""; $("count").textContent = "";
+      $("next-fr").textContent = "—"; $("next-ar").textContent = ""; $("next-day").hidden = true; $("count").textContent = "";
       $("next-kicker").textContent = "Pas d'horaire à venir";
       return;
     }
     var nm = NAMES[ev.p];
     var tomorrow = ev.day === 1 ? " (demain)" : "";
     $("next-kicker").textContent = ev.kind === "iqama" ? "Iqama dans" : "Prochaine prière dans";
-    $("next-fr").textContent = nm[0] + tomorrow;
+    $("next-fr").textContent = nm[0];
+    $("next-day").hidden = ev.day !== 1;  /* "demain", small, under the name: it must not push the countdown */
     $("next-ar").textContent = nm[1];
     $("count").textContent = hms(ev.at - n.s);
     var key = ev.kind + ev.p + ev.day;
@@ -128,10 +129,31 @@
   /* Pick up edits made in the back office, and a stale page left open for days. */
   setInterval(function () { load(now().iso); }, 30 * 60 * 1000);
 
+  /* Full screen is a display, not a web page: no links, no button, and the pointer disappears after a
+     few idle seconds. CSS already hides the links on :fullscreen / display-mode: fullscreen; the `kiosk`
+     class covers a TV browser started in kiosk mode (?kiosk=1) and drives the idle pointer. */
+  var html = document.documentElement;
   var fs = $("fs");
-  if (fs && document.documentElement.requestFullscreen) {
-    fs.hidden = false;
-    fs.addEventListener("click", function () { document.documentElement.requestFullscreen().catch(function () {}); });
-    document.addEventListener("fullscreenchange", function () { fs.hidden = !!document.fullscreenElement; });
+  var shown = function () {
+    return !!document.fullscreenElement || window.matchMedia("(display-mode: fullscreen)").matches ||
+      /(^|[?&])kiosk=1(&|$)/.test(location.search);
+  };
+  var idleTimer = null;
+  var wake = function () {
+    html.classList.remove("idle");
+    clearTimeout(idleTimer);
+    if (shown()) idleTimer = setTimeout(function () { html.classList.add("idle"); }, 3000);
+  };
+  var sync = function () {
+    html.classList.toggle("kiosk", shown());
+    if (fs) fs.hidden = shown() || !html.requestFullscreen;
+    wake();
+  };
+  if (fs && html.requestFullscreen) {
+    fs.addEventListener("click", function () { html.requestFullscreen().catch(function () {}); });
   }
+  ["mousemove", "mousedown", "touchstart", "keydown"].forEach(function (e) { document.addEventListener(e, wake, { passive: true }); });
+  document.addEventListener("fullscreenchange", sync);
+  window.matchMedia("(display-mode: fullscreen)").addEventListener("change", sync);
+  sync();
 })();

@@ -364,6 +364,11 @@ prayer_settings = sa.Table(
     # Jumu'a times ("HH:MM", at most three), JSON list: weekly, so not part of the daily rows.
     sa.Column("jumua", sa.Text, nullable=False, server_default=_d("'[]'")),
     sa.Column("updated_at", sa.Text),
+    # Identity on the public pages (migration 24): two accent colours ('#rrggbb', '' = Sada's own) and
+    # whether the mosque's logo (mosques.logo_path) is shown on them.
+    sa.Column("accent", sa.Text, nullable=False, server_default=_d("''")),
+    sa.Column("accent2", sa.Text, nullable=False, server_default=_d("''")),
+    sa.Column("show_logo", sa.Integer, nullable=False, server_default=_d("0")),
 )
 
 # Prayer times a mosque entered itself: one row per mosque and day, "HH:MM" or '' (not set). They are the

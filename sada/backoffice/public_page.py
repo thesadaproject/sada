@@ -1,7 +1,10 @@
-"""The public, read-only page of a mosque's own timetable: one month, and the PDF / CSV downloads.
+"""The public, read-only pages of a mosque's own timetable: one month (table, PDF / CSV downloads) and the
+refusals (unknown or unpublished mosque, Mawaqit, malformed month).
 
-Plain HTML with a little inline style (no script, nothing to fetch): it prints well, works on a phone,
-and carries only what the public endpoint already publishes. Everything written into it is escaped.
+Same frame as the screen (night ground, ivory ink, EB Garamond / Source Sans 3 / Amiri, the stylesheet of
+`prayer_screen`), in the mosque's language (French by default, whatever the reader's browser says), with
+the Arabic name of each prayer under its column like the PDF. Nothing to fetch but the stylesheet and the
+fonts, no script. Everything written into the page is escaped.
 """
 
 from __future__ import annotations
@@ -10,29 +13,12 @@ import datetime as dt
 from html import escape
 from urllib.parse import quote
 
-from .. import i18n
-from ..i18n import _
-from . import prayer_export as export
+from hijridate import Gregorian
 
-_STYLE = """
-body{margin:0;font:16px/1.4 system-ui,sans-serif;background:#f4f1e8;color:#1f2a24}
-header{background:#2f6b4f;color:#fff;padding:18px 16px;text-align:center}
-h1{margin:0;font-size:1.5rem}header p{margin:4px 0 0;opacity:.9}
-main{max-width:760px;margin:0 auto;padding:14px 10px 30px}
-nav,.dl{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;align-items:center;margin:10px 0}
-a.btn{display:inline-block;padding:9px 14px;border-radius:8px;border:1px solid #2f6b4f;color:#2f6b4f;background:#fff;
-text-decoration:none;font-weight:600}
-a.btn.main{background:#2f6b4f;color:#fff}
-table{width:100%;border-collapse:collapse;background:#fff;font-variant-numeric:tabular-nums}
-th{background:#1f2a24;color:#fff;padding:7px 4px;font-size:.85rem}
-td{padding:6px 4px;text-align:center;border-bottom:1px solid #e3dcc7;font-size:.95rem}
-td.d,th.d{text-align:left;padding-left:8px}td.h{text-align:left;color:#6b6f66;font-size:.85rem}
-tr.fri td{background:#f3e3b3;font-weight:700}
-.wrap{overflow-x:auto}
-.empty{text-align:center;color:#6b6f66;padding:24px}
-@media print{nav,.dl{display:none}header{background:none;color:#000}body{background:#fff}}
-@media(max-width:560px){td.h,th.h{display:none}td,th{font-size:.82rem;padding:5px 2px}}
-"""
+from . import identity
+from . import prayer_export as export
+from .prayer_labels import DEFAULT_LANG, PRAYER_AR, labels
+from .prayer_screen import SITE, WORDMARK, doc, logo_img
 
 
 def _shift(month: str, n: int) -> str:
@@ -43,69 +29,111 @@ def _shift(month: str, n: int) -> str:
     return f"{y:04d}-{m:02d}"
 
 
-def _doc(title: str, body: str) -> str:
-    return (
-        f'<!doctype html><html lang="{i18n.current()}" dir="{"rtl" if i18n.current() == "ar" else "ltr"}"><head><meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        f"<title>{escape(title)}</title><style>{_STYLE}</style></head><body>{body}</body></html>"
-    )
+def refused(body: dict, status: int, lang: str = DEFAULT_LANG) -> str:
+    """The page of a refusal: an unknown or unpublished mosque (404), a Mawaqit mosque (404, linking to its
+    page), a malformed month (422). Sada's night frame, the word-mark, a sentence in the mosque's language
+    and a way out to sadakhutbah.org.
 
-
-def refused(body: dict, status: int) -> str:
-    """A short page for a mosque that does not publish its times here (a Mawaqit mosque links to its page)."""
-    msg = escape(body.get("message") or body.get("error") or "")
-    link = ""
+    Which of a missing and an unpublished mosque it is stays unsaid: the answer is the same."""
+    L = labels(lang)["page"]
     url = body.get("mawaqit_url") or ""
-    if status == 404 and url.startswith("https://"):
-        link = f'<p class="dl"><a class="btn main" href="{escape(url, quote=True)}" rel="noopener">Mawaqit</a></p>'
-    return _doc(msg, f"<header><h1>{msg}</h1></header><main>{link}</main>")
+    if status == 422:
+        title, text, actions = L["month_title"], L["month_text"], ""
+    elif status == 404 and url.startswith("https://"):
+        title, text = L["mawaqit_title"], L["mawaqit_text"]
+        actions = (
+            f'<a class="btn main" href="{escape(url, quote=True)}" rel="noopener">{escape(L["mawaqit_button"])}</a>'
+        )
+    else:
+        title, text, actions = L["missing_title"], L["missing_text"], ""
+    site = f'<a class="btn{"" if actions else " main"}" href="https://{SITE}" rel="noopener">{SITE}</a>'
+    body_html = (
+        f'<main class="refuse" role="main"><header class="mark">{WORDMARK}</header>'
+        f'<section class="card"><h1>{escape(title)}</h1><p>{escape(text)}</p>'
+        f'<div class="actions">{actions}{site}</div></section></main>'
+    )
+    return doc(f"{title} · Sadā", body_html)
 
 
-def render(slug: str, mosque: dict, month: str, rows: list[dict], st: dict) -> str:
+def render(
+    slug: str, mosque: dict, month: str, rows: list[dict], st: dict, who: dict | None = None, lang: str = DEFAULT_LANG
+) -> str:
+    """The month. `who` is the mosque's identity ({accent, accent2, logo}); `st` the prayer settings."""
+    L = labels(lang)
+    P = L["page"]
+    who = who or {}
     base = f"/api/v1/public/mosques/{quote(slug)}/prayer-times"
     first = dt.date.fromisoformat(month + "-01")
-    title = f"{export.label(export.MONTHS[first.month - 1])} {first.year}"
+    title = f"{L['months'][first.month - 1].capitalize()} {first.year}"
     name = escape(mosque.get("name") or "")
     prev_m, next_m = _shift(month, -1), _shift(month, 1)
+    cols = (
+        ("date", "d"),
+        ("hijri", "h"),
+        ("fajr", ""),
+        ("sunrise", "sun"),
+        ("dhuhr", ""),
+        ("asr", ""),
+        ("maghrib", ""),
+        ("isha", ""),
+    )
     head = "".join(
-        f'<th class="{c}">{escape(export.label(k))}</th>'
-        for k, c in (
-            ("Date", "d"), ("Hijri", "h"), ("Fajr", ""), ("Sunrise", ""), ("Dhuhr", ""), ("Asr", ""),
-            ("Maghrib", ""), ("Isha", ""),
-        )
-    )  # fmt: skip
-    jumua_word = escape(export.label("Jumu'a"))
+        f'<th scope="col" class="{c}"><span class="fr">{escape(L["col"][k])}</span>'
+        + (f'<span class="ar" lang="ar" dir="rtl">{PRAYER_AR[k]}</span>' if k in PRAYER_AR else "")
+        + "</th>"
+        for k, c in cols
+    )
+    today = dt.date.today()
     lines = []
     for r in rows:
         d = r["date"]
+        h = Gregorian.fromdate(d).to_hijri()
         fri = d.weekday() == 4
+        night = h.month == export.RAMADAN and h.day in export.ODD_NIGHT_EVES  # sober mark, no single night named
         t = r["times"]
-        dhuhr = " / ".join(r["jumua"]) if fri and r["jumua"] else t["dhuhr"]
-        wd = escape(export.label(export.WEEKDAYS[d.weekday()]))
-        hij = escape(r["hijri"])
+        jum = [escape(x) for x in r["jumua"]] if fri and r["jumua"] else []
+        # Jumu'a times on one line, never wrapped: a second line would stretch the row
+        dhuhr = f'<span class="jm">{"<i>/</i>".join(jum)}</span>' if jum else escape(t["dhuhr"] or "-")
+        hij_full = escape(export.hijri_text(d, lang))
+        hij_short = escape(f"{h.day} {L['hijri_short'][h.month - 1]}")
+        tag = f'<span class="tag">{escape(L["night"].format(n=h.day + 1))}</span>' if night else ""
+        cls = " ".join(c for c in ("fri" if fri else "", "odd" if night else "", "today" if d == today else "") if c)
         cells = "".join(
-            f"<td>{escape(v or '-')}</td>" for v in (t["fajr"], t["sunrise"], dhuhr, t["asr"], t["maghrib"], t["isha"])
-        )
+            f'<td class="{"sun" if k == "sunrise" else ""}">{escape(v) if v else "-"}</td>' if k != "dhuhr" else f"<td>{dhuhr}</td>"
+            for k, v in (("fajr", t["fajr"]), ("sunrise", t["sunrise"]), ("dhuhr", t["dhuhr"]), ("asr", t["asr"]),
+                         ("maghrib", t["maghrib"]), ("isha", t["isha"]))
+        )  # fmt: skip
+        jumua = f' <span class="tag jt">{escape(L["jumua"])}</span>' if fri else ""
         lines.append(
-            f'<tr class="{"fri" if fri else ""}"><td class="d">{wd} {d.day}{" · " + jumua_word if fri else ""}</td>'
-            f'<td class="h">{hij}</td>{cells}</tr>'
+            f'<tr class="{cls}"><th scope="row" class="d"><span class="gd">{escape(L["weekdays"][d.weekday()])} {d.day}</span>{jumua}'
+            f'<span class="hj" aria-hidden="true">{hij_short}</span></th>'
+            f'<td class="h">{hij_full}{tag}</td>{cells}</tr>'
         )
     table = (
-        f'<div class="wrap"><table><thead><tr>{head}</tr></thead><tbody>{"".join(lines)}</tbody></table></div>'
+        f'<div class="wrap"><table class="month"><thead><tr>{head}</tr></thead><tbody>{"".join(lines)}</tbody></table></div>'
         if rows
-        else f'<p class="empty">{escape(_("No prayer time entered for this period."))}</p>'
+        else f'<p class="none" role="status">{escape(P["empty"])}</p>'
     )
     q = f"month={month}"
+    # One discreet menu for the three downloads (no script: a <details>), the screen as a secondary link.
     buttons = (
-        f'<p class="dl"><a class="btn main" href="{base}/export?format=pdf&amp;{q}" download>{escape(_("Download the PDF"))}</a>'
-        f'<a class="btn" href="{base}/export?format=csv&amp;{q}" download>{escape(_("Download the CSV"))}</a>'
-        f'<a class="btn" href="{base}/export?format=pdf&amp;ramadan=1" download>{escape(_("Ramadan calendar (PDF)"))}</a></p>'
+        f'<div class="dl"><details class="dlmenu"><summary class="btn">{escape(P["download"])}</summary>'
+        f'<div class="menu"><a href="{base}/export?format=pdf&amp;{q}" download>{escape(P["pdf"])}</a>'
+        f'<a href="{base}/export?format=csv&amp;{q}" download>{escape(P["csv"])}</a>'
+        f'<a href="{base}/export?format=pdf&amp;ramadan=1" download>{escape(P["ramadan"])}</a></div></details>'
+        f'<a class="alt" href="{base}/page">{escape(P["screen"])}</a></div>'
     )
     nav = (
-        f'<nav><a class="btn" href="{base}/page?month={prev_m}" rel="prev">&larr;</a>'
-        f"<strong>{escape(title)}</strong>"
-        f'<a class="btn" href="{base}/page?month={next_m}" rel="next">&rarr;</a></nav>'
+        f'<nav class="months" aria-label="{escape(title)}"><a class="btn" href="{base}/page?month={prev_m}" rel="prev" '
+        f'aria-label="{escape(P["prev"])}">&larr;</a><strong>{escape(title)}</strong>'
+        f'<a class="btn" href="{base}/page?month={next_m}" rel="next" aria-label="{escape(P["next"])}">&rarr;</a></nav>'
     )
-    sub = escape(export.hijri_span(rows)) if rows else ""
-    body = f"<header><h1>{name}</h1><p>{sub}</p></header><main>{nav}{buttons}{table}</main>"
-    return _doc(f"{mosque.get('name') or ''} - {title}", body)
+    sub = escape(export.hijri_span(rows, lang)) if rows else ""
+    body = (
+        f'<div class="monthpage"><header class="mhead"><div class="who">{logo_img(slug, who)}<div>'
+        f'<p class="kicker">{escape(P["kicker"])}</p><h1 class="mosque">{name}</h1><p class="sub">{sub}</p></div></div></header>'
+        f"<main>{nav}{buttons}{table}</main>"
+        f'<footer class="foot"><span class="brand">{WORDMARK}</span></footer></div>'
+    )
+    style = identity.css_vars(who.get("accent", ""), who.get("accent2", ""))
+    return doc(f"{mosque.get('name') or ''} - {title}", body, "", style)
