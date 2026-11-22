@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
+import { parseDay } from "../format";
 import { Btn, Pill, Segmented, inputClass } from "@sada/ui";
 
 /** Khutba list: grouped by month, one readable row per khutba (date, passage, imam, theme).
@@ -16,7 +17,7 @@ const TAILLE = 20; // khutbas per page
 /** ISO date (YYYY-MM-DD) taken at noon, so that no timezone makes the day slip. */
 function jour(iso?: string | null): Date | null {
   if (!iso) return null;
-  const d = new Date(`${iso}T12:00:00`);
+  const d = parseDay(iso);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 

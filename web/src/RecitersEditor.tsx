@@ -65,7 +65,10 @@ export function RecitersEditor({ roster, nights, max, start, end, onChange }: {
           <input className={`${inputClass} min-w-0 flex-1`} maxLength={80} value={nom} placeholder={t("settings.tarawihReciterName")}
                  aria-label={t("settings.tarawihReciterName")} disabled={roster.length >= max}
                  onChange={(e) => setNom(e.target.value)}
-                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); ajouter(); } }} />
+                 onKeyDown={(e) => {
+                   // Enter that confirms an IME candidate (Arabic, Chinese…) must not add the half-typed name.
+                   if (e.key === "Enter") { e.preventDefault(); if (!e.nativeEvent.isComposing && e.keyCode !== 229) ajouter(); }
+                 }} />
           <Btn variante="ghost" disabled={!nom.trim() || roster.length >= max} onClick={ajouter}>{t("settings.tarawihAdd")}</Btn>
         </div>
       </div>

@@ -101,9 +101,9 @@ export function TarawihNight() {
           {d.has_video ? (
             <Player ref={video} preload="metadata" src={`/media/sermon/${n.id}.mp4`}
               onTimeUpdate={(e) => setTps(e.currentTarget.currentTime)}
-              className="block max-h-[60vh] w-full bg-night object-contain" />
+              className="block max-h-[60dvh] w-full bg-night object-contain" />
           ) : (
-            <div className="grid h-[30vh] min-h-[200px] place-items-center px-6 text-center">
+            <div className="grid h-[30dvh] min-h-[200px] place-items-center px-6 text-center">
               <p className="m-0 text-[0.95rem] text-night-muted">{t("sermons.detail.noVideo")}</p>
             </div>
           )}

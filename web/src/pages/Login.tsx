@@ -35,10 +35,10 @@ export default function Login({ onLogin }: { onLogin: (s: Session) => void }) {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4 py-10">
+    <div className="flex min-h-dvh items-center justify-center px-4 py-10">
       <div className="w-full max-w-[400px]">
         <div className="mb-5 text-center">
-          <img src="/sada-mark-encre.svg" alt="" className="mx-auto mb-3 h-[64px] w-auto" />
+          <img src="/sada-mark-encre.svg" alt="" width="167" height="64" className="mx-auto mb-3 h-[64px] w-auto" />
           <p className="font-serif text-[2rem] leading-none text-deeper">{t("app.name")}</p>
         </div>
         <form onSubmit={envoyer} className="rounded-[10px] border border-line bg-white p-6.5">

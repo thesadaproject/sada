@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
 import { State } from "../State";
+import { parseDay } from "../format";
 import { Btn, Field, Tabs, inputClass } from "@sada/ui";
 import { idOnglet, idPanneau } from "@sada/ui";
 import { Apercu, CalcFields, selectClass } from "../PrayerFields";
@@ -187,7 +188,7 @@ export default function PrayerSettings({ d, onSaved }: { d: any; onSaved: () => 
           <thead>
             <tr>
               {["prayer", "offset", "iqamaDelay", "notBefore", "notAfter"].map((h) => (
-                <th key={h} className="px-2 py-1.5 text-left text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-muted">{t(`prayer.${h}`)}</th>
+                <th scope="col" key={h} className="px-2 py-1.5 text-left text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-muted">{t(`prayer.${h}`)}</th>
               ))}
             </tr>
           </thead>
@@ -301,7 +302,7 @@ function Apparence({ d, onSaved }: { d: any; onSaved: () => void }) {
 
 /** One month: what is typed, over the calculation (grey) when the mosque calculates. */
 function Grille({ source }: { source: string }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [mois, setMois] = useState(moisCourant());
   const [jours, setJours] = useState<Jour[]>([]);
   const [valeurs, setValeurs] = useState<Record<string, Record<string, string>>>({});
@@ -397,9 +398,9 @@ function Grille({ source }: { source: string }) {
         <table className="w-full border-collapse text-[0.9rem] tabular-nums">
           <thead className="sticky top-0 z-10 bg-paper-2">
             <tr>
-              <th className="px-2 py-1.5 text-left text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-muted">{t("prayer.date")}</th>
+              <th scope="col" className="px-2 py-1.5 text-left text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-muted">{t("prayer.date")}</th>
               {colonnes.map((c) => (
-                <th key={c} className="px-1 py-1.5 text-left text-[0.72rem] font-semibold uppercase tracking-[0.04em] text-muted">
+                <th scope="col" key={c} className="px-1 py-1.5 text-left text-[0.72rem] font-semibold uppercase tracking-[0.04em] text-muted">
                   {t(`prayer.names.${c.replace("_iqama", "")}`)}{c.endsWith("_iqama") ? " ⏱" : ""}
                 </th>
               ))}
@@ -408,7 +409,7 @@ function Grille({ source }: { source: string }) {
           <tbody>
             {jours.map((j, i) => (
               <tr key={j.date} className="border-t border-line">
-                <td className="whitespace-nowrap px-2 py-0.5 text-muted">{j.date.slice(8)} <span className="text-[0.75rem]">{new Date(j.date + "T12:00:00").toLocaleDateString(undefined, { weekday: "short" })}</span></td>
+                <td className="whitespace-nowrap px-2 py-0.5 text-muted">{j.date.slice(8)} <span className="text-[0.75rem]">{new Intl.DateTimeFormat(i18n.language, { weekday: "short" }).format(parseDay(j.date))}</span></td>
                 {colonnes.map((c, k) => {
                   const v = valeurs[j.date]?.[c] ?? "";
                   return (
@@ -505,7 +506,10 @@ function Exporter({ pageUrl }: { pageUrl: string }) {
       setMsg({ ok: true, texte: t("prayer.exported", { nom }) });
     } catch (e: any) { setMsg({ ok: false, texte: e.message }); } finally { setEnCours(""); }
   };
-  const incomplet = (periode === "month" && !mois) || (periode === "range" && (!debut || !fin));
+  // An end date before the start: min/max stop the picker, aria-invalid + the message say why.
+  const ordreInvalide = periode === "range" && !!debut && !!fin && fin < debut;
+  const incomplet = (periode === "month" && !mois) || (periode === "range" && (!debut || !fin)) || ordreInvalide;
+  const erreurOrdre = ordreInvalide ? "export-ordre-erreur" : undefined;
   return (
     <div className="grid gap-3">
       <p className="m-0 max-w-[90ch] text-[0.88rem] text-muted">{t("prayer.exportHelp")}</p>
@@ -523,14 +527,15 @@ function Exporter({ pageUrl }: { pageUrl: string }) {
         {periode === "range" && (
           <>
             <Field label={t("prayer.exportFrom")}>
-              <input type="date" className={inputClass} value={debut} onChange={(e) => { setDebut(e.target.value); setMsg(null); }} />
+              <input type="date" className={inputClass} value={debut} max={fin || undefined} aria-invalid={ordreInvalide || undefined} aria-describedby={erreurOrdre} onChange={(e) => { setDebut(e.target.value); setMsg(null); }} />
             </Field>
             <Field label={t("prayer.exportTo")}>
-              <input type="date" className={inputClass} value={fin} onChange={(e) => { setFin(e.target.value); setMsg(null); }} />
+              <input type="date" className={inputClass} value={fin} min={debut || undefined} aria-invalid={ordreInvalide || undefined} aria-describedby={erreurOrdre} onChange={(e) => { setFin(e.target.value); setMsg(null); }} />
             </Field>
           </>
         )}
       </div>
+      {ordreInvalide && <p id={erreurOrdre} className="m-0 text-[0.88rem] text-[#7a1f20]">{t("common.rangeInvalid")}</p>}
       <div className="flex flex-wrap items-center gap-2">
         <Btn onClick={() => telecharger("pdf")} disabled={enCours !== "" || incomplet}>{enCours === "pdf" ? t("prayer.exporting") : t("prayer.exportPdf")}</Btn>
         <Btn variante="ghost" onClick={() => telecharger("csv")} disabled={enCours !== "" || incomplet}>{enCours === "csv" ? t("prayer.exporting") : t("prayer.exportCsv")}</Btn>

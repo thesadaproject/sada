@@ -51,10 +51,10 @@ export default function MosquePicker({
   }, []); // eslint-disable-line
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4 py-10">
+    <div className="flex min-h-dvh items-center justify-center px-4 py-10">
       <div className="w-full max-w-[520px]">
         <div className="mb-5 text-center">
-          <img src="/sada-mark-encre.svg" alt="" className="mx-auto mb-3 h-[64px] w-auto" />
+          <img src="/sada-mark-encre.svg" alt="" width="167" height="64" className="mx-auto mb-3 h-[64px] w-auto" />
           <p className="font-serif text-[2rem] leading-none text-deeper">{t("app.name")}</p>
         </div>
         <section className="rounded-[10px] border border-line bg-white p-6.5">
@@ -122,7 +122,7 @@ export default function MosquePicker({
       </div>
       {orchestre && (
         <Dialogue label={t("picker.orchestratorTitle", { name: orchestre.name })} onFermer={() => setOrchestre(null)}
-          boite="grid w-full max-w-[640px] gap-3 rounded-[10px] border border-line bg-white p-5">
+          boite="grid w-[min(640px,calc(100dvw-2rem))] gap-3 rounded-[10px] border border-line bg-white p-5">
           <Title>{t("picker.orchestratorTitle", { name: orchestre.name })}</Title>
           <OrchestrateurForm mosquee={orchestre}
             onSaved={(m) => setConnexions((x) => ({ ...x, [m.id]: m }))} />

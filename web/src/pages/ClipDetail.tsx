@@ -76,7 +76,7 @@ export default function ClipDetail() {
           </div>
         ) : (
           <div className="grid gap-4 min-[1000px]:grid-cols-[minmax(0,1.3fr)_minmax(360px,1fr)]">
-            <div className="h-[50vh] max-h-[560px] min-h-[240px] min-w-0 animate-pulse rounded-[10px] bg-night/85 max-md:h-[min(70svh,calc((100vw-2rem)*16/9))] max-md:max-h-none max-md:min-h-0" />
+            <div className="h-[50dvh] max-h-[560px] min-h-[240px] min-w-0 animate-pulse rounded-[10px] bg-night/85 max-md:h-[min(70svh,calc((100vw-2rem)*16/9))] max-md:max-h-none max-md:min-h-0" />
             <Card><p className="m-0 text-muted">{t("common.loading")}</p></Card>
           </div>
         )}
@@ -111,7 +111,7 @@ export default function ClipDetail() {
       <div className="grid items-start gap-4 min-[1000px]:grid-cols-[minmax(0,1.3fr)_minmax(360px,1fr)]">
         <Lecteur c={c} existe={oui(d.exists)} legende={d.caption ?? ""} info={(ko, texte) => setMessage({ ko, texte })} />
 
-        <Card className="grid min-w-0 gap-3 min-[1000px]:sticky min-[1000px]:top-4 min-[1000px]:max-h-[calc(100vh-2rem)] min-[1000px]:overflow-y-auto">
+        <Card className="grid min-w-0 gap-3 min-[1000px]:sticky min-[1000px]:top-4 min-[1000px]:max-h-[calc(100dvh-2rem)] min-[1000px]:overflow-y-auto">
           <Segmented
             valeur={ongletActif}
             onChange={(cle) => { setOnglet(cle); setMessage(null); }}
@@ -173,12 +173,12 @@ function Lecteur({ c, existe, legende, info }:
           key={c.version}
           preload="metadata"
           cadre="max-md:mx-auto max-md:w-auto max-md:max-w-full"
-          className="block h-[50vh] max-h-[560px] min-h-[240px] w-full bg-night object-contain max-md:mx-auto max-md:aspect-[9/16] max-md:h-[min(70svh,calc((100vw-2rem)*16/9))] max-md:max-h-none max-md:min-h-0 max-md:w-auto max-md:max-w-full"
+          className="block h-[50dvh] max-h-[560px] min-h-[240px] w-full bg-night object-contain max-md:mx-auto max-md:aspect-[9/16] max-md:h-[min(70svh,calc((100vw-2rem)*16/9))] max-md:max-h-none max-md:min-h-0 max-md:w-auto max-md:max-w-full"
           src={`/media/clip/${c.id}.mp4?v=${c.version}#t=0.1`}
         />
         </div>
       ) : (
-        <div className="grid h-[50vh] max-h-[560px] min-h-[240px] place-items-center px-6 text-center max-md:h-[min(70svh,calc((100vw-2rem)*16/9))] max-md:max-h-none max-md:min-h-0">
+        <div className="grid h-[50dvh] max-h-[560px] min-h-[240px] place-items-center px-6 text-center max-md:h-[min(70svh,calc((100vw-2rem)*16/9))] max-md:max-h-none max-md:min-h-0">
           <p className="m-0 text-[0.95rem] text-night-muted">{t("clips.detail.noFile")}</p>
         </div>
       )}
