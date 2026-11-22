@@ -10,15 +10,18 @@ export type PrayerRowProps = {
   /** Heure de l'iqama ; absente quand la mosquée n'en publie pas : la colonne disparaît. */
   iqama?: string;
   chourouk?: boolean;
+  /** La liste a une colonne iqama (même si cette ligne n'en a pas) : Chourouk garde alors son heure sous
+   *  « Adhan » et la cellule iqama reste vide. Par défaut : vrai si `iqama` est fourni. */
+  colonneIqama?: boolean;
   /** Prière visée par le compte à rebours (ignoré pour Chourouk). */
   suivante?: boolean;
   passee?: boolean;
   tv?: boolean;
 };
 
-export function PrayerRow({ nom, arabe, adhan, iqama, chourouk = false, suivante = false, passee = false, tv = false }: PrayerRowProps) {
+export function PrayerRow({ nom, arabe, adhan, iqama, chourouk = false, colonneIqama, suivante = false, passee = false, tv = false }: PrayerRowProps) {
   const cible = suivante && !chourouk;
-  const avecIqama = !chourouk && iqama !== undefined;
+  const avecIqama = colonneIqama ?? (!chourouk && iqama !== undefined);
   const heure = `text-end tabular-nums leading-none ${tv ? "min-w-[11rem] text-[3.4rem]" : "min-w-[4.25rem] text-[1.45rem]"}`;
   return (
     <li
@@ -35,7 +38,11 @@ export function PrayerRow({ nom, arabe, adhan, iqama, chourouk = false, suivante
         </span>
       </span>
       <span className={`${heure} ${chourouk ? "font-normal" : "font-semibold"}`}>{adhan}</span>
-      {avecIqama && <span className={`${heure} font-semibold`}>{iqama}</span>}
+      {avecIqama && (
+        <span className={`${heure} font-semibold`} aria-hidden={chourouk || iqama === undefined ? true : undefined}>
+          {chourouk ? "" : iqama}
+        </span>
+      )}
     </li>
   );
 }

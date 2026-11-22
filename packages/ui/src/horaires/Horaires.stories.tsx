@@ -21,7 +21,7 @@ function Ecran({ tv = false, iqama = true, accent, titre = "Mosquée de la Paix"
   const liste = (
     <PrayerList tv={tv} titre="Aujourd'hui" entetes={iqama ? ["Adhan", "Iqama"] : undefined}>
       {prieres.map((p) => (
-        <PrayerRow key={p.cle} {...p} suivante={p === cible} tv={tv} />
+        <PrayerRow key={p.cle} {...p} colonneIqama={iqama} suivante={p === cible} tv={tv} />
       ))}
     </PrayerList>
   );
@@ -31,7 +31,8 @@ function Ecran({ tv = false, iqama = true, accent, titre = "Mosquée de la Paix"
         <h1 className="sr-only">{titre}</h1>
         {tv ? (
           <div className="grid flex-1 grid-cols-[2fr_3fr] items-stretch gap-16">
-            <div className="flex flex-col justify-center">{cadran}</div>
+            {/* pt = hauteur du bandeau de la liste : le bloc horloge se centre sur les lignes, pas sur la carte. */}
+            <div className="flex flex-col justify-center pt-[3.875rem]">{cadran}</div>
             {liste}
           </div>
         ) : (
