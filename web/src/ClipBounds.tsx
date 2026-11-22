@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Btn, Field, inputClass } from "./ui";
+import { Btn, Field, inputClass } from "@sada/ui";
 import { ecrireInstant, lireInstant } from "./instant";
 
 /** Clip chosen by hand: bounds (in the khutba's time), type and title.

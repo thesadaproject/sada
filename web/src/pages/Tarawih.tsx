@@ -4,7 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
 import { dateFr, hms } from "../format";
 import Player from "../Player";
-import { Card, Kicker, Title } from "../ui";
+import { Card, Kicker, Title } from "@sada/ui";
 
 /** Tarawih nights as replays, for the imams to hear their recitation again. Listed apart (kind
  *  filter): never among the khutbas, and without transcript, clips nor translation. */

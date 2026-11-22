@@ -18,6 +18,7 @@ COPY sada sada
 COPY assets assets
 COPY docs docs
 COPY web/dist web/dist
+COPY packages/public/dist packages/public/dist
 RUN uv sync --frozen --no-dev \
     && python -c "from sada.backoffice import template_render as t; t.fetch_engine()"
 

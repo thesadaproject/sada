@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { api, ApiError, type Traitement } from "../api";
 import { currentSession } from "../session";
-import { Btn, Card, Kicker, Pill, Title } from "../ui";
+import { Btn, Card, Kicker, Pill, Title } from "@sada/ui";
 import { dateFr, horloge, mmss } from "../format";
 
 /** Length of a run, when it has both ends: minutes:seconds. */

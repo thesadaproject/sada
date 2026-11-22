@@ -4,7 +4,7 @@ import Player from "../Player";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
 import { auditActionKey } from "../i18n";
-import { Btn, Card, Field, Kicker, Pill, Segmented, inputClass } from "../ui";
+import { Btn, Card, Field, Kicker, Pill, Segmented, inputClass } from "@sada/ui";
 import { State } from "../State";
 import FormulaireClip from "../ClipBounds";
 import { ecrireInstant, lireInstant } from "../instant";

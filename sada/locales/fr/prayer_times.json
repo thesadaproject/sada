@@ -81,5 +81,8 @@
   "{n} day(s) imported.": "{n} jour(s) importé(s).",
   "{value} is not a date (YYYY-MM-DD or DD/MM/YYYY).": "{value} n'est pas une date (AAAA-MM-JJ ou JJ/MM/AAAA).",
   "{value} is not a time (HH:MM).": "{value} n'est pas une heure (HH:MM).",
-  "{value} is not in {month}.": "{value} n'est pas dans {month}."
+  "{value} is not in {month}.": "{value} n'est pas dans {month}.",
+  "A colour looks like #1a7f5a.": "Une couleur s'écrit #1a7f5a.",
+  "Choose the source of the prayer times first.": "Choisissez d'abord la source des horaires.",
+  "Look of the public pages saved.": "Apparence des pages publiques enregistrée."
 }

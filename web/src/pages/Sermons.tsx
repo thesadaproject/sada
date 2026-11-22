@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
-import { Btn, Pill, Segmented, inputClass } from "../ui";
+import { Btn, Pill, Segmented, inputClass } from "@sada/ui";
 
 /** Khutba list: grouped by month, one readable row per khutba (date, passage, imam, theme).
  *  Only what needs action stands out: clips to review. The whole row opens the sheet.

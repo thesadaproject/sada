@@ -1,0 +1,13 @@
+@import "tailwindcss";
+@import "./theme.css";
+@source ".";
+
+/* Corps de page comme la console (web/src/styles.css) : papier, encre, Source Sans 3. */
+body {
+  margin: 0;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font: 400 16px/1.5 var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-synthesis: none;
+}

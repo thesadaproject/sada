@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "./api";
-import { Btn, Field, inputClass } from "./ui";
+import { Btn, Field, inputClass } from "@sada/ui";
 import { METHODES, PRIERES, calcVersServeur, moisCourant, type Calc } from "./prayerForm";
 
 /** Shared by Settings › Prayer times and the first-run wizard: the same fields, the same preview. */

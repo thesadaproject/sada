@@ -28,7 +28,7 @@ from sqlalchemy import delete, insert, select
 from .. import prayer_calc as calc
 from .. import prayers
 from ..i18n import _
-from . import db, mawaqit_store, orm, throttle
+from . import db, identity, mawaqit_store, orm, throttle
 from .models import PrayerDay, PrayerSettings
 
 SOURCES = ("mawaqit", "computed", "manual")
@@ -149,7 +149,51 @@ def read(conn, mosque: dict) -> dict:
         "public": bool(row["public"]) if row else True,
         "jumua": jumua,
         "calc": cfg if isinstance(cfg, dict) else {},
+        "accent": _colour((row or {}).get("accent")),
+        "accent2": _colour((row or {}).get("accent2")),
+        "show_logo": bool((row or {}).get("show_logo")),
     }
+
+
+def _colour(value) -> str:
+    try:
+        return identity.normalize(value)
+    except ValueError:  # a damaged value is never shown: Sada's own colour applies
+        return ""
+
+
+def identity_of(conn, mosque: dict) -> dict:
+    """The mosque's identity as the public pages use it: {accent, accent2, logo}, '' = Sada's own."""
+    from . import branding
+
+    st = read(conn, mosque)
+    has_logo = bool((mosque.get("logo_path") or "").strip()) and branding.path_for(mosque).is_file()
+    return {"accent": st["accent"], "accent2": st["accent2"], "logo": st["show_logo"] and has_logo}
+
+
+def save_identity(conn, mosque: dict, *, accent: str = "", accent2: str = "", show_logo: bool = False) -> dict:
+    """Store the accent colours ('#rrggbb' or '' for Sada's) and whether the logo is shown publicly.
+    The source has to be chosen first (the identity lives on the same row)."""
+    try:
+        a, b = identity.normalize(accent), identity.normalize(accent2)
+    except ValueError as e:
+        raise ValueError(_("A colour looks like #1a7f5a.")) from e
+    st = read(conn, mosque)
+    if not st["source"]:
+        raise ValueError(_("Choose the source of the prayer times first."))
+    orm.upsert(
+        conn,
+        PrayerSettings,
+        ("mosque_id",),
+        mosque_id=mosque["id"],
+        source=st["source"],
+        accent=a,
+        accent2=b,
+        show_logo=1 if show_logo else 0,
+        updated_at=db.now_iso(),
+    )
+    throttle.PUBLIC_CACHE.clear()
+    return read(conn, mosque)
 
 
 def save(conn, mosque: dict, *, source: str, public: bool, jumua: list, cfg: dict | None) -> dict:
@@ -474,6 +518,8 @@ def view(conn, mosque: dict, now: float | None = None) -> dict:
         "asr": list(calc.ASR),
         "high_lats": list(calc.HIGH_LATS),
         "slug": mosque["slug"],
+        "identity": {"accent": st["accent"], "accent2": st["accent2"], "show_logo": st["show_logo"]},
+        "has_logo": bool((mosque.get("logo_path") or "").strip()),
         "state": state(conn, mosque, now),
     }
 

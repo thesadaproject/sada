@@ -70,6 +70,26 @@ async def prayer_save(ctx: CtxDep):
     return _ok(_("Prayer times saved."), prayer=prayer_times.view(ctx.conn, ctx.mosque), source=saved["source"])
 
 
+@router.put("/settings/prayer/identity")
+async def prayer_identity_save(ctx: CtxDep):
+    """The mosque's look on its public pages (screen, month, PDF): one or two accent colours
+    ('#rrggbb', empty = Sada's own) and whether its logo is shown. Sada stays the frame."""
+    f = await ctx.raw_body()
+    ctx.require("admin")
+    try:
+        prayer_times.save_identity(
+            ctx.conn,
+            ctx.mosque,
+            accent=str(f.get("accent") or ""),
+            accent2=str(f.get("accent2") or ""),
+            show_logo=str(f.get("show_logo", "")).strip().lower() in ("1", "true", "on", "yes"),
+        )
+    except ValueError as e:
+        raise _invalid(e) from e
+    db.audit(ctx.conn, ctx.mosque["id"], ctx.user["id"], "horaires.identite", "mosque", ctx.mosque["id"], ip=ctx.ip)
+    return _ok(_("Look of the public pages saved."), prayer=prayer_times.view(ctx.conn, ctx.mosque))
+
+
 @router.post("/settings/prayer/preview")
 async def prayer_preview(ctx: CtxDep):
     """The calculated month for settings not saved yet: nothing is written."""

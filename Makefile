@@ -17,4 +17,4 @@ pipeline:
 
 # Rebuild the React front end into web/dist
 front:
-	npm --prefix web run build
+	npm run build

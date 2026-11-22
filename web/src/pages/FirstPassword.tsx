@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
-import { Btn, Card, Field, inputClass } from "../ui";
+import { Btn, Card, Field, inputClass } from "@sada/ui";
 
 /** Account created (or password reset) by an administrator: the person picks their own password
  *  before reaching anything else. The server refuses every right until then. */

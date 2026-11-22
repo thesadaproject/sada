@@ -1,4 +1,4 @@
-/** Onglets : les identifiants partagés par une barre d'onglets (ui.tsx) et le
+/** Onglets : les identifiants partagés par une barre d'onglets (base.tsx) et le
  *  panneau qu'elle commande (les pages). Séparés des composants pour que le
  *  rechargement à chaud du front garde un fichier qui n'exporte que des composants. */
 

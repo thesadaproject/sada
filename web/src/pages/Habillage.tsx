@@ -2,8 +2,8 @@ import { useEffect, useState, type CSSProperties, type FormEvent, type ReactNode
 import { Link, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api, type Habillage as Etat, type HabillageOptions } from "../api";
-import { Btn, Card, Field, Kicker, Pill, Segmented, Tabs, inputClass } from "../ui";
-import { idOnglet, idPanneau } from "../onglets";
+import { Btn, Card, Field, Kicker, Pill, Segmented, Tabs, inputClass } from "@sada/ui";
+import { idOnglet, idPanneau } from "@sada/ui";
 
 /** Branding of an imported video (dars, lecture, khutba): the mosque's identity over the picture.
  *  A single form, split in tabs (opening, speaker, logo and colour, end screen). On the right, a live

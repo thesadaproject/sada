@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
-import { Btn, Card, Field, Segmented, Table, inputClass, tdClass } from "../ui";
+import { Btn, Card, Field, Segmented, Table, inputClass, tdClass } from "@sada/ui";
 
 type Compte = {
   id: number; username: string; display_name: string; role: string; active: number;

@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
 import { liste } from "../format";
-import { Btn, Card, Field, Tabs, Title, inputClass, toucher } from "../ui";
-import { idOnglet, idPanneau } from "../onglets";
+import { Btn, Card, Field, Tabs, Title, inputClass, toucher } from "@sada/ui";
+import { idOnglet, idPanneau } from "@sada/ui";
 import { RecitersEditor } from "../RecitersEditor";
 import PrayerSettings from "./PrayerSettings";
 

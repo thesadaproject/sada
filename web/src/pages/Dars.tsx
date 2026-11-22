@@ -3,8 +3,8 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { api, type AgendaEvent, type EventForm, type EventsList } from "../api";
 import { currentSession } from "../session";
-import { Btn, Field, Pill, Segmented, inputClass } from "../ui";
-import { idOnglet, idPanneau } from "../onglets";
+import { Btn, Field, Pill, Segmented, inputClass } from "@sada/ui";
+import { idOnglet, idPanneau } from "@sada/ui";
 import { ListeSeances } from "./Sermons";
 
 /** Dars and conference agenda: the schedule the orchestrator reads, as an editable list.

@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api, type SearchHit, type SearchResponse, type SearchResult } from "../api";
 import { mmss } from "../format";
-import { inputClass } from "../ui";
+import { inputClass } from "@sada/ui";
 
 /** Search across every recorded session of the mosque, whatever language was spoken: words (in the
  *  transcript and its translations), Quran verses (« 2:153 », « Al-Baqara », « البقرة ») and meaning.

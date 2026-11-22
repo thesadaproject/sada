@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Btn } from "./ui";
+import { Btn } from "@sada/ui";
 
 /** State of an entity, as built by the server (`state` on the page payload). The server sends
  *  stable keys only: `states.<code>` and `states.actions.<key>` are translated here. */

@@ -17,7 +17,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from ... import prayer_calc as calc
 from ...i18n import _
-from .. import edge, orm, prayer_screen, prayer_times, public_page
+from .. import branding, edge, orm, prayer_screen, prayer_times, public_page, public_react
 from .. import prayer_export as export
 from ..context import ConnDep
 from ..models import Mosque
@@ -123,6 +123,10 @@ def prayer_times_export(
     )
 
 
+def _refused(body: dict, status: int) -> str:
+    return (public_react if public_react.available() else public_page).refused(body, status)
+
+
 def _this_month(mosque: dict) -> str:
     return prayer_times.local_today(mosque).strftime("%Y-%m")
 
@@ -137,13 +141,15 @@ def prayer_times_page(slug: str, request: Request, conn: ConnDep, month: str = "
     mosque, refused = _published(conn, slug)
     if refused:
         status, body = refused
-        return HTMLResponse(
-            public_page.refused(body, status), status_code=status, headers={"Cache-Control": "no-store"}
-        )
+        return HTMLResponse(_refused(body, status), status_code=status, headers={"Cache-Control": "no-store"})
     if not month:
         # The screen (clock, next prayer): what a mosque shows to its public. A month asks for the table.
         today = prayer_times.local_today(mosque)
-        page = prayer_screen.render(slug, mosque, prayer_screen.days(conn, mosque, today), today.strftime("%Y-%m"))
+        payload = prayer_screen.days(conn, mosque, today)
+        if public_react.available():
+            page = public_react.screen(slug, mosque, payload, today.isoformat())
+        else:
+            page = prayer_screen.render(slug, mosque, payload, today.strftime("%Y-%m"))
         return HTMLResponse(page, headers={"Cache-Control": edge.public_cache_control()})
     try:
         first, last = export.period(prayer_times.local_today(mosque), month=month)
@@ -152,11 +158,19 @@ def prayer_times_page(slug: str, request: Request, conn: ConnDep, month: str = "
         rows = []
     except (ValueError, calc.InvalidParams):
         return HTMLResponse(
-            public_page.refused({"error": _("refused"), "message": _("A month looks like 2027-03.")}, 422),
+            _refused({"error": _("refused"), "message": _("A month looks like 2027-03.")}, 422),
             status_code=422,
             headers={"Cache-Control": "no-store"},
         )
-    page = public_page.render(slug, mosque, month, rows, prayer_times.read(conn, mosque))
+    if public_react.available():
+        page = public_react.month(
+            slug, mosque, prayer_times.identity_of(conn, mosque), month, prayer_times.local_today(mosque).isoformat(),
+            prayer_times._tz_key(mosque),
+        )  # fmt: skip
+        return HTMLResponse(page, headers={"Cache-Control": edge.public_cache_control()})
+    page = public_page.render(
+        slug, mosque, month, rows, prayer_times.read(conn, mosque), prayer_times.identity_of(conn, mosque)
+    )
     return HTMLResponse(
         page, headers={"Cache-Control": edge.public_cache_control(), "Vary": "Accept-Language, X-Sada-Lang"}
     )
@@ -179,6 +193,28 @@ def prayer_times_days(slug: str, request: Request, conn: ConnDep, first: str = Q
     return _json(prayer_screen.days(conn, mosque, day), cache=True)
 
 
+@router.get("/public/mosques/{slug}/logo")
+def public_logo(slug: str, request: Request, conn: ConnDep):
+    """The mosque's logo, only when it published its times and chose to show the logo on them."""
+    wait = _limiter.hit(client_ip(request))
+    if wait:
+        return _json({"error": _("too many requests")}, 429, Retry_After=int(wait) + 1)
+    mosque, refused = _published(conn, slug)
+    if refused or not prayer_times.identity_of(conn, mosque)["logo"]:
+        return Response("Not Found", status_code=404, headers=_NOT_FOUND)
+    f = branding.path_for(mosque)
+    return Response(
+        f.read_bytes(),
+        media_type=branding.EXT.get(f.suffix.lower(), "application/octet-stream"),
+        headers={
+            "Cache-Control": "public, max-age=300",
+            # an SVG opened on its own must never run anything: it is an image, nothing else
+            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 _ASSET = re.compile(r"^(prayer-screen\.(css|js)|fonts\.css|fonts/[A-Za-z0-9_-]+\.woff2)$")
 _ASSET_TYPES = {"css": "text/css; charset=utf-8", "js": "text/javascript; charset=utf-8", "woff2": "font/woff2"}
 _NOT_FOUND = {"Cache-Control": "no-store"}
@@ -192,6 +228,15 @@ def public_asset(name: str):
     The page links `prayer-screen.<hash>.css`, `prayer-screen.<hash>.js` and `fonts.<hash>.css` (hash of
     the content, see prayer_screen): those never change, so they are cached for a year. The plain names
     still answer (old pages, other clients) with a short cache."""
+    if name.startswith("p/"):  # the React bundle: hashed names, never change
+        built = public_react.asset(name[2:])
+        if built is None:
+            return Response("Not Found", status_code=404, headers=_NOT_FOUND)
+        return Response(
+            built[0],
+            media_type=built[1],
+            headers={"Cache-Control": "public, max-age=31536000, immutable", "Access-Control-Allow-Origin": "*"},
+        )
     found = prayer_screen.asset(name)
     if found is None and _ASSET.match(name) and (prayer_screen.STATIC / name).is_file():
         found = ((prayer_screen.STATIC / name).read_bytes(), False)  # fonts/<name>.woff2

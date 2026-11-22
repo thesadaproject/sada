@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../api";
 import { liste } from "../format";
-import { Btn, Card, Field, Kicker, Title, inputClass } from "../ui";
+import { Btn, Card, Field, Kicker, Title, inputClass } from "@sada/ui";
 import { Apercu, CalcFields } from "../PrayerFields";
 import { calcDepuis, calcVersServeur, type Calc } from "../prayerForm";
 

@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
-import { Btn, Card, Field, Table, Tabs, Title, inputClass, tdClass } from "../ui";
-import { idOnglet, idPanneau } from "../onglets";
+import { Btn, Card, Field, Table, Tabs, Title, inputClass, tdClass } from "@sada/ui";
+import { idOnglet, idPanneau } from "@sada/ui";
 
 type FieldDef = { name: string; label: string; value: string; secret: boolean; placeholder: string };
 type Feedback = { ok: boolean; text: string } | null;

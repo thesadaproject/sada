@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
-import { Btn, Card, Pill, Tabs } from "../ui";
+import { Btn, Card, Pill, Tabs } from "@sada/ui";
 import { StateTag } from "../State";
-import { idOnglet, idPanneau } from "../onglets";
+import { idOnglet, idPanneau } from "@sada/ui";
 import { dateFr, libelles, liste, mmss } from "../format";
 
 /** Review queue: one entry per clip, like the template back-office items.

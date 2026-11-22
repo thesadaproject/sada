@@ -1,0 +1,82 @@
+/* Charte reprise telle quelle du back-office en gabarits : papier, encre verte, feuille, rouge direct.
+   Instrument Serif + Source Sans 3 + Amiri. */
+@theme {
+  --color-paper: #f7f3ea;
+  --color-paper-2: #efe8d8;
+  --color-ink: #12261e;
+  --color-muted: #5e6b63;
+  --color-line: #ded5c1;
+  --color-leaf: #e2c27a;
+  --color-leaf-2: #cfa95a;
+  --color-green: #3d6b57;
+  --color-deep: #1c3a2e;
+  --color-deeper: #12261e;
+  --color-night: #0b1a14;
+  --color-live: #9e2a2b;
+  --color-warn: #b7791f;
+  --color-warn-bg: #fbf3e2;
+  --color-err-bg: #fbe9e7;
+  --color-night-ink: #f0ead9;
+  --color-night-muted: #b3b8a6;
+  --color-night-link: #e8dcc0;
+  --color-dot-off: #6b7a70;
+  --color-live-off: #f3c7c2;
+  --font-serif: "EB Garamond", "Instrument Serif", Georgia, "Times New Roman", serif;
+  --font-sans: "Source Sans 3 Variable", "Source Sans 3", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-arabic: "Amiri", "Traditional Arabic", "Noto Naskh Arabic", serif;
+}
+/* ---------------------------------------------------------------------------
+ * Accent par mosquée. --accent / --accent-ink valent l'or Sada par défaut ;
+ * une mosquée les remplace (voir accentStyle() : l'encre est calculée par
+ * contraste). Les composants d'horaires ne lisent que ces deux variables.
+ * ------------------------------------------------------------------------- */
+:root {
+  --accent: var(--color-leaf);
+  --accent-ink: var(--color-night);
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+}
+
+/* Surfaces des composants d'horaires : même langage que la console.
+   ivoire = page papier (fond --color-paper, listes blanches filetées, kicker vert) ;
+   nuit   = écran sombre (fond --color-night, listes --color-deeper filetées de blanc 10 %, kicker or).
+   --s-actif : teinte de l'accent à 18 %, jamais plus : l'encre reste lisible quelle que soit la couleur. */
+.sada-nuit {
+  --s-bg: var(--color-night);
+  --s-card: var(--color-deeper);
+  --s-head: rgb(255 255 255 / 0.05);
+  --s-fg: var(--color-night-ink);
+  --s-title: #fff;
+  --s-muted: var(--color-night-muted);
+  --s-line: rgb(255 255 255 / 0.1);
+  --s-kicker: var(--color-leaf);
+  --s-actif: color-mix(in srgb, var(--accent) 18%, transparent);
+  background: var(--s-bg);
+  color: var(--s-fg);
+}
+.sada-ivoire {
+  --s-bg: var(--color-paper);
+  --s-card: #fff;
+  --s-head: color-mix(in srgb, var(--color-paper-2) 55%, transparent);
+  --s-fg: var(--color-ink);
+  --s-title: var(--color-deeper);
+  --s-muted: var(--color-muted);
+  --s-line: var(--color-line);
+  --s-kicker: var(--color-green);
+  --s-actif: color-mix(in srgb, var(--accent) 18%, transparent);
+  background: var(--s-bg);
+  color: var(--s-fg);
+}
+.sada-nuit,
+.sada-ivoire {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.sada-arabe {
+  font-family: var(--font-arabic);
+  line-height: 1.5;
+}

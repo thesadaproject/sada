@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { api, type MosqueChoice, type PlatformMosque, type Session } from "../api";
-import { Btn, Dialogue, Title } from "../ui";
+import { Btn, Dialogue, Title } from "@sada/ui";
 import { OrchestrateurForm } from "./PlatformSettings";
 
 /** Shown after signing in, before any mosque is open: choose one (or enter it as support).

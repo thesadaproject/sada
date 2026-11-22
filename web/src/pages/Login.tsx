@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type Session } from "../api";
-import { Btn, Field, inputClass } from "../ui";
+import { Btn, Field, inputClass } from "@sada/ui";
 
 export default function Login({ onLogin }: { onLogin: (s: Session) => void }) {
   const { t } = useTranslation();

@@ -1,0 +1,9 @@
+{
+  "name": "sada-workspace",
+  "private": true,
+  "workspaces": ["web", "packages/ui", "packages/public"],
+  "scripts": {
+    "build": "npm -w web run build && npm -w @sada/public run build",
+    "lint": "npm -w web run lint"
+  }
+}
