@@ -1,29 +1,32 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api, onUnauthorized, setCsrf, type Session } from "./api";
 import Login from "./pages/Login";
-import Dashboard from "./pages/Dashboard";
-import Regie from "./pages/Regie";
-import Devices from "./pages/Devices";
-import Sermons from "./pages/Sermons";
-import SermonDetail from "./pages/SermonDetail";
-import Search from "./pages/Search";
-import Habillage from "./pages/Habillage";
-import Dars from "./pages/Dars";
-import Tarawih, { TarawihNight } from "./pages/Tarawih";
-import Clips from "./pages/Clips";
-import ClipDetail from "./pages/ClipDetail";
-import Publications from "./pages/Publications";
-import Settings from "./pages/Settings";
-import Users from "./pages/Users";
-import Audit from "./pages/Audit";
-import Onboarding from "./pages/Onboarding";
 import FirstPassword from "./pages/FirstPassword";
 import MosquePicker from "./pages/MosquePicker";
-import PlatformSettings from "./pages/PlatformSettings";
 import { setCurrentSession } from "./session";
 import TopBar from "./TopBar";
+
+// Each screen is its own chunk: signing in only downloads the shell, then the page being opened.
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Regie = lazy(() => import("./pages/Regie"));
+const Devices = lazy(() => import("./pages/Devices"));
+const Sermons = lazy(() => import("./pages/Sermons"));
+const SermonDetail = lazy(() => import("./pages/SermonDetail"));
+const Search = lazy(() => import("./pages/Search"));
+const Habillage = lazy(() => import("./pages/Habillage"));
+const Dars = lazy(() => import("./pages/Dars"));
+const Clips = lazy(() => import("./pages/Clips"));
+const ClipDetail = lazy(() => import("./pages/ClipDetail"));
+const Publications = lazy(() => import("./pages/Publications"));
+const Settings = lazy(() => import("./pages/Settings"));
+const Users = lazy(() => import("./pages/Users"));
+const Audit = lazy(() => import("./pages/Audit"));
+const Onboarding = lazy(() => import("./pages/Onboarding"));
+const PlatformSettings = lazy(() => import("./pages/PlatformSettings"));
+const Tarawih = lazy(() => import("./pages/Tarawih"));
+const TarawihNight = lazy(() => import("./pages/Tarawih").then((m) => ({ default: m.TarawihNight })));
 
 export default function App() {
   const { t } = useTranslation();
@@ -68,14 +71,16 @@ export default function App() {
   // The operator's platform page needs no mosque: it opens from the picker, with a way back.
   if (!mosque && pathname === "/platform/settings" && session.user.operator)
     return (
-      <div className="min-h-screen px-4 pt-6 pb-16">
+      <div className="min-h-dvh px-4 pt-6 pb-16">
         <div className="mx-auto mb-4 w-full max-w-[800px]">
           <button type="button" onClick={() => navigate("/", { replace: true })}
             className="cursor-pointer border-0 bg-transparent p-0 text-[0.9rem] font-semibold text-deep underline decoration-line underline-offset-4">
             {t("platform.back")}
           </button>
         </div>
-        <PlatformSettings />
+        <Suspense fallback={<p className="py-16 text-center text-muted">{t("common.loading")}</p>}>
+          <PlatformSettings />
+        </Suspense>
       </div>
     );
   if (!mosque)
@@ -98,7 +103,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex min-h-dvh flex-col">
       {session.support && (
         <div role="status" className="flex flex-wrap items-center justify-center gap-3 bg-gold px-4 py-1.5 text-[0.85rem] font-semibold text-night">
           <span>{t("picker.banner", { name: mosque.name })}</span>
@@ -111,6 +116,7 @@ export default function App() {
         onSwitchMosque={peutChanger && !session.support ? changerDeMosquee : undefined}
       />
       <main className="mx-auto w-full max-w-[1100px] flex-1 px-4 pt-6 pb-16">
+        <Suspense fallback={<p className="py-16 text-center text-muted">{t("common.loading")}</p>}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/regie" element={<Regie />} />
@@ -135,6 +141,7 @@ export default function App() {
           <Route path="/audit" element={<Audit />} />
           <Route path="*" element={<p className="py-16 text-center text-muted">404</p>} />
         </Routes>
+        </Suspense>
       </main>
       <footer className="p-6 text-center text-[0.8rem] text-muted">
         {t("app.name")} · {mosque.name}{session.version && <> · <span dir="ltr">{session.version}</span></>}
