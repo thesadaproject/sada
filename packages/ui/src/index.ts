@@ -7,10 +7,10 @@ export { accentStyle, contraste, encreSur, luminance } from "./accent";
 // Horaires de prière : purs, pilotés par props.
 export { Surface, Entete, Cadran } from "./horaires/Surface";
 export { MOIS_HIJRI, MOIS_HIJRI_COURT, formatHijri } from "./hijri";
-export { PrayerRow, PrayerList, cibleCompteARebours } from "./horaires/PrayerRow";
+export { PrayerRow, PrayerList, cibleCompteARebours, decalageIqama } from "./horaires/PrayerRow";
 export type { PrayerRowProps } from "./horaires/PrayerRow";
 export { Clock } from "./horaires/Clock";
 export { Countdown, formatRestant } from "./horaires/Countdown";
-export { MonthTable } from "./horaires/MonthTable";
+export { MonthTable, Legende } from "./horaires/MonthTable";
 export type { MonthColumn, MonthDay } from "./horaires/MonthTable";
 export { ErrorPage } from "./horaires/ErrorPage";

@@ -16,17 +16,27 @@ export type MonthDay = {
   heures: Record<string, string>;
   aujourdhui?: boolean;
   vendredi?: boolean;
+  /** Horaires de Jumu'a (vendredi), un par ligne dans la colonne `colonneJumua`. */
+  jumua?: string[];
+  /** Repère discret sous la date (« Nuit 27 ») : nuits impaires des dix dernières nuits, jamais une nuit unique. */
+  repere?: string;
 };
 
-export function MonthTable({ surtitre, titre, sousTitre, colonnes, jours, enteteJour = "Jour", enteteHijri = "Hégire", tv = false }: {
+export function MonthTable({ surtitre, titre, sousTitre, colonnes, jours, enteteJour = "Jour", enteteHijri = "Hégire", colonneJumua = "dhuhr", legende, detail, tv = false }: {
   /** Petit titre en capitales vertes au-dessus du titre (« Horaires de prière »). */
   surtitre?: string;
   titre: string;
   sousTitre?: string;
+  /** Ligne sous le titre (« Joumada al-oula - Joumada ath-thania 1448 »). */
+  detail?: string;
   colonnes: MonthColumn[];
   jours: MonthDay[];
   enteteJour?: string;
   enteteHijri?: string;
+  /** Clé de la colonne où les horaires de Jumu'a remplacent l'heure du vendredi. */
+  colonneJumua?: string;
+  /** Légende sous le tableau (voir Legende). */
+  legende?: React.ReactNode;
   tv?: boolean;
 }) {
   const avecHijri = jours.some((j) => j.hijri);
@@ -39,6 +49,7 @@ export function MonthTable({ surtitre, titre, sousTitre, colonnes, jours, entete
         <p className={`m-0 mb-2 font-semibold uppercase leading-none tracking-[0.12em] text-(--s-kicker) ${tv ? "text-[1.3rem]" : "text-[0.75rem]"}`}>{surtitre}</p>
       )}
       <h1 className={`m-0 font-serif font-normal text-(--s-title) ${tv ? "text-[4rem] leading-[1.1]" : "text-[2.1rem] leading-[1.1]"}`}>{titre}</h1>
+      {detail && <p className={`m-0 text-(--s-muted) ${tv ? "mt-1 text-[1.8rem]" : "mt-1 text-[0.95rem]"}`}>{detail}</p>}
       {sousTitre && (
         <p lang="ar" dir="rtl" className={`sada-arabe m-0 text-(--s-muted) ${tv ? "text-[2.2rem]" : "text-[1.2rem]"}`}>
           {sousTitre}
@@ -75,7 +86,7 @@ export function MonthTable({ surtitre, titre, sousTitre, colonnes, jours, entete
               >
                 <th
                   scope="row"
-                  style={j.aujourdhui ? { boxShadow: "inset 4px 0 0 var(--accent)" } : undefined}
+                  style={j.aujourdhui ? { boxShadow: "inset 4px 0 0 var(--accent)" } : j.repere ? { boxShadow: "inset 3px 0 0 color-mix(in srgb, var(--accent) 55%, transparent)" } : undefined}
                   className={`${cell} text-start font-normal ${tv ? "pl-8" : "pl-3 md:pl-5"}`}
                 >
                   <span className="flex items-baseline gap-x-1.5">
@@ -83,16 +94,57 @@ export function MonthTable({ surtitre, titre, sousTitre, colonnes, jours, entete
                     <span className={`font-semibold uppercase leading-none tracking-[0.1em] text-(--s-muted) ${tv ? "text-[1.1rem]" : "text-[0.58rem]"}`}>{j.semaine}</span>
                   </span>
                   {j.hijri && !tv && <span className="block text-[0.68rem] font-normal leading-tight text-(--s-muted) md:hidden">{j.hijri}</span>}
+                  {j.repere && <span className={`block font-semibold leading-tight text-(--s-kicker) ${tv ? "text-[1.1rem]" : "text-[0.62rem]"}`}>{j.repere}</span>}
                 </th>
                 {avecHijri && <td className={`${hijriCol} ${cell} font-normal text-(--s-muted)`}>{j.hijri ?? ""}</td>}
                 {colonnes.map((c) => (
-                  <td key={c.cle} className={`${cell} tabular-nums`}>{j.heures[c.cle] ?? "—"}</td>
+                  <td key={c.cle} className={`${cell} tabular-nums`}>
+                    {c.cle === colonneJumua && j.jumua && j.jumua.length > 0 ? (
+                      <span className="flex flex-col items-center leading-tight">{j.jumua.map((h) => <span key={h}>{h}</span>)}</span>
+                    ) : (
+                      (j.heures[c.cle] ?? "—")
+                    )}
+                  </td>
                 ))}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {legende}
     </section>
+  );
+}
+
+/** Légende du tableau : repères (vendredi, nuits impaires) et note. Aucune nuit n'est désignée : la note dit
+ *  seulement où Laylat al-Qadr est recherchée. Chaque élément est facultatif. */
+export function Legende({ vendredi, nuitsImpaires, note, nuitsImpairesNote, tv = false }: {
+  vendredi?: string;
+  nuitsImpaires?: string;
+  note?: string;
+  nuitsImpairesNote?: string;
+  tv?: boolean;
+}) {
+  const taille = tv ? "text-[1.4rem]" : "text-[0.82rem]";
+  if (!vendredi && !nuitsImpaires && !note) return null;
+  return (
+    <div className={`mt-4 grid gap-1 text-(--s-muted) ${taille}`}>
+      <ul className="m-0 flex list-none flex-wrap gap-x-5 gap-y-1 p-0">
+        {vendredi && (
+          <li className="flex items-center gap-2">
+            <span aria-hidden className="inline-block h-3 w-5 rounded-[3px] border border-(--s-line) bg-(--s-head)" />
+            {vendredi}
+          </li>
+        )}
+        {nuitsImpaires && (
+          <li className="flex items-center gap-2">
+            <span aria-hidden className="inline-block h-3 w-1 rounded-[2px]" style={{ background: "color-mix(in srgb, var(--accent) 55%, transparent)" }} />
+            {nuitsImpaires}
+          </li>
+        )}
+      </ul>
+      {note && <p className="m-0">{note}</p>}
+      {nuitsImpairesNote && <p className="m-0">{nuitsImpairesNote}</p>}
+    </div>
   );
 }

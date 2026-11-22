@@ -86,6 +86,10 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: "@sada/ui : test visuel (chaque story s'affiche, sans erreur ni débordement)"
         run: npm -w @sada/ui run visuel -- --out "$RUNNER_TEMP/captures"
+      - name: "@sada/public : types, puis pages publiques (statuts, débordement, mobile sans défilement, aucun bouton plein écran)"
+        run: |
+          npm -w @sada/public run typecheck
+          npm -w @sada/public run captures -- --out "$RUNNER_TEMP/captures-public"
       - uses: actions/upload-artifact@v7
         if: always()
         with:

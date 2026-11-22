@@ -9,7 +9,7 @@ logo صدى, composants de la console et composants des horaires de prière.
   contraste WCAG, voir `accent.ts`). Sans accent : l'or Sada.
 - Horaires (purs, pilotés par props, mobile d'abord, hauteur naturelle, `tv` en option) :
   `PrayerRow`/`PrayerList`, `Clock`, `Countdown`, `MonthTable`, `ErrorPage`, `Surface`.
-  Chourouk (`chourouk`) n'a ni adhan ni iqama et n'est jamais la cible du compte à rebours
+  Chourouk (`chourouk`) n'a que son heure (ni adhan ni iqama) et n'est jamais la cible du compte à rebours
   (`cibleCompteARebours`).
 - Logo : `<Logo couleur="or|encre|courant" />`, tracé de `assets/logo/sada-mark-or.svg`
   (`node scripts/gen-logo.mjs` régénère `src/logo-data.ts`). Jamais `static/emblem.svg`.
