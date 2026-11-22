@@ -18,10 +18,10 @@ export function Clock({ heure, date, hijri, kicker, tv = false }: {
       )}
       <time className={`block font-serif leading-none text-(--s-title) ${tv ? "text-[11rem]" : "text-[4rem]"}`}>{heure}</time>
       {dates.length > 0 && (
-        <p className={`m-0 text-(--s-muted) ${tv ? "mt-4 text-[2rem]" : "mt-2 text-[0.95rem]"}`}>
+        <p className={`m-0 flex flex-col text-(--s-muted) md:flex-row ${tv ? "mt-4 text-[2rem]" : "mt-2 text-[0.95rem]"}`}>
           {dates.map((d, i) => (
-            <span key={i}>
-              {i > 0 && <span aria-hidden> · </span>}
+            <span key={i} className="whitespace-nowrap">
+              {i > 0 && <span aria-hidden className="hidden whitespace-pre md:inline"> · </span>}
               {d}
             </span>
           ))}

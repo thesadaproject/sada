@@ -81,7 +81,17 @@ export function Mois({ boot, tv }: { boot: Boot; tv: boolean }) {
           colonnes={PRIERES.map((p) => ({ cle: p.cle, nom: L.col[p.cle], arabe: p.arabe }))}
           jours={jours}
           enteteJour={L.col.date}
-          enteteHijri={L.col.hijri}
+          actions={
+            <details className="mt-3 md:hidden">
+              <summary className={`${lien} cursor-pointer list-none`}>{L.page.download} ▾</summary>
+              <div className="mt-2 grid gap-2 rounded-[10px] border border-(--s-line) bg-(--s-card) p-2">
+                <a className={lien} href={`${exp}?format=pdf&${q}`} download>{L.page.pdf}</a>
+                <a className={lien} href={`${exp}?format=csv&${q}`} download>{L.page.csv}</a>
+                <a className={lien} href={`${exp}?format=pdf&ramadan=1`} download>{L.page.ramadan}</a>
+                {!tv && <a className={lien} href={location.pathname}>{L.page.screen}</a>}
+              </div>
+            </details>
+          }
           tv={tv}
           legende={
             <Legende
@@ -94,7 +104,7 @@ export function Mois({ boot, tv }: { boot: Boot; tv: boolean }) {
           }
         />
       )}
-      <nav aria-label={L.page.download} className="flex flex-wrap gap-3">
+      <nav aria-label={L.page.download} className="hidden flex-wrap gap-3 md:flex">
         <a className={lien} href={`${exp}?format=pdf&${q}`} download>{L.page.pdf}</a>
         <a className={lien} href={`${exp}?format=csv&${q}`} download>{L.page.csv}</a>
         <a className={lien} href={`${exp}?format=pdf&ramadan=1`} download>{L.page.ramadan}</a>

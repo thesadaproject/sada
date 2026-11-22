@@ -3,7 +3,7 @@
  *  capitales minuscules, numéro en EB Garamond), Vendredi en gras, aujourd'hui teinté de l'accent.
  *  Pur : l'appelant fournit libellés et heures formatés.
  *  Sans débordement à 390 px : colonnes fixes, une heure « HH:MM » par cellule ; la date hégirienne
- *  (mois abrégé) passe sous le jour du mois, et ne prend sa propre colonne qu'à partir de md. */
+ *  (mois abrégé) est collée sous le numéro du jour, dans la même cellule (pas de colonne séparée). */
 export type MonthColumn = { cle: string; nom: string; arabe: string };
 export type MonthDay = {
   /** « 22 » */
@@ -22,7 +22,7 @@ export type MonthDay = {
   repere?: string;
 };
 
-export function MonthTable({ surtitre, titre, sousTitre, colonnes, jours, enteteJour = "Jour", enteteHijri = "Hégire", colonneJumua = "dhuhr", legende, detail, tv = false }: {
+export function MonthTable({ surtitre, titre, sousTitre, colonnes, jours, enteteJour = "Jour", colonneJumua = "dhuhr", legende, detail, actions, tv = false }: {
   /** Petit titre en capitales vertes au-dessus du titre (« Horaires de prière »). */
   surtitre?: string;
   titre: string;
@@ -32,17 +32,16 @@ export function MonthTable({ surtitre, titre, sousTitre, colonnes, jours, entete
   colonnes: MonthColumn[];
   jours: MonthDay[];
   enteteJour?: string;
-  enteteHijri?: string;
   /** Clé de la colonne où les horaires de Jumu'a remplacent l'heure du vendredi. */
   colonneJumua?: string;
   /** Légende sous le tableau (voir Legende). */
   legende?: React.ReactNode;
+  /** Sous le titre, avant le tableau (menu « Télécharger » en mobile). */
+  actions?: React.ReactNode;
   tv?: boolean;
 }) {
-  const avecHijri = jours.some((j) => j.hijri);
   const cell = tv ? "px-4 py-3 text-[1.7rem]" : "px-0.5 py-1.5 text-[0.85rem] md:px-3 md:py-2 md:text-[0.95rem]";
   const tete = tv ? "px-4 py-3" : "px-0.5 py-2 md:px-3";
-  const hijriCol = tv ? "table-cell" : "hidden md:table-cell";
   return (
     <section>
       {surtitre && (
@@ -55,19 +54,16 @@ export function MonthTable({ surtitre, titre, sousTitre, colonnes, jours, entete
           {sousTitre}
         </p>
       )}
+      {actions}
       <div className="mt-4 overflow-hidden rounded-[10px] border border-(--s-line) bg-(--s-card)">
         <table className="w-full table-fixed border-collapse text-center">
           <colgroup>
-            <col className={tv ? "w-[9rem]" : "w-[3.7rem] md:w-[7rem]"} />
-            {avecHijri && <col className={`${hijriCol} ${tv ? "w-[11rem]" : "md:w-[8rem]"}`} />}
+            <col className={tv ? "w-[14rem]" : "w-[4.4rem] md:w-[9rem]"} />
             {colonnes.map((c) => <col key={c.cle} />)}
           </colgroup>
           <thead>
             <tr className="bg-(--s-head)">
               <th scope="col" className={`${tete} text-start text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-(--s-kicker) ${tv ? "pl-8 text-[1.2rem]" : "pl-3 md:pl-5"}`}>{enteteJour}</th>
-              {avecHijri && (
-                <th scope="col" className={`${hijriCol} ${tete} text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-(--s-kicker) ${tv ? "text-[1.2rem]" : ""}`}>{enteteHijri}</th>
-              )}
               {colonnes.map((c) => (
                 <th key={c.cle} scope="col" className={`${tete} font-semibold text-(--s-fg)`}>
                   <span className={`block leading-tight ${tv ? "font-serif text-[1.9rem] font-normal" : "font-serif text-[0.72rem] font-normal tracking-tight md:text-[1rem] md:tracking-normal"}`}>{c.nom}</span>
@@ -93,10 +89,9 @@ export function MonthTable({ surtitre, titre, sousTitre, colonnes, jours, entete
                     <span className={`font-serif leading-none tabular-nums text-(--s-title) ${tv ? "text-[2.4rem]" : "text-[1.2rem]"}`}>{j.jour}</span>
                     <span className={`font-semibold uppercase leading-none tracking-[0.1em] text-(--s-muted) ${tv ? "text-[1.1rem]" : "text-[0.58rem]"}`}>{j.semaine}</span>
                   </span>
-                  {j.hijri && !tv && <span className="block text-[0.68rem] font-normal leading-tight text-(--s-muted) md:hidden">{j.hijri}</span>}
+                  {j.hijri && <span className={`block whitespace-nowrap font-normal leading-tight text-(--s-muted) ${tv ? "text-[1.15rem]" : "text-[0.66rem] md:text-[0.78rem]"}`}>{j.hijri}</span>}
                   {j.repere && <span className={`block font-semibold leading-tight text-(--s-kicker) ${tv ? "text-[1.1rem]" : "text-[0.62rem]"}`}>{j.repere}</span>}
                 </th>
-                {avecHijri && <td className={`${hijriCol} ${cell} font-normal text-(--s-muted)`}>{j.hijri ?? ""}</td>}
                 {colonnes.map((c) => (
                   <td key={c.cle} className={`${cell} tabular-nums`}>
                     {c.cle === colonneJumua && j.jumua && j.jumua.length > 0 ? (
