@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.15](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.14...sada-v0.1.0-alpha.15) (2026-11-23)
+
+
+### Features
+
+* **web:** native dialog, confirmations, tooltips, lazy routes, polling pause ([#83](https://github.com/thesadaproject/sada/issues/83)) ([56fbe34](https://github.com/thesadaproject/sada/commit/56fbe343365ed29d2d667673b26e59c341cf19ed))
+
 ## [0.1.0-alpha.14](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.13...sada-v0.1.0-alpha.14) (2026-11-22)
 
 
