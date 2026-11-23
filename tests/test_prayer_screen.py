@@ -4,6 +4,7 @@ import datetime as dt
 import hashlib
 import json
 import re
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -13,6 +14,12 @@ from conftest import client, set_mosque  # noqa: E402
 
 from sada.backoffice import prayer_screen  # noqa: E402
 from sada.backoffice.api import public  # noqa: E402
+
+
+def paris_today() -> dt.date:
+    """Today as the server sees it (mosque timezone), not the runner's UTC: they differ between 00:00 and 01:00."""
+    return dt.datetime.now(ZoneInfo("Europe/Paris")).date()
+
 
 CALC = {"lat": "48.9", "lon": "2.3", "method": "uoif"}
 BASE = "/api/v1/public/mosques/ma-mosquee/prayer-times"
@@ -48,7 +55,7 @@ def test_the_screen_shows_the_prayers_in_french_and_arabic_with_the_iqama_that_e
     for word in ("Fajr", "Chourouk", "Dhuhr", "Asr", "Maghrib", "Isha", "الفجر", "العشاء", "Mosquée Exemple"):
         assert word in h, word
     day = _data(h)["days"][0]
-    assert set(day["iqama"]) == {"isha"} and day["times"]["isha"] and day["date"] == dt.date.today().isoformat()
+    assert set(day["iqama"]) == {"isha"} and day["times"]["isha"] and day["date"] == paris_today().isoformat()
     assert 'lang="fr"' in h and 'role="status"' in h and "aria-label" in h
 
 
@@ -91,7 +98,7 @@ def test_days_gives_today_and_tomorrow_and_refuses_bad_dates(env):
     assert d["days"][0]["hijri"] == "1 Chawwal 1448" and d["timezone"] == "Europe/Paris"
     assert d["days"][0]["gregorian"] == "Mardi 9 mars 2027"
     assert c.get(BASE + "/days?from=09-03-2027").status_code == 422
-    assert c.get(BASE + "/days").json()["days"][0]["date"] == dt.date.today().isoformat()
+    assert c.get(BASE + "/days").json()["days"][0]["date"] == paris_today().isoformat()
 
 
 def test_a_manual_day_without_times_says_so(env):
@@ -104,7 +111,7 @@ def test_the_month_table_and_pdf_stay_reachable(env):
     _choose(env)
     c = client(env)
     h = c.get(BASE + "/page").text
-    month = dt.date.today().strftime("%Y-%m")
+    month = paris_today().strftime("%Y-%m")
     assert f'href="{BASE}/page?month={month}"' in h and f"{BASE}/export?format=pdf&amp;month={month}" in h
     assert "<table" in c.get(BASE + "/page?month=" + month).text
 

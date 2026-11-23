@@ -1,6 +1,7 @@
 """The public, read-only prayer-times endpoint: nothing private, nothing for Mawaqit, bounded."""
 
 import datetime as dt
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -11,9 +12,15 @@ from conftest import client  # noqa: E402
 from sada.backoffice import db, models, orm  # noqa: E402
 from sada.backoffice.api import public  # noqa: E402
 
+
+def paris_today() -> dt.date:
+    """Today as the server sees it (mosque timezone), not the runner's UTC: they differ between 00:00 and 01:00."""
+    return dt.datetime.now(ZoneInfo("Europe/Paris")).date()
+
+
 CALC = {"lat": "48.9", "lon": "2.3", "method": "uoif"}
 URL = "/api/v1/public/mosques/ma-mosquee/prayer-times"
-TODAY = dt.date.today()
+TODAY = paris_today()
 
 
 @pytest.fixture(autouse=True)
