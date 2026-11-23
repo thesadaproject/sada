@@ -15,9 +15,25 @@ export function libelles(valeur: unknown): Record<string, string> {
   return valeur && !Array.isArray(valeur) && typeof valeur === "object" ? (valeur as Record<string, string>) : {};
 }
 
+/** A calendar day (YYYY-MM-DD) as a Date at local noon: no timezone or DST change moves the day.
+ *  The result is an Invalid Date when the text is not a date. */
+export function parseDay(iso: string): Date {
+  return new Date(`${iso}T12:00:00`);
+}
+
+/** A timestamp (ISO) in the interface language: weekday, day, month and time. */
+export function dateTime(iso: string, langue: string): string {
+  return new Intl.DateTimeFormat(langue, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+}
+
+/** A number grouped as the interface language does it (thin spaces in French, commas in English). */
+export function nombre(n: number, langue: string): string {
+  return new Intl.NumberFormat(langue).format(n);
+}
+
 export function dateFr(valeur?: string | null, langue = "fr"): string {
   if (!valeur) return "—";
-  const d = new Date(`${valeur}T12:00:00`);
+  const d = parseDay(valeur);
   if (Number.isNaN(d.getTime())) return valeur;
   return new Intl.DateTimeFormat(langue, { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(d);
 }

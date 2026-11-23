@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { api, type AgendaEvent, type EventForm, type EventsList } from "../api";
 import { currentSession } from "../session";
+import { parseDay } from "../format";
 import { Btn, Field, Pill, Segmented, inputClass } from "@sada/ui";
 import { idOnglet, idPanneau } from "@sada/ui";
 import { ListeSeances } from "./Sermons";
@@ -18,7 +19,7 @@ const VIDE: EventForm = {
 };
 
 /** ISO date taken at noon, so that no timezone makes the day slip. */
-const jour = (iso: string) => new Date(`${iso}T12:00:00`);
+const jour = parseDay;
 const majuscule = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Name of a weekday in the interface language (the server speaks French). */

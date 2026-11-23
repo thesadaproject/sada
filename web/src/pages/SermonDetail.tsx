@@ -99,7 +99,7 @@ export default function SermonDetail() {
       <div className="grid gap-4">
         <Retour />
         <div className="grid gap-4 min-[1000px]:grid-cols-[minmax(0,1.2fr)_minmax(380px,1fr)]">
-          <div className="h-[40vh] min-h-[220px] animate-pulse rounded-[10px] bg-night/85" />
+          <div className="h-[40dvh] min-h-[220px] animate-pulse rounded-[10px] bg-night/85" />
           <Card><p className="m-0 text-muted">{t("common.loading")}</p></Card>
         </div>
       </div>
@@ -190,11 +190,11 @@ export default function SermonDetail() {
                   e.currentTarget.currentTime = depart + decalage;
                   setTps(depart);
                 }}
-                className="block max-h-[50vh] w-full bg-night object-contain"
+                className="block max-h-[50dvh] w-full bg-night object-contain"
                 src={habillee ? `/api/v1/sermons/${k.id}/habillage/video.mp4?v=${d.dressed.v}` : `/media/sermon/${k.id}.mp4`}
               />
             ) : (
-              <div className="grid h-[30vh] min-h-[200px] place-items-center px-6 text-center">
+              <div className="grid h-[30dvh] min-h-[200px] place-items-center px-6 text-center">
                 <p className="m-0 text-[0.95rem] text-night-muted">{t("sermons.detail.noVideo")}</p>
               </div>
             )}
@@ -264,7 +264,7 @@ export default function SermonDetail() {
         </div>
 
         {/* Right column: one topic at a time; the panel sticks and its content scrolls on its own. */}
-        <Card className="flex flex-col min-[1000px]:sticky min-[1000px]:top-4 min-[1000px]:max-h-[calc(100vh-2rem)]">
+        <Card className="flex flex-col min-[1000px]:sticky min-[1000px]:top-4 min-[1000px]:max-h-[calc(100dvh-2rem)]">
           <div>
             <Segmented
               items={onglets}
@@ -278,7 +278,7 @@ export default function SermonDetail() {
           </div>
           {message && <Bandeau ko={message.ko}>{message.texte}</Bandeau>}
 
-          <div className="relative mt-1 max-h-[70vh] min-h-0 flex-1 overflow-y-auto pr-1 min-[1000px]:max-h-none"
+          <div className="relative mt-1 max-h-[70dvh] min-h-0 flex-1 overflow-y-auto pr-1 min-[1000px]:max-h-none"
             role="tabpanel" id={idPanneau("khutba", ongletActif)} aria-labelledby={idOnglet("khutba", ongletActif)}>
             {ongletActif === "transcription" && d.transcript.length > 0 && (
               <div role="group" aria-label={t("sermons.detail.exportLabel")} className="mb-2 flex flex-wrap justify-end gap-3 text-[0.82rem]">

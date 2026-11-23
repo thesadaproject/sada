@@ -4,7 +4,7 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api, type Session } from "./api";
 import { LANGUAGES, setLanguage } from "./i18n";
-import { Deroulant, itemMenuActif, itemMenuBase, itemMenuRepos } from "@sada/ui";
+import { Bulle, Deroulant, itemMenuActif, itemMenuBase, itemMenuRepos } from "@sada/ui";
 
 const itemMenu = (actif = false) => `${itemMenuBase} ${actif ? itemMenuActif : itemMenuRepos}`;
 
@@ -108,9 +108,11 @@ export default function TopBar({ session, onLogout, onSwitchMosque }: {
         </span>
       )}
       {failed > 0 && (
-        <span title={t("states.menuFailed")} className="inline-flex min-w-[1.35rem] justify-center rounded-full bg-live px-1.5 text-[0.78rem] font-bold text-white">
-          !
-        </span>
+        <Bulle texte={t("states.menuFailed")}>
+          <span role="img" aria-label={t("states.menuFailed")} className="inline-flex min-w-[1.35rem] justify-center rounded-full bg-live px-1.5 text-[0.78rem] font-bold text-white">
+            !
+          </span>
+        </Bulle>
       )}
     </>
   );
@@ -152,7 +154,9 @@ export default function TopBar({ session, onLogout, onSwitchMosque }: {
   const boitePastille = "group inline-flex shrink-0 items-center no-underline max-md:h-11";
   const indicateur = enDirect && (
     peut("live") ? (
-      <Link to="/regie" title={t("nav.onAirOpen")} aria-label={t("nav.onAirOpen")} className={boitePastille}>{contenuPastille}</Link>
+      <Bulle texte={t("nav.onAirOpen")}>
+        <Link to="/regie" aria-label={t("nav.onAirOpen")} className={boitePastille}>{contenuPastille}</Link>
+      </Bulle>
     ) : (
       <span role="status" className={boitePastille}>{contenuPastille}</span>
     )
@@ -193,7 +197,7 @@ export default function TopBar({ session, onLogout, onSwitchMosque }: {
     <header className="bg-night text-night-ink shadow-[0_1px_0_rgba(0,0,0,0.2)]">
       <div className="mx-auto flex max-w-[1280px] items-center gap-3 px-4 py-2.5 max-md:py-2 lg:gap-4">
         <Link to="/" aria-label={t("nav.home")} className="flex min-w-0 shrink-0 items-center gap-2.5 no-underline">
-          <img src="/sada-mark-or.svg" alt="" className="h-[28px] w-auto shrink-0 max-md:h-[26px]" />
+          <img src="/sada-mark-or.svg" alt="" width="73" height="28" className="h-[28px] w-auto shrink-0 max-md:h-[26px]" />
           <span className="flex min-w-0 items-baseline gap-2">
             <span className="font-serif text-[1.35rem] leading-none text-white max-[359px]:sr-only">{t("app.name")}</span>
             <span className="truncate text-[0.82rem] text-night-muted max-lg:hidden lg:max-w-[12rem]">· {mosque.name}</span>
@@ -327,7 +331,7 @@ export default function TopBar({ session, onLogout, onSwitchMosque }: {
             // Visibility flips at once on opening (focus can move in), at the end on closing.
             menuOuvert ? "visible translate-x-0 transition-[translate]" : "invisible translate-x-full transition-[translate,visibility] rtl:-translate-x-full"}`}>
           <div className="flex min-h-[60px] items-center gap-3 border-b border-white/10 py-2 ps-4 pe-4">
-            <img src="/sada-mark-or.svg" alt="" className="h-[24px] w-auto shrink-0" />
+            <img src="/sada-mark-or.svg" alt="" width="63" height="24" className="h-[24px] w-auto shrink-0" />
             <span className="min-w-0 flex-1">
               <span className="block font-serif text-[1.15rem] leading-tight text-white">{t("app.name")}</span>
               <span className="block text-[0.78rem] leading-snug text-night-muted">{mosque.name}</span>
@@ -376,12 +380,14 @@ export default function TopBar({ session, onLogout, onSwitchMosque }: {
                 {LANGUAGES.map((l) => {
                   const actif = i18n.language === l.code;
                   return (
-                    <button key={l.code} type="button" lang={l.code} aria-pressed={actif} aria-label={l.label} title={l.label}
+                    <Bulle key={l.code} texte={l.label} aligne="fin">
+                    <button type="button" lang={l.code} aria-pressed={actif} aria-label={l.label}
                       onClick={() => setLanguage(l.code)}
                       className={`min-h-11 min-w-11 cursor-pointer rounded-md border-0 px-2 text-[0.82rem] font-bold tracking-wide uppercase ${
                         actif ? "bg-leaf text-night" : "bg-transparent text-night-link hover:text-white"}`}>
                       {l.code}
                     </button>
+                    </Bulle>
                   );
                 })}
               </div>

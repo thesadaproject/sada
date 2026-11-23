@@ -92,6 +92,9 @@ const nav = await chromium.launch(process.env.CHROMIUM ? { executablePath: proce
 let echecs = 0;
 for (const [nom, requete, viewport] of vues) {
   const ctx = await nav.newContext({ viewport, deviceScaleFactor: 2, locale: "fr-FR" });
+  // The fixtures are dated TODAY: freeze the page clock there (the page compares its clock with the
+  // served days, and would otherwise refetch in a loop once the real date moves past TODAY).
+  await ctx.clock.install({ time: new Date(`${TODAY}T12:00:00+01:00`) });
   const page = await ctx.newPage();
   const erreurs = [];
   page.on("pageerror", (e) => erreurs.push(e.message));

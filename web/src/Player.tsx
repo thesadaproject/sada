@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type Ref, type VideoHTMLAttributes } from "react";
 import { useTranslation } from "react-i18next";
+import { Bulle } from "@sada/ui";
 
 /** Lecteur vidéo maison, aux couleurs de Sadā, sans dépendance.
  *  - Le <video> reste un vrai élément : `ref`, `onTimeUpdate`, `src`… passent tels quels, donc les
@@ -186,6 +187,7 @@ export default function Player({ ref, className = "", cadre = "", pistes = [], .
       className={`group relative isolate overflow-hidden bg-night outline-none focus-visible:ring-2 focus-visible:ring-leaf ${plein ? "grid place-items-center" : ""} ${cadre} ${montre ? "" : "cursor-none"}`}
     >
       <video
+        preload="metadata"   /* duration and first frame, not the whole file; callers may override */
         {...video}
         ref={lier}
         controls={false}
@@ -263,6 +265,7 @@ export default function Player({ ref, className = "", cadre = "", pistes = [], .
           <span className="ml-auto flex items-center gap-1">
             {pistes.length > 0 && (
               <div className="relative">
+                <Bulle texte={t("player.subtitlesKey")} place="haut" aligne="fin" actif={!menu}>
                 <button
                   ref={boutonCC}
                   type="button"
@@ -271,7 +274,6 @@ export default function Player({ ref, className = "", cadre = "", pistes = [], .
                   aria-pressed={actif}
                   aria-haspopup="menu"
                   aria-expanded={menu}
-                  title={t("player.subtitlesKey")}
                   className={`relative grid h-9 min-w-9 cursor-pointer place-items-center rounded-md px-1.5 focus-visible:outline-2 focus-visible:outline-leaf ${
                     actif ? "text-leaf hover:bg-white/10" : "text-night-ink/70 hover:bg-white/10 hover:text-night-ink"
                   }`}
@@ -283,6 +285,7 @@ export default function Player({ ref, className = "", cadre = "", pistes = [], .
                       className="absolute inset-x-1.5 top-1/2 h-[1.5px] -translate-y-1/2 -rotate-[18deg] rounded-full bg-current" />
                   )}
                 </button>
+                </Bulle>
                 {menu && (
                   <div ref={menuBoite} role="menu" aria-label={t("player.subtitlesChoose")} onKeyDown={clavierMenu}
                     className="absolute right-0 bottom-full z-30 mb-2 min-w-[11rem] overflow-hidden rounded-[8px] border border-white/15 bg-night/95 py-1 text-left text-[0.86rem] text-night-ink shadow-[0_10px_28px_rgba(10,16,12,0.45)] backdrop-blur-sm">
@@ -296,7 +299,7 @@ export default function Player({ ref, className = "", cadre = "", pistes = [], .
                 )}
               </div>
             )}
-            <Bouton label={muet || volume === 0 ? t("player.unmute") : t("player.mute")} onClick={muter}>
+            <Bouton label={muet || volume === 0 ? t("player.unmute") : t("player.mute")} onClick={muter} aligne="fin">
               {muet || volume === 0
                 ? <path d="M3 9v6h4l5 5V4L7 9H3zm13.59 3L14 9.41 15.41 8 18 10.59 20.59 8 22 9.41 19.41 12 22 14.59 20.59 16 18 13.41 15.41 16 14 14.59z" />
                 : <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />}
@@ -319,7 +322,7 @@ export default function Player({ ref, className = "", cadre = "", pistes = [], .
             >
               {vitesse}×
             </button>
-            <Bouton label={plein ? t("player.exitFullscreen") : t("player.fullscreen")} onClick={ecran}>
+            <Bouton label={plein ? t("player.exitFullscreen") : t("player.fullscreen")} onClick={ecran} aligne="fin">
               {plein
                 ? <path d="M8 3v5H3v2h7V3zm8 0h-2v7h7V8h-5zM3 16h5v5h2v-7H3zm11 5h2v-5h5v-2h-7z" />
                 : <path d="M3 3h7v2H5v5H3zm11 0h7v7h-2V5h-5zM3 14h2v5h5v2H3zm16 5h-5v2h7v-7h-2z" />}
@@ -331,17 +334,22 @@ export default function Player({ ref, className = "", cadre = "", pistes = [], .
   );
 }
 
-function Bouton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+/** Icon button of the control bar: the tooltip names it on hover and keyboard focus (above the
+ *  bar; `fin` keeps the right-hand ones inside the player, which clips its overflow). */
+function Bouton({ label, onClick, children, aligne }: {
+  label: string; onClick: () => void; children: React.ReactNode; aligne?: "debut" | "fin";
+}) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      title={label}
-      className="grid size-9 cursor-pointer place-items-center rounded-md text-night-ink hover:bg-white/10 hover:text-leaf focus-visible:outline-2 focus-visible:outline-leaf"
-    >
-      <svg viewBox="0 0 24 24" className="size-5" fill="currentColor" aria-hidden="true">{children}</svg>
-    </button>
+    <Bulle texte={label} place="haut" aligne={aligne}>
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={label}
+        className="grid size-9 cursor-pointer place-items-center rounded-md text-night-ink hover:bg-white/10 hover:text-leaf focus-visible:outline-2 focus-visible:outline-leaf"
+      >
+        <svg viewBox="0 0 24 24" className="size-5" fill="currentColor" aria-hidden="true">{children}</svg>
+      </button>
+    </Bulle>
   );
 }
 

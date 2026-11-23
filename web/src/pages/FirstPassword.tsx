@@ -27,7 +27,7 @@ export default function FirstPassword({ nom, onDone, onLogout }: { nom: string; 
   };
 
   return (
-    <main className="mx-auto grid min-h-screen max-w-[460px] content-center px-4 py-10">
+    <main className="mx-auto grid min-h-dvh max-w-[460px] content-center px-4 py-10">
       <Card>
         <p className="m-0 mb-2 text-[0.75rem] font-semibold uppercase tracking-[0.12em] text-green">{t("firstPassword.kicker")}</p>
         <h1 className="m-0 mb-2 font-serif text-[1.8rem] font-normal leading-[1.15] text-deeper">{t("firstPassword.title", { nom })}</h1>

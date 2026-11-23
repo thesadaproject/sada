@@ -32,7 +32,7 @@ function Parcourir({ depart, onChoix, onFermer }: { depart: string; onChoix: (ch
     // Le focus entre dans la fenêtre, Tab y tourne en rond, Échap la ferme et le
     // focus revient au bouton « Parcourir » qui l'a ouverte.
     <Dialogue label={t("settings.folderTitle")} onFermer={onFermer}
-      boite="grid max-h-[85vh] w-full max-w-[640px] grid-rows-[auto_auto_1fr_auto] gap-3 rounded-[10px] border border-line bg-white p-4.5">
+      boite="grid max-h-[85dvh] w-[min(640px,calc(100dvw-2rem))] grid-rows-[auto_auto_1fr_auto] gap-3 rounded-[10px] border border-line bg-white p-4.5">
       <Title>{t("settings.folderTitle")}</Title>
       {erreur && <p role="alert" className="m-0 text-[0.9rem] text-[#7a1f20]">{erreur}</p>}
       {!vue ? (

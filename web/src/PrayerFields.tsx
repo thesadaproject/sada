@@ -102,9 +102,9 @@ export function Apercu({ calc, jours = 3 }: { calc: Calc; jours?: number }) {
           <table className="w-full border-collapse text-[0.9rem] tabular-nums">
             <thead>
               <tr>
-                <th className="px-2 py-1 text-left text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-muted">{t("prayer.date")}</th>
+                <th scope="col" className="px-2 py-1 text-left text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-muted">{t("prayer.date")}</th>
                 {PRIERES.map((p) => (
-                  <th key={p} className="px-2 py-1 text-left text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-muted">{t(`prayer.names.${p}`)}</th>
+                  <th scope="col" key={p} className="px-2 py-1 text-left text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-muted">{t(`prayer.names.${p}`)}</th>
                 ))}
               </tr>
             </thead>

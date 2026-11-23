@@ -86,13 +86,14 @@ export default function Audit() {
         ) : d.items.length === 0 ? (
           <p className="m-0 text-muted">{t("common.empty")}</p>
         ) : (
-          // Téléphone : le tableau défile dans la carte (l'adresse IP, peu utile, est masquée).
-          <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[0.93rem] max-sm:[&_tr>*:nth-child(5)]:hidden">
+          // Phone: the table scrolls inside the card, every column stays (none is hidden). The region
+          // is focusable so that keyboard users can scroll it, and named for screen readers.
+          <div role="region" aria-label={t("audit.title")} tabIndex={0} className="overflow-x-auto">
+          <table className="w-full border-collapse text-[0.93rem]">
             <thead>
               <tr>
                 {[t("audit.when"), t("audit.who"), t("audit.action"), t("audit.object"), t("audit.ip")].map((h) => (
-                  <th key={h} className="border-b border-line px-2 py-2 text-left text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-muted">{h}</th>
+                  <th scope="col" key={h} className="border-b border-line px-2 py-2 text-left text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-muted">{h}</th>
                 ))}
               </tr>
             </thead>

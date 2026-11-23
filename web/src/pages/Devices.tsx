@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
+import { useConfirm } from "../confirmContext";
+import { dateTime, nombre } from "../format";
 import { Btn, Card, Field, Kicker, inputClass } from "@sada/ui";
 
 /** Studio devices: the mosque's PC that streams on its own. Pairing (the code shown on the device),
@@ -25,8 +27,6 @@ type Donnees = {
 };
 type Message = { ok: boolean; texte: string } | null;
 
-const heure = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 function depuis(ts: number | null, t: TFunction): string {
   if (ts == null) return t("devices.never");
@@ -38,7 +38,8 @@ function depuis(ts: number | null, t: TFunction): string {
 }
 
 export default function Devices() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const confirm = useConfirm();
   const [d, setD] = useState<Donnees | null>(null);
   const [erreur, setErreur] = useState(false);
   const [msg, setMsg] = useState<Message>(null);
@@ -87,8 +88,10 @@ export default function Devices() {
           <span className="text-muted">{t("devices.liveRunningHint")}</span>
           {d.can_takeover && (
             <Btn variante="dangerGhost" className="ms-auto" disabled={occupe}
-                 onClick={() => window.confirm(t("devices.takeoverConfirm", { source: d.publisher!.text })) &&
-                   agir(() => api.studioTakeover())}>
+                 onClick={async () => {
+                   if (await confirm({ message: t("devices.takeoverConfirm", { source: d.publisher!.text }), action: t("devices.takeover") }))
+                     agir(() => api.studioTakeover());
+                 }}>
               {t("devices.takeover")}
             </Btn>
           )}
@@ -153,7 +156,7 @@ export default function Devices() {
               <p className="m-0 text-[0.88rem] text-muted">
                 {t("devices.lastSeen", { when: depuis(a.last_seen_at, t) })}
                 {a.app_version && ` · ${t("devices.version", { v: a.app_version })}`}
-                {a.bitrate_kbps ? ` · ${t("regie.kbps", { n: a.bitrate_kbps.toLocaleString() })}` : ""}
+                {a.bitrate_kbps ? ` · ${t("regie.kbps", { n: nombre(a.bitrate_kbps, i18n.language) })}` : ""}
               </p>
               {a.online && (
                 <p className="m-0 text-[0.88rem]">
@@ -170,9 +173,15 @@ export default function Devices() {
               <div className="flex flex-wrap gap-2">
                 <Btn variante="ghost" className="min-h-9 px-3 py-1 text-[0.88rem]" disabled={occupe} onClick={() => setRenomme({ id: a.id, nom: a.name })}>{t("devices.rename")}</Btn>
                 <Btn variante="ghost" className="min-h-9 px-3 py-1 text-[0.88rem]" disabled={occupe || a.rotation_pending}
-                     onClick={() => window.confirm(t("devices.rotateConfirm", { name: a.name })) && agir(() => api.studioRotate(a.id))}>{t("devices.rotate")}</Btn>
+                     onClick={async () => {
+                       if (await confirm({ message: t("devices.rotateConfirm", { name: a.name }), action: t("devices.rotate"), danger: false }))
+                         agir(() => api.studioRotate(a.id));
+                     }}>{t("devices.rotate")}</Btn>
                 <Btn variante="dangerGhost" className="min-h-9 px-3 py-1 text-[0.88rem]" disabled={occupe}
-                     onClick={() => window.confirm(t("devices.revokeConfirm", { name: a.name })) && agir(() => api.studioRevoke(a.id))}>{t("devices.revoke")}</Btn>
+                     onClick={async () => {
+                       if (await confirm({ message: t("devices.revokeConfirm", { name: a.name }), action: t("devices.revoke") }))
+                         agir(() => api.studioRevoke(a.id));
+                     }}>{t("devices.revoke")}</Btn>
               </div>
             </li>
           ))}
@@ -195,7 +204,7 @@ export default function Devices() {
         {d.slots.length === 0 ? <p className="m-0 text-muted">{t("devices.noSlots")}</p> : (
           <ul className="m-0 grid list-none gap-1 p-0 text-[0.92rem]">
             {d.slots.map((s) => (
-              <li key={s.slot_id}><strong>{heure(s.starts_at)}</strong> · {t(`devices.type.${s.type}`, { defaultValue: s.type })} · {s.title}</li>
+              <li key={s.slot_id}><strong>{dateTime(s.starts_at, i18n.language)}</strong> · {t(`devices.type.${s.type}`, { defaultValue: s.type })} · {s.title}</li>
             ))}
           </ul>
         )}
