@@ -1,6 +1,7 @@
 """Prayer times of a mosque: the three sources behind one resolver, the typed timetable, the CSV."""
 
 import datetime as dt
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -12,8 +13,14 @@ from sada import mawaqit  # noqa: E402
 from sada import prayer_calc as calc  # noqa: E402
 from sada.backoffice import auth, db, models, orm, prayer_times  # noqa: E402
 
+
+def paris_today() -> dt.date:
+    """Today as the server sees it (mosque timezone), not the runner's UTC: they differ between 00:00 and 01:00."""
+    return dt.datetime.now(ZoneInfo("Europe/Paris")).date()
+
+
 CALC = {"lat": "48.9", "lon": "2.3", "method": "uoif", "asr": "standard", "high_lats": "nightmiddle"}
-TODAY = dt.date.today()
+TODAY = paris_today()
 
 
 def _admin(env):
