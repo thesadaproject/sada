@@ -158,5 +158,13 @@
   "Orchestrator connection saved.": "Connexion à l'orchestrateur enregistrée.",
   "These settings belong to the platform screen: {fields}.": "Ces réglages relèvent de l'écran de la plateforme : {fields}.",
   "the program's own folder": "le dossier du programme",
-  "The dressed video is already up to date with these options: nothing to render.": "La vidéo habillée est déjà à jour avec ces options : rien à rendre."
+  "The dressed video is already up to date with these options: nothing to render.": "La vidéo habillée est déjà à jour avec ces options : rien à rendre.",
+  "invalid body": "corps de requête invalide",
+  "unknown overlay: {kind}": "incrustation inconnue : {kind}",
+  "an overlay object is expected": "un objet d'incrustation est attendu",
+  "QR code URL is too long": "l'adresse du QR code est trop longue",
+  "QR code URL must start with https://": "l'adresse du QR code doit commencer par https://",
+  "invalid corner: {corner}": "coin invalide : {corner}",
+  "banner title is required": "le titre du bandeau est requis",
+  "Overlay {kind}: {state}": "Incrustation {kind} : {state}"
 }

@@ -187,6 +187,7 @@ class Orchestrator:
         self.telemetry = telemetry.start("sada-orchestrator", cfg.mosque_slug)
         self.telemetry.watch_orchestrator(self.telemetry_snapshot)
         self._shown_key = None
+        self._overlay_key = None
         self._saved = None
         self._stop = threading.Event()
         self.api = None
@@ -464,6 +465,10 @@ class Orchestrator:
                     enc.show(m.scene, spec.full, self.renderer.content(m.scene, moment))
             if spec.mic != enc.mic_on:
                 enc.mic(spec.mic)
+        ov_key = json.dumps(m.overlays, sort_keys=True)
+        if ov_key != self._overlay_key:
+            self._overlay_key = ov_key
+            enc.set_overlay(self.renderer.render_overlays(m.overlays))
         if m.state != self._notified_state:
             if self._notified_state is not None:
                 self.telemetry.state_changed(self._notified_state.value, m.state.value)
@@ -557,6 +562,12 @@ class Orchestrator:
             msg = self.machine.command(cmd, self.signals(), arg)
             self._sync()
             return {"message": msg, "state": self.machine.state.value}
+
+    def set_overlay(self, kind: str, data: dict) -> dict:
+        with self.lock:
+            overlays = self.machine.set_overlay(kind, data)
+            self._sync()
+            return {"overlays": overlays, "state": self.machine.state.value}
 
     def status(self) -> dict:
         with self.lock:

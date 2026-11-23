@@ -49,8 +49,28 @@ def make_server(orch, host: str, port: int, token: str = "") -> ThreadingHTTPSer
             if not self._auth():
                 return
             u = urlparse(self.path)
-            q = {k: v[0] for k, v in parse_qs(u.query).items()}
             cmd = u.path.strip("/")
+            if cmd == "overlay":
+                try:
+                    n = int(self.headers.get("Content-Length", "0") or "0")
+                except ValueError:
+                    return self._send(400, {"error": _("invalid body")})
+                if n <= 0 or n > 16_384:
+                    return self._send(400, {"error": _("invalid body")})
+                try:
+                    body = json.loads(self.rfile.read(n).decode("utf-8"))
+                except (UnicodeDecodeError, ValueError):
+                    return self._send(400, {"error": _("invalid body")})
+                if not isinstance(body, dict) or not isinstance(body.get("kind"), str):
+                    return self._send(400, {"error": _("invalid body")})
+                kind = body["kind"]
+                data = {k: v for k, v in body.items() if k != "kind"}
+                try:
+                    res = orch.set_overlay(kind, data)
+                except ValueError as e:
+                    return self._send(400, {"error": str(e)})
+                return self._send(200, {"ok": True, **res})
+            q = {k: v[0] for k, v in parse_qs(u.query).items()}
             arg = q.get("name") or q.get("min")
             if q.get("info"):  # janaza record: "name|note"
                 arg = f"{q.get('name', '')}|{q['info']}"

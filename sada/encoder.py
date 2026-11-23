@@ -79,9 +79,9 @@ def backoff_delay(failures: int) -> float:
 class Encoder:
     def __init__(self, cfg, run_dir: Path, log=print):
         self.cfg, self.log = cfg, log
-        # layers: shared background of the full screens + two content layers (double buffer)
+        # layers: shared background of the full screens + two content layers (double buffer) + independent overlays
         self.run_dir = Path(run_dir)
-        self.layer_png = {k: str(self.run_dir / f"scene_{k}.png") for k in ("fond", "a", "b")}
+        self.layer_png = {k: str(self.run_dir / f"scene_{k}.png") for k in ("fond", "a", "b", "ov")}
         # current layer values (also the graph's initial values if ffmpeg is restarted)
         self.levels: dict[str, float] = {
             "fond": 1.0,
@@ -141,9 +141,11 @@ class Encoder:
             f"[1:v]format=rgba,loop=loop=-1:size=1,colorchannelmixer@fond=aa={L['fond']}[fond];"
             f"[2:v]format=rgba,fps={c.fps},colorchannelmixer@ca=aa={L['a_a']}[ca];"
             f"[3:v]format=rgba,fps={c.fps},colorchannelmixer@cb=aa={L['a_b']}[cb];"
+            f"[4:v]format=rgba,fps={c.fps}[ov];"
             f"[camz][fond]overlay@fond=format=auto:shortest=0:repeatlast=1[v0];"
             f"[v0][ca]overlay@ca=x={L['x_a']}:y={L['y_a']}:format=auto:shortest=0:repeatlast=1[v1];"
-            f"[v1][cb]overlay@cb=x={L['x_b']}:y={L['y_b']}:format=auto:shortest=0:repeatlast=1,format=yuv420p[v];"
+            f"[v1][cb]overlay@cb=x={L['x_b']}:y={L['y_b']}:format=auto:shortest=0:repeatlast=1[v2];"
+            f"[v2][ov]overlay@ov=format=auto:shortest=0:repeatlast=1,format=yuv420p[v];"
             f"[0:a]aresample=48000,aformat=channel_layouts=stereo,"
             f"volume@mic=volume={self.vol:g}:eval=frame,azmq=bind_address={_zmq_esc(self.zmq_aport)}"
             + ("[a]" if not clean else ",asplit=2[a][aclean]")
@@ -203,6 +205,8 @@ class Encoder:
             self.layer_png["a"],
             *slot,
             self.layer_png["b"],
+            *slot,
+            self.layer_png["ov"],
             "-filter_complex",
             fg,
             "-map",
@@ -425,11 +429,16 @@ class Encoder:
 
     # -------------------------------------------------------------------- overlay
     def prepare(self, background) -> None:
-        """Writes the shared background of the full screens and empty content layers (before starting)."""
+        """Writes the shared background of the full screens and empty content/overlay layers (before starting)."""
         write_png_atomic(background, self.layer_png["fond"])
         empty = Image.new("RGBA", background.size, (0, 0, 0, 0))
-        for k in ("a", "b"):
+        for k in ("a", "b", "ov"):
             write_png_atomic(empty, self.layer_png[k])
+
+    def set_overlay(self, img: Image.Image) -> None:
+        """Writes the independent overlay layer (QR code, free banner, mosque logo) without interrupting scenes."""
+        with self._mx:
+            write_png_atomic(img, self.layer_png["ov"])
 
     def show(self, scene: str, full: bool, content) -> None:
         """Displays a scene: content (transparent layer) + background if full screen (scenes.SCENES).

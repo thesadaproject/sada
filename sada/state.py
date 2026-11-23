@@ -68,6 +68,61 @@ WAITING = (State.IDLE, State.ARMED, State.BEFORE, State.INTERMISSION)
 # back-office choices all read this one tuple.
 EXTEND_MINUTES = ("5", "15")
 
+# Live overlays (independent of the active scene): QR code, lower-third banner, mosque logo.
+OVERLAY_KINDS = ("qr", "banner", "logo")
+OVERLAY_CORNERS = ("tl", "tr", "bl", "br")
+OVERLAY_URL_MAX = 512
+OVERLAY_LABEL_MAX = 60
+OVERLAY_TITLE_MAX = 120
+OVERLAY_SUBTITLE_MAX = 160
+
+
+def default_overlays() -> dict[str, dict]:
+    return {
+        "qr": {"visible": False, "url": "", "label": "", "corner": "tr"},
+        "banner": {"visible": False, "title": "", "subtitle": ""},
+        "logo": {"visible": False},
+    }
+
+
+def normalize_overlay(kind: str, patch: dict, current: dict | None = None) -> dict:
+    """Validate and merge a partial overlay update. Raises ValueError on bad input."""
+    if kind not in OVERLAY_KINDS:
+        raise ValueError(_("unknown overlay: {kind}", kind=kind))
+    if not isinstance(patch, dict):
+        raise ValueError(_("an overlay object is expected"))
+    base = dict(default_overlays()[kind])
+    if isinstance(current, dict):
+        base.update(current)
+    if "visible" in patch:
+        base["visible"] = bool(patch["visible"])
+    if kind == "qr":
+        if "url" in patch:
+            url = str(patch["url"] or "").strip()
+            if len(url) > OVERLAY_URL_MAX:
+                raise ValueError(_("QR code URL is too long"))
+            if url and (not url.startswith("https://") or len(url) <= 8 or any(ch.isspace() for ch in url)):
+                raise ValueError(_("QR code URL must start with https://"))
+            base["url"] = url
+        if "label" in patch:
+            base["label"] = str(patch["label"] or "").strip()[:OVERLAY_LABEL_MAX]
+        if "corner" in patch:
+            corner = str(patch["corner"] or "").strip().lower()
+            if corner not in OVERLAY_CORNERS:
+                raise ValueError(_("invalid corner: {corner}", corner=corner))
+            base["corner"] = corner
+        if base["visible"] and not base["url"]:
+            raise ValueError(_("QR code URL must start with https://"))
+    elif kind == "banner":
+        if "title" in patch:
+            base["title"] = str(patch["title"] or "").strip()[:OVERLAY_TITLE_MAX]
+        if "subtitle" in patch:
+            base["subtitle"] = str(patch["subtitle"] or "").strip()[:OVERLAY_SUBTITLE_MAX]
+        if base["visible"] and not base["title"]:
+            raise ValueError(_("banner title is required"))
+    return base
+
+
 # Scenes that can be picked by hand, in display order. Janaza has its own command, which opens the
 # form for the name of the deceased. Protocol values only: the front end translates them.
 # Tarawih is never picked by hand: a prayer is only broadcast on its planned night, in the mode chosen.
@@ -294,6 +349,7 @@ class Machine:
         self.last_reason = ""
         self._adhoc: SessionRec | None = None  # off-programme session about to open (see start_adhoc)
         self._adhoc_over = False  # the off-programme session just ended: its end screen hands back to the plan
+        self.overlays: dict[str, dict] = default_overlays()
 
     # ------------------------------------------------------------------ helpers
     def _rec_of(self, start: dt.datetime, meta: dict, index: int) -> SessionRec:
@@ -982,6 +1038,14 @@ class Machine:
         State.INTERMISSION: _wait_intermission,
     }
 
+    def set_overlay(self, kind: str, data: dict) -> dict:
+        """Update one overlay independently of the active scene and automatic mode."""
+        updated = normalize_overlay(kind, data, self.overlays.get(kind))
+        self.overlays[kind] = updated
+        state = "on" if updated.get("visible") else "off"
+        self.log(_("Overlay {kind}: {state}", kind=kind, state=state))
+        return {k: dict(v) for k, v in self.overlays.items()}
+
     # ------------------------------------------------------------------- statut
     def status(self) -> dict:
         s = self.session
@@ -998,6 +1062,7 @@ class Machine:
             "kind": self.kind,
             "event": self.rec.event() if self.rec else None,
             "sessions": self.sessions_dicts(),
+            "overlays": {k: dict(v) for k, v in self.overlays.items()},
         }
 
     def sessions_dicts(self) -> list[dict]:
