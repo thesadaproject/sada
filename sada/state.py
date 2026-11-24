@@ -24,6 +24,7 @@ from dataclasses import asdict, dataclass, field, replace
 from enum import Enum
 
 from .i18n import _
+from .transitions import DEFAULT_TRANSITION, TRANSITIONS
 
 
 class State(str, Enum):
@@ -38,6 +39,7 @@ class State(str, Enum):
     DARS = "DARS"  # dars or conference: camera + event banner
     DARS_END = "DARS_END"  # end screen of a dars (next class), before the stream stops
     TARAWIH = "TARAWIH"  # Ramadan night prayer: sound + fixed full screen, or camera if the mosque chose it
+    CUSTOM = "CUSTOM"  # manual mode: custom uploaded slate image (attente, pause, collecte...)
     STOPPED = "STOPPED"  # stream stopped
 
 
@@ -55,11 +57,13 @@ SCENE_OF = {
     State.DARS: "dars",
     State.DARS_END: "dars_fin",
     State.TARAWIH: "tarawih",
+    State.CUSTOM: "custom",
 }
 #: Scene of a tarawih whose mosque chose to film it (see Machine.scene); "tarawih" is the audio one.
 TARAWIH_VIDEO_SCENE = "tarawih_video"
+CUSTOM_SCENE_PREFIX = "custom:"
 # a tarawih is never forced by the scene command: only its planned night, in the mosque's mode
-STATE_OF_SCENE = {v: k for k, v in SCENE_OF.items() if v and v != "tarawih"}
+STATE_OF_SCENE = {v: k for k, v in SCENE_OF.items() if v and v not in ("tarawih", "custom")}
 #: States in which a session is open and broadcast with the mic on.
 SESSION_STATES = (State.KHUTBA, State.DARS, State.TARAWIH)
 WAITING = (State.IDLE, State.ARMED, State.BEFORE, State.INTERMISSION)
@@ -314,7 +318,7 @@ def _rows(sessions: list[dt.datetime], extras: list[dict] | None) -> list[tuple[
 class Machine:
     def __init__(
         self,
-        sessions: list[dt.datetime],
+        sessions: list[dt.datetime] | None = None,
         params: MachineParams | None = None,
         log: Callable[[str], None] | None = None,
         pos_fn: Callable[[], tuple[int, float]] | None = None,
@@ -327,7 +331,7 @@ class Machine:
         type is in its event.
         """
         self.p = params or MachineParams()
-        rows = _rows(sessions, extras)
+        rows = _rows(sessions or [], extras)
         self.sessions = [s for s, _m in rows]
         self.idx = 0
         self.state = State.IDLE
@@ -350,6 +354,8 @@ class Machine:
         self._adhoc: SessionRec | None = None  # off-programme session about to open (see start_adhoc)
         self._adhoc_over = False  # the off-programme session just ended: its end screen hands back to the plan
         self.overlays: dict[str, dict] = default_overlays()
+        self.transition: str = DEFAULT_TRANSITION
+        self.custom_scene: str | None = None
 
     # ------------------------------------------------------------------ helpers
     def _rec_of(self, start: dt.datetime, meta: dict, index: int) -> SessionRec:
@@ -376,9 +382,15 @@ class Machine:
     @property
     def scene(self) -> str | None:
         """Scene of the state; a tarawih is filmed only when its mosque chose `video` explicitly."""
+        if self.state == State.CUSTOM:
+            return self.custom_scene
         if self.state == State.TARAWIH and self.rec is not None and self.rec.mode == "video":
             return TARAWIH_VIDEO_SCENE
         return SCENE_OF[self.state]
+
+    @property
+    def mic_on(self) -> bool:
+        return self.state in (*SESSION_STATES, State.JANAZA)
 
     @property
     def stream_on(self) -> bool:
@@ -404,6 +416,8 @@ class Machine:
         self.last_reason = reason
         if new != State.PRAYER:
             self.paused_from = None
+        if new != State.CUSTOM:
+            self.custom_scene = None
         if old == State.JANAZA and self.paused_from is None:
             self.janaza_name = self.janaza_info = None
         if (
@@ -706,10 +720,30 @@ class Machine:
         self.override = False
         return _("automatic mode resumed")
 
+    def set_transition(self, mode: str) -> str:
+        m = str(mode or "").strip().lower()
+        if m not in TRANSITIONS:
+            raise ValueError(_("unknown transition: {mode}", mode=mode))
+        self.transition = m
+        return m
+
+    def _transition(self, sig, arg):
+        m = self.set_transition(str(arg or ""))
+        return _("transition: {mode}", mode=m)
+
     def _scene(self, sig, arg):
-        sc = str(arg or "").lower()
+        sc = str(arg or "").strip().lower()
+        if sc.startswith(CUSTOM_SCENE_PREFIX) and len(sc) > len(CUSTOM_SCENE_PREFIX):
+            self.custom_scene = sc
+            self.override = True
+            if self.state != State.CUSTOM:
+                self._go(State.CUSTOM, sig, f"commande scène {sc}")
+            else:
+                self.last_reason = f"commande scène {sc}"
+            return _("scene {scene} (auto suspended)", scene=sc)
         if sc not in STATE_OF_SCENE:
             return _("unknown scene: {scene} (valid: {valid})", scene=sc, valid=sorted(STATE_OF_SCENE))
+        self.custom_scene = None
         self.override = True
         self._go(STATE_OF_SCENE[sc], sig, f"commande scène {sc}")
         return _("scene {scene} (auto suspended)", scene=sc)
@@ -802,6 +836,7 @@ class Machine:
         "extend": _extend,
         "skip": _skip_cmd,
         "scene": _scene,
+        "transition": _transition,
         "janaza": _janaza,
         "tarawih": _tarawih_now,
         "next_reciter": _next_reciter,
@@ -1063,6 +1098,7 @@ class Machine:
             "event": self.rec.event() if self.rec else None,
             "sessions": self.sessions_dicts(),
             "overlays": {k: dict(v) for k, v in self.overlays.items()},
+            "transition": self.transition,
         }
 
     def sessions_dicts(self) -> list[dict]:

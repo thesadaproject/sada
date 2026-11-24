@@ -440,15 +440,16 @@ class Encoder:
         with self._mx:
             write_png_atomic(img, self.layer_png["ov"])
 
-    def show(self, scene: str, full: bool, content) -> None:
+    def show(self, scene: str, full: bool, content, transition: str = tr.DEFAULT_TRANSITION) -> None:
         """Displays a scene: content (transparent layer) + background if full screen (scenes.SCENES).
 
         Same scene as on screen (e.g. the interlude countdown): the layer is updated in place.
         Other scene: transition animated by the "encoder-transitions" thread (the stream is never cut).
         Encoder not started yet: state set directly, without animation."""
+        mode = transition if transition in tr.TRANSITIONS else tr.DEFAULT_TRANSITION
         with self._mx:
             if self._pending and self._pending[0] == scene:
-                self._pending = (scene, full, content)
+                self._pending = (scene, full, content, mode)
                 return
             if self.shown and self.shown[0] == scene:
                 self._pending = None  # back to the displayed scene: nothing to animate
@@ -459,7 +460,7 @@ class Encoder:
                 self.shown, self.full = (scene, self.active), full
                 self.levels.update({"fond": 1.0 if full else 0.0, f"a_{self.active}": 1.0})
                 return
-            self._pending = (scene, full, content)
+            self._pending = (scene, full, content, mode)
             self._ensure_worker()
             self._ev.set()
 
@@ -517,7 +518,8 @@ class Encoder:
             if not job:
                 continue
             with self._anim:
-                p = tr.plan(src, self.full, job[1], scale=self.cfg.height / 720)
+                mode = job[3] if len(job) > 3 else tr.DEFAULT_TRANSITION
+                p = tr.plan(src, self.full, job[1], scale=self.cfg.height / 720, mode=mode)
                 frames = self._animate(p)
                 self.active, self.full = dst, job[1]
                 self.log(
@@ -543,17 +545,19 @@ class Encoder:
         only after the reply to frame n. The animation therefore advances one step per produced frame: no stutter
         even if ffmpeg processes frames in bursts (at worst it runs a few frames longer).
         Returns the number of frames played (0 if ffmpeg does not reply: the final state is set on restart)."""
-        final = p.values(tr.TOTAL)
+        dur = tr.duration(p.mode)
+        final = p.values(dur)
         move = f"y_{p.dst}" if p.full else f"x_{p.dst}"
         keys = ([] if p.fond_from == p.fond_to else ["fond"]) + [f"a_{p.src}", f"a_{p.dst}", move]
-        n_last = int(round(tr.TOTAL * self.cfg.fps))
+        n_last = 0 if dur <= 0 else int(round(dur * self.cfg.fps))
         played = 0
         if self.alive():
             ctx = zmq.Context.instance()
             poller, socks, idx = zmq.Poller(), {}, {}
 
             def send(s, k, i):
-                v = p.values(min(i / self.cfg.fps, tr.TOTAL))[k]
+                t_s = dur if dur <= 0 else min(i / self.cfg.fps, dur)
+                v = p.values(t_s)[k]
                 s.send_string(f"{self._TARGET[k]} {round(v, 3):g}")
 
             for ch, k in enumerate(keys):

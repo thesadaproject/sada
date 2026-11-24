@@ -6,12 +6,23 @@ stream name from the request: the path comes from the session's mosque (live_wat
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
+from ... import transitions
 from ...i18n import _
-from .. import live, live_input, live_watch, studio_plan, studio_publisher, studio_service, studio_token
+from ...state import PICKABLE_SCENES
+from .. import (
+    custom_scenes,
+    live,
+    live_input,
+    live_watch,
+    studio_plan,
+    studio_publisher,
+    studio_service,
+    studio_token,
+)
 from .. import screens as screens_mod
 from ..context import CtxDep, NotFound
 from ..studio_auth import Actor, ActorDep
@@ -33,15 +44,42 @@ def _offline() -> JSONResponse:
     return JSONResponse({"error": "offline"}, status_code=404)
 
 
+TRANSITION_SETTING_KEY = "regie_transition"
+
+
+def _builtin_scenes() -> list[dict]:
+    return [
+        {"id": sc, "kind": "camera" if sc in ("khutba", "dars") else "slate", "custom": False, "label": sc}
+        for sc in PICKABLE_SCENES
+    ]
+
+
+def _all_scenes(conn, mosque: dict) -> list[dict]:
+    return _builtin_scenes() + custom_scenes.list_scenes(conn, mosque)
+
+
+def _saved_transition(mosque: dict) -> str:
+    return custom_scenes.get_transition(mosque)
+
+
 @router.get("/live/regie")
 def regie(ctx: CtxDep):
     ctx.require("live")
-    paths = {w: live_watch.path_of(ctx.conn, ctx.mosque, w) for w in live_watch.SOURCES}
+    mosque = ctx.mosque
+    assert mosque is not None
+    paths = {w: live_watch.path_of(ctx.conn, mosque, w) for w in live_watch.SOURCES}
     health = {w: live_watch.health(p) for w, p in paths.items()}
-    holder = studio_publisher.current(ctx.conn, ctx.mosque)
+    holder = studio_publisher.current(ctx.conn, mosque)
+    live_st = live.status_cached(mosque, ttl=STATUS_TTL)
+    tr_mode = live_st.get("transition") if live_st.get("transition") in transitions.TRANSITIONS else None
+    if tr_mode is None:
+        tr_mode = _saved_transition(mosque)
     return {
         "publisher": holder and {k: holder[k] for k in ("source", "label", "since", "text")},
-        "live": live.status_cached(ctx.mosque, ttl=STATUS_TTL),
+        "live": live_st,
+        "transition": tr_mode,
+        "scenes": _all_scenes(ctx.conn, mosque),
+        "overlays": live_st.get("overlays"),
         "commands": [
             {"key": k, "destructive": k in live.DESTRUCTIVE, "choices": list(live.choices(k))} for k in live.COMMANDS
         ],
@@ -52,6 +90,105 @@ def regie(ctx: CtxDep):
             for w, p in paths.items()
         },
     }
+
+
+@router.post("/live/regie/transition")
+async def regie_transition(ctx: CtxDep):
+    body = await ctx.raw_body()
+    ctx.require("live")
+    mosque = ctx.mosque
+    assert mosque is not None
+    mode = str(body.get("mode") or "").strip().lower()
+    if mode not in transitions.TRANSITIONS:
+        return JSONResponse({"error": _("unknown transition: {mode}", mode=mode)}, status_code=400)
+    custom_scenes.set_transition(mosque, mode)
+    synced = True
+    try:
+        await run_in_threadpool(live.set_transition, mosque, mode)
+    except live.OrchestratorError:
+        synced = False
+    return {"ok": True, "transition": mode, "synced": synced}
+
+
+@router.post("/live/regie/custom-scenes")
+async def regie_custom_scene_create(
+    ctx: CtxDep,
+    label: str = Form(...),
+    category: str = Form("autre"),
+    file: UploadFile = File(...),
+):
+    ctx.need_csrf()
+    ctx.require("live")
+    mosque = ctx.mosque
+    assert mosque is not None
+    raw = await file.read()
+    try:
+        created = custom_scenes.create(
+            ctx.conn,
+            mosque,
+            label=label,
+            category=category,
+            filename=file.filename or "scene.png",
+            content=raw,
+            user_id=ctx.user["id"],
+            ip=ctx.ip,
+        )
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return {"scene": created, "scenes": _all_scenes(ctx.conn, mosque)}
+
+
+@router.get("/live/regie/custom-scenes/{slug}/image")
+def regie_custom_scene_image(slug: str, ctx: CtxDep):
+    ctx.require("live")
+    mosque = ctx.mosque
+    assert mosque is not None
+    raw = custom_scenes.image_bytes(mosque, slug)
+    if raw is None:
+        raise NotFound()
+    return Response(raw, media_type="image/png", headers={"Cache-Control": "private, max-age=30"})
+
+
+@router.delete("/live/regie/custom-scenes/{slug}")
+def regie_custom_scene_delete(slug: str, ctx: CtxDep):
+    ctx.need_csrf()
+    ctx.require("live")
+    mosque = ctx.mosque
+    assert mosque is not None
+    if not custom_scenes.delete(ctx.conn, mosque, slug, user_id=ctx.user["id"], ip=ctx.ip):
+        raise NotFound()
+    return {"ok": True, "scenes": _all_scenes(ctx.conn, mosque)}
+
+
+@router.post("/live/regie/scene")
+async def regie_take_scene(ctx: CtxDep):
+    body = await ctx.raw_body()
+    ctx.require("live")
+    mosque = ctx.mosque
+    assert mosque is not None
+    scene_id = str(body.get("scene") or "").strip().lower()
+    tr_mode = body.get("transition")
+    if tr_mode is not None:
+        tr_mode = str(tr_mode).strip().lower()
+        if tr_mode not in transitions.TRANSITIONS:
+            return JSONResponse({"error": _("unknown transition: {mode}", mode=tr_mode)}, status_code=400)
+    if scene_id.startswith("custom:"):
+        slug = scene_id[len("custom:") :]
+        raw = custom_scenes.image_bytes(mosque, slug)
+        if raw is None:
+            raise NotFound()
+        try:
+            r = await run_in_threadpool(live.set_custom_scene, mosque, scene_id, raw, transition=tr_mode)
+        except live.OrchestratorError as e:
+            return JSONResponse({"error": str(e)}, status_code=503)
+        return {"ok": True, "scene": scene_id, "transition": tr_mode or _saved_transition(mosque), "result": r}
+    try:
+        r = await run_in_threadpool(live.command, mosque, "scene", valeur=scene_id, transition=tr_mode)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except live.OrchestratorError as e:
+        return JSONResponse({"error": str(e)}, status_code=503)
+    return {"ok": True, "scene": scene_id, "transition": tr_mode or _saved_transition(mosque), "result": r}
 
 
 @router.get("/live/regie/scene/{name}.png")

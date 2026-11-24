@@ -31,6 +31,15 @@ AUDIO_DUR = 0.80  # audio fade of the mic
 SLIDE_Y = 18  # px (720p mockup): rise of the full-screen texts
 SLIDE_X = 36  # px: banner slide from the left
 TOTAL = max(OUT_DUR, FOND_DUR, IN_START + IN_DUR, AUDIO_DUR)
+TRANSITIONS = ("fade", "cut")
+DEFAULT_TRANSITION = "fade"
+
+
+def duration(mode: str = DEFAULT_TRANSITION) -> float:
+    """Total animation duration in seconds for a transition mode (0.0 for cut)."""
+    if mode not in TRANSITIONS:
+        raise ValueError(f"unknown transition: {mode}")
+    return 0.0 if mode == "cut" else TOTAL
 
 
 def _clip(x: float) -> float:
@@ -59,9 +68,18 @@ class Plan:
     fond_to: float
     full: bool  # the arriving scene is a full screen (vertical slide) or a banner
     scale: float = 1.0  # scale factor (height / 720)
+    mode: str = DEFAULT_TRANSITION
 
     def values(self, tau: float) -> dict[str, float]:
         """Layer parameters at tau seconds after the start (tau >= TOTAL: final state)."""
+        if self.mode == "cut":
+            return {
+                "fond": self.fond_to,
+                f"a_{self.src}": 0.0,
+                f"a_{self.dst}": 1.0,
+                f"x_{self.dst}": 0.0,
+                f"y_{self.dst}": 0.0,
+            }
         out = 1 - ease_in_out(tau / OUT_DUR)
         k = ease_out((tau - IN_START) / IN_DUR)
         fond = self.fond_from + (self.fond_to - self.fond_from) * ease_in_out(tau / FOND_DUR)
@@ -81,9 +99,17 @@ class Plan:
         return v
 
 
-def plan(src: str, old_full: bool, new_full: bool, scale: float = 1.0) -> Plan:
+def plan(
+    src: str,
+    old_full: bool,
+    new_full: bool,
+    scale: float = 1.0,
+    mode: str = DEFAULT_TRANSITION,
+) -> Plan:
+    if mode not in TRANSITIONS:
+        raise ValueError(f"unknown transition: {mode}")
     dst = "b" if src == "a" else "a"
-    return Plan(src, dst, 1.0 if old_full else 0.0, 1.0 if new_full else 0.0, new_full, scale)
+    return Plan(src, dst, 1.0 if old_full else 0.0, 1.0 if new_full else 0.0, new_full, scale, mode=mode)
 
 
 def volume_ramp(a: float, b: float, dur: float = AUDIO_DUR) -> str:

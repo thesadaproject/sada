@@ -750,3 +750,26 @@ SCENES = {
     "tarawih": Scene(full=True, mic=True, draw=SceneRenderer._tarawih),
     "tarawih_video": Scene(full=False, mic=True, draw=SceneRenderer._tarawih_video),
 }
+
+
+def is_full_scene(name: str) -> bool:
+    """True for full-screen slates (built-in or custom uploaded slates)."""
+    if name.startswith("custom:"):
+        return True
+    spec = SCENES.get(name)
+    return bool(spec and spec.full)
+
+
+def render_custom_scene(image: Image.Image, cfg) -> Image.Image:
+    """Fit a custom slate image onto the full-screen canvas with dark letterboxing."""
+    w, h = int(cfg.width), int(cfg.height)
+    canvas = Image.new("RGBA", (w, h), (10, 13, 18, 255))
+    src = image.convert("RGBA")
+    if src.width <= 0 or src.height <= 0:
+        return canvas
+    scale = min(w / src.width, h / src.height)
+    nw = max(1, int(round(src.width * scale)))
+    nh = max(1, int(round(src.height * scale)))
+    resized = src.resize((nw, nh), Image.Resampling.LANCZOS)
+    canvas.alpha_composite(resized, ((w - nw) // 2, (h - nh) // 2))
+    return canvas
