@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.18](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.17...sada-v0.1.0-alpha.18) (2026-11-25)
+
+
+### Bug Fixes
+
+* **regie:** address review findings on the control room, setup mode and custom scenes ([#90](https://github.com/thesadaproject/sada/issues/90)) ([b95981e](https://github.com/thesadaproject/sada/commit/b95981e5fcaef2f2d6226f361d61dac128584838))
+
 ## [0.1.0-alpha.17](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.16...sada-v0.1.0-alpha.17) (2026-11-25)
 
 
