@@ -6,6 +6,11 @@ stream name from the request: the path comes from the session's mosque (live_wat
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+import threading
+from collections import OrderedDict
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
@@ -60,13 +65,34 @@ def _all_scenes(conn, mosque: dict) -> list[dict]:
     return _builtin_scenes() + custom_scenes.list_scenes(conn, mosque)
 
 
-def live_flat(mosque: dict, forcer: bool = False) -> dict:
+def _setup_kwargs(setup: bool) -> dict:
+    """Extra argument of the live client for a command sent from the setup view (none otherwise)."""
+    return {"setup": True} if setup else {}
+
+
+def _setup_failure(e: live.OrchestratorError) -> JSONResponse:
+    """A setup command the orchestrator did not apply: its lease lapsed (409, the application re-enters), or it is down."""
+    if isinstance(e, live.SetupLapsed):
+        return JSONResponse({"error": str(e), "code": "setup_off"}, status_code=409)
+    return JSONResponse({"error": str(e)}, status_code=503)
+
+
+def live_flat(mosque: dict, forcer: bool = False, setup: bool = False) -> dict:
     """Engine snapshot in the flat protocol shape the studio application reads (LiveStatus).
 
     `forcer`: immediate read, used right after a command so the screen shows the consequence and not
-    the previous snapshot.
+    the previous snapshot. `setup`: the caller is in setup mode; while its rehearsal runs (and no real live is
+    on air) scene, overlays, transition and mute are the rehearsal stage's, as they are what the view shows.
     """
     st = live.status_cached(mosque, ttl=STATUS_TTL, forcer=forcer)
+    block = st.get("setup")
+    if setup and isinstance(block, dict) and block.get("active") and not block.get("live"):
+        st = {
+            **st,
+            **{
+                k: block[k] for k in ("state", "scene", "override", "transition", "overlays", "mic_muted") if k in block
+            },
+        }
     ok = bool(st.get("ok"))
     return {
         "ok": ok,
@@ -83,9 +109,9 @@ def live_flat(mosque: dict, forcer: bool = False) -> dict:
     }
 
 
-def regie_data(conn, mosque: dict) -> dict:
+def regie_data(conn, mosque: dict, setup: bool = False) -> dict:
     """Control room payload for a paired device (RegieData): mosque, engine state, scenes, commands."""
-    st = live_flat(mosque)
+    st = live_flat(mosque, setup=setup)
     return {
         "mosque": mosque["name"],
         "slug": mosque["slug"],
@@ -112,7 +138,7 @@ async def _json(request: Request) -> dict:
     return corps if isinstance(corps, dict) else {}
 
 
-async def apply_scene(conn, mosque: dict, scene_id, tr_mode) -> dict | JSONResponse:
+async def apply_scene(conn, mosque: dict, scene_id, tr_mode, setup: bool = False) -> dict | JSONResponse:
     """Takes a scene (builtin or `custom:<slug>`), with an optional transition."""
     scene_id = str(scene_id or "").strip().lower()
     if tr_mode is not None:
@@ -124,37 +150,41 @@ async def apply_scene(conn, mosque: dict, scene_id, tr_mode) -> dict | JSONRespo
         if raw is None:
             raise NotFound()
         try:
-            r = await run_in_threadpool(live.set_custom_scene, mosque, scene_id, raw, transition=tr_mode)
+            r = await run_in_threadpool(
+                live.set_custom_scene, mosque, scene_id, raw, transition=tr_mode, **_setup_kwargs(setup)
+            )
         except live.OrchestratorError as e:
-            return JSONResponse({"error": str(e)}, status_code=503)
+            return _setup_failure(e)
         return {"ok": True, "scene": scene_id, "transition": tr_mode or _saved_transition(mosque), "result": r}
     try:
-        r = await run_in_threadpool(live.command, mosque, "scene", valeur=scene_id, transition=tr_mode)
+        r = await run_in_threadpool(
+            live.command, mosque, "scene", valeur=scene_id, transition=tr_mode, **_setup_kwargs(setup)
+        )
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     except live.OrchestratorError as e:
-        return JSONResponse({"error": str(e)}, status_code=503)
+        return _setup_failure(e)
     return {"ok": True, "scene": scene_id, "transition": tr_mode or _saved_transition(mosque), "result": r}
 
 
-async def apply_mute(mosque: dict, muted) -> dict | JSONResponse:
+async def apply_mute(mosque: dict, muted, setup: bool = False) -> dict | JSONResponse:
     if not isinstance(muted, bool):
         return JSONResponse({"error": _("invalid body")}, status_code=400)
     try:
-        r = await run_in_threadpool(live.set_mute, mosque, muted)
+        r = await run_in_threadpool(live.set_mute, mosque, muted, **_setup_kwargs(setup))
     except live.OrchestratorError as e:
-        return JSONResponse({"error": str(e)}, status_code=503)
+        return _setup_failure(e)
     return {"ok": True, "muted": muted, "mic_muted": muted, "result": r}
 
 
-async def apply_transition(mosque: dict, mode) -> dict | JSONResponse:
+async def apply_transition(mosque: dict, mode, setup: bool = False) -> dict | JSONResponse:
     mode = str(mode or "").strip().lower()
     if mode not in transitions.TRANSITIONS:
         return JSONResponse({"error": _("unknown transition: {mode}", mode=mode)}, status_code=400)
     custom_scenes.set_transition(mosque, mode)
     synced = True
     try:
-        await run_in_threadpool(live.set_transition, mosque, mode)
+        await run_in_threadpool(live.set_transition, mosque, mode, **_setup_kwargs(setup))
     except live.OrchestratorError:
         synced = False
     return {"ok": True, "transition": mode, "synced": synced}
@@ -204,14 +234,14 @@ async def regie_mute(request: Request, a: ActorDep):
     """Mutes the incoming microphone. Session (control room) or paired device (studio application)."""
     a.need_live()
     body = _body(await _json(request))
-    return await apply_mute(a.mosque, body.get("muted"))
+    return await apply_mute(a.mosque, body.get("muted"), setup=body.get("setup") is True)
 
 
 @router.post("/live/regie/transition")
 async def regie_transition(request: Request, a: ActorDep):
     a.need_live()
     body = _body(await _json(request))
-    return await apply_transition(a.mosque, body.get("mode"))
+    return await apply_transition(a.mosque, body.get("mode"), setup=body.get("setup") is True)
 
 
 @router.post("/live/regie/custom-scenes")
@@ -268,7 +298,9 @@ def regie_custom_scene_delete(slug: str, ctx: CtxDep):
 async def regie_take_scene(request: Request, a: ActorDep):
     a.need_live()
     body = await _json(request)
-    return await apply_scene(a.conn, a.mosque, body.get("scene"), body.get("transition"))
+    return await apply_scene(
+        a.conn, a.mosque, body.get("scene"), body.get("transition"), setup=body.get("setup") is True
+    )
 
 
 @router.get("/live/regie/scene/{name}.png")
@@ -281,6 +313,79 @@ async def scene_preview(name: str, ctx: CtxDep):
     textes = screens_mod.saved(ctx.conn, ctx.mosque["id"])
     png = await run_in_threadpool(screens_mod.preview, ctx.mosque, textes, name, True, ctx.conn)
     return Response(png, media_type="image/png", headers={"Cache-Control": "private, max-age=30"})
+
+
+# ------------------------------------------------------------------ overlay layer
+# The studio lays this PNG over its local monitor: the very layer the engine composites over the camera
+# (SceneRenderer.render_overlays), for the overlay state the caller sees (the rehearsal's in setup mode).
+# The ETag is a digest of what the drawing depends on, so the client revalidates cheaply (304) every few
+# seconds and a new image is drawn only when an overlay (or the logo) changed. (The API middleware marks
+# every response `no-store`: the client keeps the last image itself and sends If-None-Match.)
+
+_LAYER_CACHE: OrderedDict[str, bytes] = OrderedDict()
+_LAYER_CACHE_MAX = 32
+_LAYER_LOCK = threading.Lock()
+
+
+def _layer_etag(mosque: dict, overlays: dict | None) -> str:
+    logo = screens_mod.overlay_logo(mosque)
+    try:
+        st = os.stat(logo) if logo else None
+        stamp = f"{st.st_mtime_ns}:{st.st_size}" if st else ""
+    except OSError:
+        stamp = "missing"
+    key = json.dumps(
+        {"m": mosque["id"], "n": mosque.get("name") or "", "logo": [logo, stamp], "o": overlays or {}},
+        sort_keys=True,
+        ensure_ascii=False,
+        default=str,
+    )
+    return '"ov-' + hashlib.sha256(key.encode("utf-8")).hexdigest()[:24] + '"'
+
+
+def overlay_layer(mosque: dict, overlays: dict | None) -> tuple[str, bytes]:
+    """(ETag, PNG) of the overlay layer; drawn once per distinct state, then served from a small memory cache."""
+    etag = _layer_etag(mosque, overlays)
+    with _LAYER_LOCK:
+        png = _LAYER_CACHE.get(etag)
+        if png is not None:
+            _LAYER_CACHE.move_to_end(etag)
+            return etag, png
+    png = screens_mod.overlays_layer(mosque, overlays)
+    with _LAYER_LOCK:
+        _LAYER_CACHE[etag] = png
+        while len(_LAYER_CACHE) > _LAYER_CACHE_MAX:
+            _LAYER_CACHE.popitem(last=False)
+    return etag, png
+
+
+def _matches(header: str | None, etag: str) -> bool:
+    if not header:
+        return False
+    return header.strip() == "*" or etag in {t.strip().removeprefix("W/") for t in header.split(",")}
+
+
+@router.get("/live/regie/overlays.png")
+async def overlays_png(request: Request, a: ActorDep, setup: int = 0):
+    """Transparent 1280×720 PNG of every overlay currently on air (logo, banner, QR), as the engine draws it.
+
+    `?setup=1`: the rehearsal's overlays, while the caller's setup view is open (same rule as the status).
+    The engine unreachable: 503 `offline` — the client then falls back to its own approximation.
+    """
+    a.need_live(write=False)
+    st = await run_in_threadpool(live_flat, a.mosque, False, bool(setup))
+    if not st.get("ok"):
+        return JSONResponse(
+            {"error": st.get("message") or _("engine unreachable"), "code": "offline"},
+            status_code=503,
+            headers={"Cache-Control": "no-store"},
+        )
+    overlays = st.get("overlays") if isinstance(st.get("overlays"), dict) else None
+    etag, png = await run_in_threadpool(overlay_layer, a.mosque, overlays)
+    headers = {"ETag": etag}
+    if _matches(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers=headers)
+    return Response(png, media_type="image/png", headers=headers)
 
 
 @router.post("/live/watch/{which}/whep")

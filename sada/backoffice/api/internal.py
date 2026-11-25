@@ -25,6 +25,7 @@ from .. import (
     live_watch,
     orm,
     prayer_times,
+    setup_session,
     storage,
     studio_publisher,
     studio_service,
@@ -232,6 +233,16 @@ def gabarit_page(request: Request, conn: ConnDep, port: int = 0):
     # à découper le HTML. Un écran absent du fichier donne une page vide, et le moteur dessine alors.
     pages = {e: gabarit.pour_ecran(fichier, e) for e in gabarit.CONNUS}
     return {"mosque_id": mid, "nom": mosquee.get("name") or "", "present": True, "pages": pages, "variables": valeurs}
+
+
+@router.get("/internal/setup-leases")
+def setup_leases(request: Request, conn: ConnDep):
+    """The mosques whose orchestrator is wanted awake for a studio device in setup mode (platform scaler).
+
+    Shared local token only: it lists every mosque, so no mosque's own agent token opens it."""
+    if not internal.check(request.headers.get(internal.HEADER)):
+        return _refuse()
+    return {"leases": setup_session.leases(conn)}
 
 
 @router.get("/internal/live-input")

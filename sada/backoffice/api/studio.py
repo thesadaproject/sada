@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import time
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy import select
@@ -28,6 +28,7 @@ from .. import (
     live,
     live_watch,
     orm,
+    setup_session,
     studio_devices,
     studio_incidents,
     studio_plan,
@@ -184,19 +185,21 @@ async def live_announce(request: Request, a: DeviceDep):
 
 
 @router.get("/studio/regie")
-def studio_regie(a: DeviceDep):
-    """Control-room payload for the paired device: mosque, engine state, scenes, commands."""
+def studio_regie(a: DeviceDep, setup: int = 0):
+    """Control-room payload for the paired device: mosque, engine state, scenes, commands.
+
+    `?setup=1`: the device is in setup mode, the state is the rehearsal programme's (see `setup_session`)."""
     from .regie import regie_data
 
-    return JSONResponse(regie_data(a.conn, a.mosque), headers={"Cache-Control": "no-store"})
+    return JSONResponse(regie_data(a.conn, a.mosque, setup=bool(setup)), headers={"Cache-Control": "no-store"})
 
 
 @router.get("/studio/live/status")
-def live_status(a: DeviceDep):
-    """Engine snapshot, flat, as the studio screen reads it."""
+def live_status(a: DeviceDep, setup: int = 0):
+    """Engine snapshot, flat, as the studio screen reads it (`?setup=1`: the rehearsal's, in setup mode)."""
     from .regie import live_flat
 
-    return JSONResponse(live_flat(a.mosque), headers={"Cache-Control": "no-store"})
+    return JSONResponse(live_flat(a.mosque, setup=bool(setup)), headers={"Cache-Control": "no-store"})
 
 
 @router.post("/studio/live/command")
@@ -205,9 +208,10 @@ async def live_command(request: Request, a: DeviceDep):
 
     The answer is the fresh engine state (forced read), so the screen never shows a stale scene.
     """
-    from .regie import apply_scene, live_flat
+    from .regie import _setup_failure, _setup_kwargs, apply_scene, live_flat
 
     body = await _json(request)
+    setup = body.get("setup") is True  # sent from the setup view: acts on the rehearsal, never on the stream
     cmd = str(body.get("command") or "").strip().lower()
     arg = body.get("arg")
     tr = body.get("transition")
@@ -216,9 +220,9 @@ async def live_command(request: Request, a: DeviceDep):
         if tr not in transitions.TRANSITIONS:
             return JSONResponse({"error": _("unknown transition: {mode}", mode=tr)}, status_code=400)
     if cmd == "scene":
-        out = await apply_scene(a.conn, a.mosque, arg, tr)
+        out = await apply_scene(a.conn, a.mosque, arg, tr, setup=setup)
     elif cmd in live.COMMANDS:
-        kwargs = {"transition": tr} if tr else {}
+        kwargs = ({"transition": tr} if tr else {}) | _setup_kwargs(setup)
         try:
             if live.choices(cmd):
                 out = await run_in_threadpool(live.command, a.mosque, cmd, valeur=arg, **kwargs)
@@ -227,34 +231,95 @@ async def live_command(request: Request, a: DeviceDep):
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=400)
         except live.OrchestratorError as e:
-            return JSONResponse({"error": str(e)}, status_code=503)
+            return _setup_failure(e)
     else:
         return JSONResponse({"error": _("unknown command")}, status_code=400)
     if isinstance(out, JSONResponse):
         return out
-    a.audit("studio.live.commande", commande=cmd, valeur=arg or "")
-    return JSONResponse(live_flat(a.mosque, forcer=True), headers={"Cache-Control": "no-store"})
+    a.audit("studio.live.commande", commande=cmd, valeur=arg or "", setup=setup)
+    return JSONResponse(live_flat(a.mosque, forcer=True, setup=setup), headers={"Cache-Control": "no-store"})
 
 
 @router.patch("/studio/live/overlays/{kind}")
 async def live_overlay(kind: str, request: Request, a: DeviceDep):
     """Updates one overlay layer (qr, banner, logo); the patch is merged onto the current state."""
-    from .regie import live_flat
+    from .regie import _setup_failure, _setup_kwargs, live_flat
 
     kind = str(kind or "").strip().lower()
     if kind not in OVERLAY_KINDS:
         return JSONResponse({"error": _("unknown overlay: {kind}", kind=kind)}, status_code=422)
-    current = (live_flat(a.mosque).get("overlays") or {}).get(kind)
+    patch = await _json(request)
+    setup = patch.pop("setup", None) is True
+    current = (live_flat(a.mosque, forcer=setup, setup=setup).get("overlays") or {}).get(kind)
     try:
-        merged = normalize_overlay(kind, await _json(request), current)
+        merged = normalize_overlay(kind, patch, current)
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     try:
-        r = await run_in_threadpool(live.set_overlay, a.mosque, kind, merged)
+        r = await run_in_threadpool(live.set_overlay, a.mosque, kind, merged, **_setup_kwargs(setup))
     except live.OrchestratorError as e:
-        return JSONResponse({"error": str(e)}, status_code=503)
-    a.audit("studio.live.incrustation", incrustation=kind, visible=bool(merged.get("visible")))
+        return _setup_failure(e)
+    a.audit("studio.live.incrustation", incrustation=kind, visible=bool(merged.get("visible")), setup=setup)
     return {"ok": True, "overlays": r.get("overlays") or {kind: merged}}
+
+
+# ------------------------------------------------------------------ setup mode (device)
+# The device sees the programme as the orchestrator composes it, before any live: it takes a lease (renewed
+# every few seconds), the orchestrator is woken if it sleeps, and the programme is read over WHEP through the
+# back office. Nothing is sent to a destination in setup. The relay path always comes from the device's mosque.
+
+
+@router.post("/studio/setup")
+async def setup_enter(request: Request, a: DeviceDep):
+    """`{"on": true}` takes or renews the setup lease and says where things stand; `{"on": false}` ends it."""
+    body = await _json(request)
+    on = body.get("on")
+    if not isinstance(on, bool):
+        return JSONResponse({"error": _("invalid body")}, status_code=400)
+    if on:
+        out = await run_in_threadpool(setup_session.enter, a.conn, a.mosque, a.device)
+    else:
+        out = await run_in_threadpool(setup_session.leave, a.conn, a.mosque)
+    return JSONResponse(out, headers={"Cache-Control": "no-store"})
+
+
+@router.post("/studio/setup/whep")
+async def setup_whep_offer(request: Request, a: DeviceDep):
+    """Reads the programme of the device's mosque (WHEP), only while its setup lease holds."""
+    from .regie import MAX_SDP
+
+    if setup_session.current(a.conn, a.mosque["id"]) is None:
+        return JSONResponse({"error": _("setup mode is not active"), "code": "setup_off"}, status_code=409)
+    path = setup_session.program_path(a.conn, a.mosque)
+    sdp = await request.body()
+    if not sdp or len(sdp) > MAX_SDP:
+        return JSONResponse({"error": "bad offer"}, status_code=400)
+    try:
+        status, answer, session = await live_watch.whep_offer(path, sdp)
+    except live_watch.RelayUnavailable:
+        return JSONResponse({"error": "relay unavailable"}, status_code=503)
+    if status != 201 or not session:
+        # 404 from the relay: the orchestrator is not publishing the programme (yet)
+        if status in (400, 404):
+            return JSONResponse({"error": "offline"}, status_code=404)
+        return JSONResponse({"error": "relay"}, status_code=502)
+    return Response(
+        answer,
+        status_code=201,
+        media_type="application/sdp",
+        headers={"Location": f"/api/v1/studio/setup/whep/{session}", "Cache-Control": "no-store"},
+    )
+
+
+@router.delete("/studio/setup/whep/{session}")
+async def setup_whep_close(session: str, a: DeviceDep):
+    if not live_watch.WHEP_SESSION.match(session):
+        raise NotFound()
+    try:
+        await live_watch.whep_close(setup_session.program_path(a.conn, a.mosque), session)
+    except live_watch.RelayUnavailable:
+        pass  # the relay is gone, and the session with it
+    return Response(status_code=200)
 
 
 # ------------------------------------------------------------------ console

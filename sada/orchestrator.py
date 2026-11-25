@@ -14,6 +14,7 @@ import signal
 import sys
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 
 from PIL import Image
@@ -26,6 +27,7 @@ from . import (
     prayers,
     runs,
     screens,
+    setup_mode,
     source,
     studio_link,
     telemetry,
@@ -137,6 +139,11 @@ class Orchestrator:
         self.encoder = Encoder(cfg, self.run_dir, log=log.info)
         self.encoder.prepare(self.renderer.background())
         self.machine = Machine(sessions, cfg, log=log.info, pos_fn=self.encoder.position, extras=extras)
+        # The live stage is the machine and the encoder above; the setup (rehearsal) stage exists only while an
+        # operator holds the setup lease (see setup_mode.py).
+        self.live_stage = setup_mode.Stage(self.machine, self.encoder)
+        self.setup = setup_mode.SetupLease()
+        self.rehearsal: setup_mode.Stage | None = None
         # A live ordered from the Sada Studio application (manual or scheduled): read from the back office.
         self.studio = studio_link.Follower()
         self.studio_poll = studio_link.Poller(cfg.backoffice_url if not cfg.sim_start else "", cfg.api_port)
@@ -187,9 +194,7 @@ class Orchestrator:
         self._stream_since: float | None = None  # monotonic time the stream started, None while it is off
         self.telemetry = telemetry.start("sada-orchestrator", cfg.mosque_slug)
         self.telemetry.watch_orchestrator(self.telemetry_snapshot)
-        self._shown_key = None
         self._custom_scenes: dict[str, Image.Image] = {}
-        self._overlay_key = None
         self._saved = None
         self._stop = threading.Event()
         self.api = None
@@ -441,15 +446,36 @@ class Orchestrator:
 
     # --- broadcast -----------------------------------------------------------
     def _sync(self):
-        """Aligns the encoder on the machine: displayed scene, mic, stream started or stopped."""
+        """Aligns the live stage on its machine, then the notifications and the stream start/stop."""
         m, enc = self.machine, self.encoder
+        self._show(self.live_stage)
+        if m.state != self._notified_state:
+            if self._notified_state is not None:
+                self.telemetry.state_changed(self._notified_state.value, m.state.value)
+            self._notified_state = m.state
+            if notify.should_send(m.state, m, self.clock.now()):
+                self.notifier.notify_state(m.state, m)
+        if m.stream_on and not enc.wanted:
+            self._stop_rehearsal()  # the live takes the monitoring copy: the setup steps aside first
+            enc.start()
+            self._stream_since = time.monotonic()
+        elif not m.stream_on and enc.wanted:
+            enc.stop()
+            self._stream_since = None
+            log.info(_("Stream stopped. Recordings: {files}", files=[r for r, _x in enc.recordings]))
+            self._envoyer_rediffusions()
+        self._save_sessions()
+
+    def _show(self, stage: setup_mode.Stage):
+        """Aligns one stage's encoder on its machine: displayed scene, overlays, mic (not the stream start/stop)."""
+        m, enc = stage.machine, stage.encoder
         if m.scene is not None:
             now = self.clock.now()
             if m.scene.startswith("custom:"):
                 custom_img = self._custom_scenes.get(m.scene)
                 key = (m.scene, id(custom_img))
-                if key != self._shown_key and custom_img is not None:
-                    self._shown_key = key
+                if key != stage.shown_key and custom_img is not None:
+                    stage.shown_key = key
                     enc.show(
                         m.scene,
                         True,
@@ -476,35 +502,20 @@ class Orchestrator:
                     getattr(nxt, "starts", None),
                     now.strftime("%H:%M:%S") if spec.ticking else None,
                 )
-                if key != self._shown_key:
-                    self._shown_key = key
+                if key != stage.shown_key:
+                    stage.shown_key = key
                     moment = Moment(now, m.session, m.janaza_name, m.janaza_info, event=ev, next_event=nxt)
-                    if not self._afficher_gabarit(m.scene, spec.full, moment):
+                    if not self._afficher_gabarit(m.scene, spec.full, moment, enc):
                         enc.show(m.scene, spec.full, self.renderer.content(m.scene, moment), transition=m.transition)
                 want_mic = spec.mic and not m.mic_muted
                 if want_mic != enc.mic_on:
                     enc.mic(want_mic)
         ov_key = json.dumps(m.overlays, sort_keys=True)
-        if ov_key != self._overlay_key:
-            self._overlay_key = ov_key
+        if ov_key != stage.overlay_key:
+            stage.overlay_key = ov_key
             enc.set_overlay(self.renderer.render_overlays(m.overlays))
-        if m.state != self._notified_state:
-            if self._notified_state is not None:
-                self.telemetry.state_changed(self._notified_state.value, m.state.value)
-            self._notified_state = m.state
-            if notify.should_send(m.state, m, self.clock.now()):
-                self.notifier.notify_state(m.state, m)
-        if m.stream_on and not enc.wanted:
-            enc.start()
-            self._stream_since = time.monotonic()
-        elif not m.stream_on and enc.wanted:
-            enc.stop()
-            self._stream_since = None
-            log.info(_("Stream stopped. Recordings: {files}", files=[r for r, _x in enc.recordings]))
-            self._envoyer_rediffusions()
-        self._save_sessions()
 
-    def _afficher_gabarit(self, scene: str, full: bool, moment) -> bool:
+    def _afficher_gabarit(self, scene: str, full: bool, moment, encoder=None) -> bool:
         """Le fichier de la mosquée pour cet écran ; ``False`` s'il n'en fournit pas.
 
         Une image déjà rendue pour cet état n'est pas réécrite : le direct n'a rien à changer.
@@ -528,10 +539,11 @@ class Orchestrator:
                 _("Template: image of screen {screen} unreadable ({error}) — engine drawing", screen=scene, error=e)
             )
             return False
+        enc = encoder or self.encoder
         if scene in BANDEAUX:
-            self.encoder.show(scene, full, image)
+            enc.show(scene, full, image)
         else:
-            self.encoder.show_image(scene, full, image, cle)
+            enc.show_image(scene, full, image, cle)
         return True
 
     def _envoyer_rediffusions(self):
@@ -576,20 +588,42 @@ class Orchestrator:
             ingest_connected=self.vad.connected,
         )
 
-    def manual(self, cmd: str, arg=None, transition: str | None = None) -> dict:
-        with self.lock:
-            if transition is not None:
-                self.machine.set_transition(transition)
-            msg = self.machine.command(cmd, self.signals(), arg)
+    # --- setup mode (rehearsal stage) ---------------------------------------
+    def _stage_for(self, setup: bool) -> setup_mode.Stage:
+        """Where a command lands. A live on air always takes it (setup never gets in its way); a command
+        sent from the setup view lands on the rehearsal stage, and is refused once the setup lapsed, so a
+        scene picked there can never start a real stream by accident; any other command is the live's."""
+        if self.machine.stream_on or not setup:
+            return self.live_stage
+        if self.rehearsal is None or not self.setup.active():
+            raise setup_mode.SetupInactive(_("setup mode is not active"))
+        return self.rehearsal
+
+    def _sync_stage(self, stage: setup_mode.Stage) -> None:
+        if stage.rehearsal:
+            self._sync_setup()
+        else:
             self._sync()
-            return {"message": msg, "state": self.machine.state.value, "transition": self.machine.transition}
 
-    def set_transition(self, mode: str) -> dict:
+    def manual(self, cmd: str, arg=None, transition: str | None = None, setup: bool = False) -> dict:
         with self.lock:
-            m = self.machine.set_transition(mode)
-            return {"transition": m, "state": self.machine.state.value}
+            st = self._stage_for(setup)
+            m = st.machine
+            if transition is not None:
+                m.set_transition(transition)
+            msg = m.command(cmd, self.signals(), arg)
+            self._sync_stage(st)
+            return {"message": msg, "state": m.state.value, "transition": m.transition}
 
-    def set_custom_scene(self, scene_id: str, image_bytes: bytes | None, transition: str | None = None) -> dict:
+    def set_transition(self, mode: str, setup: bool = False) -> dict:
+        with self.lock:
+            m = self._stage_for(setup).machine
+            mode = m.set_transition(mode)
+            return {"transition": mode, "state": m.state.value}
+
+    def set_custom_scene(
+        self, scene_id: str, image_bytes: bytes | None, transition: str | None = None, setup: bool = False
+    ) -> dict:
         import io
 
         from PIL import Image
@@ -597,6 +631,8 @@ class Orchestrator:
         if not isinstance(scene_id, str) or not scene_id.startswith("custom:") or len(scene_id) <= 7:
             raise ValueError(_("unknown scene: {scene}", scene=scene_id))
         with self.lock:
+            st = self._stage_for(setup)
+            m = st.machine
             if image_bytes:
                 try:
                     im = Image.open(io.BytesIO(image_bytes))
@@ -607,31 +643,117 @@ class Orchestrator:
             elif scene_id not in self._custom_scenes:
                 raise ValueError(_("unknown scene: {scene}", scene=scene_id))
             if transition is not None:
-                self.machine.set_transition(transition)
-            msg = self.machine.command("scene", self.signals(), scene_id)
-            self._sync()
+                m.set_transition(transition)
+            msg = m.command("scene", self.signals(), scene_id)
+            self._sync_stage(st)
+            return {"message": msg, "state": m.state.value, "scene": scene_id, "transition": m.transition}
+
+    def set_overlay(self, kind: str, data: dict, setup: bool = False) -> dict:
+        with self.lock:
+            st = self._stage_for(setup)
+            overlays = st.machine.set_overlay(kind, data)
+            self._sync_stage(st)
+            return {"overlays": overlays, "state": st.machine.state.value}
+
+    def set_mute(self, muted: bool, setup: bool = False) -> dict:
+        with self.lock:
+            st = self._stage_for(setup)
+            st.machine.set_mute(muted)
+            self._sync_stage(st)
             return {
-                "message": msg,
-                "state": self.machine.state.value,
-                "scene": scene_id,
-                "transition": self.machine.transition,
+                "mic_muted": st.machine.mic_muted,
+                "mic": st.encoder.mic_on,
+                "state": st.machine.state.value,
             }
 
-    def set_overlay(self, kind: str, data: dict) -> dict:
+    def set_setup(self, on: bool, ttl=None) -> dict:
+        """Takes, renews or releases the setup lease. Opening wakes nothing by itself (the process is already
+        running when this is called); it prepares the rehearsal stage, which starts once a scene is shown."""
         with self.lock:
-            overlays = self.machine.set_overlay(kind, data)
-            self._sync()
-            return {"overlays": overlays, "state": self.machine.state.value}
+            if not on:
+                if self.setup.close():
+                    log.info(_("Setup mode: ended"))
+                self._stop_rehearsal(drop=True)
+                return self.setup_status()
+            if not self.cfg.preview_url:
+                raise ValueError(_("setup mode needs the monitoring copy (SADA_PREVIEW_URL)"))
+            fresh = self.setup.open(setup_mode.clamp_ttl(ttl))
+            if fresh or self.rehearsal is None:
+                self._open_rehearsal()
+                log.info(_("Setup mode: started"))
+            return self.setup_status()
 
-    def set_mute(self, muted: bool) -> dict:
-        with self.lock:
-            self.machine.set_mute(muted)
-            self._sync()
-            return {
-                "mic_muted": self.machine.mic_muted,
-                "mic": self.encoder.mic_on,
-                "state": self.machine.state.value,
-            }
+    def _open_rehearsal(self) -> None:
+        """A fresh rehearsal stage: its own machine (the day's plan, for the texts), encoder and folders."""
+        self._stop_rehearsal(drop=True)
+        cfg = replace(self.cfg, rtmp_urls=[], record_clean=False, zmq_port=self.cfg.zmq_port + 8)
+        run_dir = self.run_dir / "setup"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        enc = Encoder(cfg, run_dir, log=log.info, rehearsal=True)
+        enc.prepare(self.renderer.background())
+        sessions, extras = self.day_plan(self.clock.now().date())
+        machine = Machine(sessions, cfg, log=log.info, extras=extras)
+        machine.idx = min(self.machine.idx, len(machine.sessions))
+        machine.transition = self.machine.transition
+        self.rehearsal = setup_mode.Stage(machine, enc, rehearsal=True)
+        if not self.machine.stream_on:
+            machine.command("scene", self.signals(), setup_mode.FIRST_SCENE)
+        self._sync_setup()
+
+    def _stop_rehearsal(self, drop: bool = False) -> None:
+        """Stops the rehearsal encoder (the monitoring copy goes away with it); `drop` forgets the stage."""
+        st = self.rehearsal
+        if st is None:
+            return
+        if st.encoder.wanted:
+            st.encoder.stop()
+        st.shown_key = None
+        if drop:
+            self.rehearsal = None
+
+    def _sync_setup(self) -> None:
+        """One pass on the rehearsal stage: lapsed lease, live taking over, scene on screen, encoder on/off."""
+        st = self.rehearsal
+        if st is None:
+            return
+        if not self.setup.active():
+            log.info(_("Setup mode: lease lapsed, rehearsal stopped"))
+            self._stop_rehearsal(drop=True)
+            return
+        if self.machine.stream_on:
+            self._stop_rehearsal()  # a real live is on air: the monitoring copy is its own
+            return
+        self._show(st)
+        if st.machine.stream_on and not st.encoder.wanted:
+            st.encoder.start()
+        elif not st.machine.stream_on and st.encoder.wanted:
+            st.encoder.stop()
+
+    def setup_status(self) -> dict:
+        """The setup block of the status: lease, who has the monitoring copy, and the rehearsal stage's picture."""
+        st = self.rehearsal
+        active = self.setup.active()
+        out = {
+            "active": active,
+            "remaining_s": round(self.setup.remaining(), 1),
+            "available": bool(self.cfg.preview_url),
+            "live": bool(self.machine.stream_on),
+            "rehearsing": bool(active and st is not None and st.encoder.wanted and not self.machine.stream_on),
+        }
+        if active and st is not None:
+            m = st.machine
+            out.update(
+                {
+                    "state": m.state.value,
+                    "scene": m.scene,
+                    "override": m.override,
+                    "transition": m.transition,
+                    "overlays": {k: dict(v) for k, v in m.overlays.items()},
+                    "mic_muted": m.mic_muted,
+                    "encoder_alive": st.encoder.alive(),
+                }
+            )
+        return out
 
     def status(self) -> dict:
         with self.lock:
@@ -652,6 +774,7 @@ class Orchestrator:
                         "recording": self.encoder.current_recording(),
                         "pos_s": round(pos, 1),
                     },
+                    "setup": self.setup_status(),
                     "mic": self.encoder.mic_on,
                     "mic_muted": self.machine.mic_muted,
                     "audio_level_db": getattr(self.vad, "last_db", lambda: None)(),
@@ -712,6 +835,7 @@ class Orchestrator:
                 if note := self.studio.step(self.machine, sig, self.studio_poll.take()):
                     log.info(note)
                 self._sync()
+                self._sync_setup()
             if time.monotonic() - last_status > 30:
                 last_status = time.monotonic()
                 st = self.status()
@@ -735,6 +859,7 @@ class Orchestrator:
             self.presence.stop()
         if self.faces:
             self.faces.stop()
+        self._stop_rehearsal(drop=True)
         if self.encoder.wanted:
             self.encoder.stop()
         self._envoyer_rediffusions()

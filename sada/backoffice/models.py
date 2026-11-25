@@ -631,6 +631,19 @@ studio_claims = sa.Table(
     sa.Column("since", sa.Float, nullable=False),
 )
 
+# Setup mode of a studio device: the mosque's orchestrator is wanted awake (and composing a rehearsal programme)
+# until `until`, renewed by the application. What a platform scaler reads to wake the orchestrator, and what
+# lets it go back to sleep: no row, or a row in the past, means nobody needs it.
+setup_leases = sa.Table(
+    "setup_leases",
+    metadata,
+    sa.Column("id", sa.Integer, primary_key=True),
+    sa.Column("mosque_id", sa.Integer, sa.ForeignKey("mosques.id"), nullable=False, unique=True),
+    sa.Column("device_id", sa.Integer, sa.ForeignKey("devices.id")),
+    sa.Column("since", sa.Float, nullable=False),
+    sa.Column("until", sa.Float, nullable=False),
+)
+
 # Problems of the studio, as the server sees them from the heartbeat: one row per incident, open until
 # the cause is gone. `open_key` (unique while open, NULL once resolved) keeps a problem from being
 # opened twice, even by two replicas; the mail columns drive the anti-spam (one mail per incident,
@@ -692,6 +705,7 @@ TABLES = (
     studio_runs,
     studio_claims,
     studio_incidents,
+    setup_leases,
 )
 
 
@@ -814,6 +828,10 @@ class StudioRun(Base):
 
 class StudioClaim(Base):
     __table__ = studio_claims
+
+
+class SetupLease(Base):
+    __table__ = setup_leases
 
 
 class StudioIncident(Base):

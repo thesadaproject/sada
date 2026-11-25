@@ -286,6 +286,11 @@ def _horaires_identite(conn: sa.Connection) -> None:
     )
 
 
+def _studio_setup(conn: sa.Connection) -> None:
+    """Migration 25 : mode setup du studio (bail de l'orchestrateur réveillé pour la régie)."""
+    models.metadata.tables["setup_leases"].create(conn, checkfirst=True)
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "schéma initial", _baseline),
     Migration(2, "khutbas : colonnes dars (kind, title, series, session_no)", _khutbas_dars),
@@ -313,6 +318,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(22, "studio : appareils, appairage, exclusivité du flux, alertes", _studio_appareils),
     Migration(23, "studio : nom de la machine proposé à l'appairage", _studio_nom_propose),
     Migration(24, "horaires : identité de la mosquée (couleurs d'accent, logo)", _horaires_identite),
+    Migration(25, "studio : mode setup (bail de l'orchestrateur)", _studio_setup),
 )
 
 #: numéros pris par une autre branche pas encore fusionnée : le trou est voulu, pas un oubli.

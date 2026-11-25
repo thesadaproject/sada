@@ -623,6 +623,7 @@ class SceneRenderer:
 
         px = self.px
         code = rl_qr.QrCodeWidget(url).qr
+        code.make()  # the widget only builds the matrix when it is drawn: without this the card has no modules
         n = code.getModuleCount()
         quiet = 2
         target = px(152)

@@ -195,5 +195,11 @@
   "the tarawih is already on air": "التراويح على الهواء بالفعل",
   "the tarawih": "التراويح",
   "ENCODER: source unavailable (ffmpeg code {code}), retrying with backoff": "المشفّر: المصدر غير متاح (رمز ffmpeg {code})، إعادة محاولة متباعدة",
-  "ENCODER: source available again after {count} failed attempts": "المشفّر: المصدر متاح من جديد بعد {count} محاولات فاشلة"
+  "ENCODER: source available again after {count} failed attempts": "المشفّر: المصدر متاح من جديد بعد {count} محاولات فاشلة",
+  "ENCODER: starting the setup programme (monitoring copy only, no destination, no recording)": "المشفّر: بدء برنامج الضبط (نسخة المراقبة فقط، بلا وجهات ولا تسجيل)",
+  "Setup mode: ended": "وضع الضبط: انتهى",
+  "Setup mode: lease lapsed, rehearsal stopped": "وضع الضبط: انتهت المدة، توقفت البروفة",
+  "Setup mode: started": "وضع الضبط: بدأ",
+  "setup mode is not active": "وضع الضبط غير مفعّل",
+  "setup mode needs the monitoring copy (SADA_PREVIEW_URL)": "وضع الضبط يحتاج إلى نسخة المراقبة (SADA_PREVIEW_URL)"
 }

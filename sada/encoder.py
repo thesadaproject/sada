@@ -76,9 +76,26 @@ def backoff_delay(failures: int) -> float:
     return min(BACKOFF_MAX_S, BACKOFF_MIN_S * 2 ** max(0, failures - 1))
 
 
+# Stand-in input of a rehearsal encoder (setup mode): a neutral picture and silence, in one lavfi source. The
+# camera is not read there: nothing is published by the studio before a live, and nothing may reach the
+# destinations (see `Encoder(rehearsal=True)`).
+REHEARSAL_BG = "0x14201c"
+
+
+def rehearsal_input(cfg) -> list[str]:
+    """ffmpeg input options of the rehearsal source, sized and paced like the real programme."""
+    graph = f"color=c={REHEARSAL_BG}:s={cfg.width}x{cfg.height}:r={cfg.fps}[out0];anullsrc=r=48000:cl=stereo[out1]"
+    return ["-re", "-f", "lavfi", "-i", graph]
+
+
 class Encoder:
-    def __init__(self, cfg, run_dir: Path, log=print):
+    def __init__(self, cfg, run_dir: Path, log=print, rehearsal: bool = False):
+        """`rehearsal`: the programme as the orchestrator would compose it, for the setup view only.
+
+        No destination, no recording, no camera: the picture goes to the monitoring copy (`preview_url`) and
+        nowhere else, so an operator setting up the screens never broadcasts anything."""
         self.cfg, self.log = cfg, log
+        self.rehearsal = rehearsal
         # layers: shared background of the full screens + two content layers (double buffer) + independent overlays
         self.run_dir = Path(run_dir)
         self.layer_png = {k: str(self.run_dir / f"scene_{k}.png") for k in ("fond", "a", "b", "ov")}
@@ -126,8 +143,10 @@ class Encoder:
         rec = str(Path(c.record_dir) / f"live_{stamp}.mkv")
         return rec, (str(Path(c.record_dir) / f"live_{stamp}_clean.mkv") if c.record_clean else None)
 
-    def ffmpeg_cmd(self, rec: str, clean: str | None) -> list[str]:
+    def ffmpeg_cmd(self, rec: str | None, clean: str | None) -> list[str]:
         c = self.cfg
+        if self.rehearsal:
+            rec = clean = None  # nothing is recorded in setup
         copy = bool(clean and c.clean_copy)
         L = {k: f"{v:g}" for k, v in self.levels.items()}
         fg = (
@@ -137,8 +156,9 @@ class Encoder:
             + "[cam]"
             + ",".join(f"zmq@z{i}=bind_address={_zmq_esc(p)}" for i, p in enumerate(self.zmq_vports))
             + "[camz];"
-            # background: a single image, repeated in memory (no re-read)
-            f"[1:v]format=rgba,loop=loop=-1:size=1,colorchannelmixer@fond=aa={L['fond']}[fond];"
+            # background: re-read like the content layers, because an imported template replaces it when the screen
+            # changes (show_image): a frame repeated in memory would keep showing the first screen of the run
+            f"[1:v]format=rgba,fps={c.fps},colorchannelmixer@fond=aa={L['fond']}[fond];"
             f"[2:v]format=rgba,fps={c.fps},colorchannelmixer@ca=aa={L['a_a']}[ca];"
             f"[3:v]format=rgba,fps={c.fps},colorchannelmixer@cb=aa={L['a_b']}[cb];"
             f"[4:v]format=rgba,fps={c.fps}[ov];"
@@ -194,12 +214,8 @@ class Encoder:
             "-nostats",
             "-progress",
             "pipe:1",
-            *source.input_options(c.camera_url),
-            "-i",
-            c.camera_url,
-            "-framerate",
-            str(c.fps),
-            "-i",
+            *(rehearsal_input(c) if self.rehearsal else [*source.input_options(c.camera_url), "-i", c.camera_url]),
+            *slot,
             self.layer_png["fond"],
             *slot,
             self.layer_png["a"],
@@ -239,12 +255,12 @@ class Encoder:
             "+global_header",
             "-f",
             "tee",
-            f"{self._tee_targets()}|[f=matroska]{rec}",
+            self._tee_targets() if rec is None else f"{self._tee_targets()}|[f=matroska]{rec}",
         ] + out_clean
 
     def _tee_targets(self) -> str:
         """One tee output per destination: a platform that drops must not interrupt the others."""
-        outs = [f"[f=flv:onfail=ignore]{url}" for url in self.cfg.rtmp_urls]
+        outs = [] if self.rehearsal else [f"[f=flv:onfail=ignore]{url}" for url in self.cfg.rtmp_urls]
         if self.cfg.preview_url:
             # the monitoring copy leaves through local UDP (never blocks) towards a separate ffmpeg
             outs.append(f"[f=mpegts:onfail=ignore]{PREVIEW_UDP}?pkt_size=1316")
@@ -270,8 +286,13 @@ class Encoder:
         threading.Thread(target=self._watch, daemon=True, name="encoder-watch").start()
 
     def _spawn(self):
-        rec, clean = self.new_recording()
-        if self.failures == 0:  # retries after a failure stay silent (the first failure was logged)
+        rec, clean = (None, None) if self.rehearsal else self.new_recording()
+        if self.rehearsal:
+            if self.failures == 0:
+                self.log(
+                    _("ENCODER: starting the setup programme (monitoring copy only, no destination, no recording)")
+                )
+        elif self.failures == 0:  # retries after a failure stay silent (the first failure was logged)
             self.log(
                 _(
                     "ENCODER: starting ffmpeg -> {targets}  | recording {recording}{clean}",
@@ -287,7 +308,8 @@ class Encoder:
         self._opened = False
         self._dropped = False
         self._spawned_at = time.monotonic()
-        self.recordings.append((rec, clean))
+        if rec is not None:
+            self.recordings.append((rec, clean))
         self.proc = subprocess.Popen(
             self.ffmpeg_cmd(rec, clean), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1,
             encoding="utf-8", errors="replace",
@@ -350,7 +372,8 @@ class Encoder:
     def _on_exit(self):
         """ffmpeg died (caller holds the lock). If it never opened its source, drop its empty recordings, back
         off exponentially and log only the first failure; otherwise relaunch quickly. Logged once per outage."""
-        code, (rec, clean) = self.proc.returncode, self.recordings[-1]
+        code = self.proc.returncode
+        rec, clean = (None, None) if self.rehearsal else self.recordings[-1]
         self.proc = None
         self.restarts += 1
         if self._opened:
@@ -382,6 +405,10 @@ class Encoder:
             p = self.proc
         if self.preview and self.preview.poll() is None:
             self.preview.terminate()
+            try:
+                self.preview.wait(timeout=3)  # the relay path is free again when the next publisher asks for it
+            except subprocess.TimeoutExpired:
+                self.preview.kill()
         self.preview = None
         if p and p.poll() is None:
             p.terminate()  # SIGTERM: ffmpeg finalises the MKV cleanly
@@ -480,8 +507,30 @@ class Encoder:
             for k in ("a", "b"):
                 write_png_atomic(vide, self.layer_png[k])
             self.shown = (scene, self.active, cle)  # type: ignore[assignment]
-            self.full = full
+            was_full, self.full = self.full, full
             self.levels.update({"fond": 1.0 if full else 0.0, f"a_{self.active}": 0.0})
+            running = self.alive()
+        if running:
+            # The levels above only seed a (re)start. A running graph keeps its opacities until they are driven:
+            # without this, a template screen replacing the camera (khutba -> prayer) is written but never shown.
+            threading.Thread(
+                target=self._reveal_background, args=(scene, cle, was_full, full), daemon=True, name="encoder-fond"
+            ).start()
+
+    def _reveal_background(self, scene: str, cle: str, was_full: bool, full: bool) -> None:
+        """Waits for ffmpeg to re-read the new background, then sets the layer opacities with a cut (the content
+        layers are empty: the active layer simply swaps, as after any transition)."""
+        time.sleep(tr.DELAI_CHARGEMENT)
+        with self._anim:
+            p = tr.plan(self.active, was_full, full, scale=self.cfg.height / 720, mode="cut")
+            frames = self._animate(p)
+            self.log(
+                _("TRANSITION -> {scene} (layer {layer}, {frames} frames)", scene=scene, layer=p.dst, frames=frames)
+            )
+            with self._mx:
+                self.active = p.dst
+                if self.shown and self.shown[0] == scene:
+                    self.shown = (scene, p.dst, cle)  # type: ignore[assignment]
 
     def _ensure_worker(self):
         if self._worker is None or not self._worker.is_alive():

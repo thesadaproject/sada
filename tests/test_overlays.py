@@ -148,3 +148,10 @@ def test_api_overlay_endpoint():
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+def test_qr_card_really_contains_a_qr_code():
+    """The card is a scannable matrix, not an empty white box: dark modules, and a size a phone can read."""
+    card = Renderer(Config())._qr_card("https://sadakhutbah.org/don", "Don")
+    dark = sum(1 for p in card.get_flattened_data() if p[:3] == (14, 24, 19) and p[3] == 255)
+    assert card.width >= 150 and dark > 150

@@ -147,12 +147,17 @@ def _french_date(moment) -> str:
     return french_date(now)
 
 
-def _http_get(url: str, token: str) -> dict:  # pragma: no cover (network)
+# The template answer carries one page per screen (up to 512 KB each, the logo embedded): far above the few KB of
+# the texts. A cap that cut the JSON made the engine silently fall back to its own drawing.
+MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+
+
+def _http_get(url: str, token: str) -> dict:
     from .backoffice.internal import HEADER
 
     req = urllib.request.Request(url, headers={HEADER: token})
-    with urllib.request.urlopen(req, timeout=3) as r:
-        return json.loads(r.read(65536))
+    with urllib.request.urlopen(req, timeout=3) as r:  # noqa: S310 — configured back office
+        return json.loads(r.read(MAX_RESPONSE_BYTES))
 
 
 def from_backoffice(backoffice_url: str, api_port: int, fetch=None, log=None) -> dict:

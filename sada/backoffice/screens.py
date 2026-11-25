@@ -234,6 +234,24 @@ def valeurs_apercu(mosque: dict, screen: str, conn=None) -> dict[str, str]:
     return valeurs
 
 
+def overlay_logo(mosque: dict) -> str:
+    """Path of the mosque logo the engine draws in the medallion; empty when none is set (neutral emblem)."""
+    logo = branding.path_for(mosque)
+    return str(logo) if logo and (mosque.get("logo_path") or "").strip() else ""
+
+
+def overlays_layer(mosque: dict, overlays: dict | None) -> bytes:
+    """PNG (1280×720, transparent) of everything the engine lays over the camera: logo medallion, banner, QR card.
+
+    Drawn by the engine's own `SceneRenderer.render_overlays`, so the studio sees exactly what goes on air.
+    """
+    cfg = Config(mosque_name=mosque.get("name") or "", logo=overlay_logo(mosque))
+    img = scenes.SceneRenderer(cfg).render_overlays(overlays if isinstance(overlays, dict) else None)
+    out = io.BytesIO()
+    img.save(out, "PNG", optimize=False)
+    return out.getvalue()
+
+
 def preview(mosque: dict, payload, screen: str, overlay: bool = False, conn=None) -> bytes:
     """PNG (1280×720) of the screen as it will look, drawn by the engine's own renderer.
 
