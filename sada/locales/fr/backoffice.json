@@ -223,5 +223,7 @@
   "night {n}": "nuit {n}",
   "Chunk too large.": "Morceau trop volumineux.",
   "Out of sequence.": "Morceau hors séquence : l'envoi reprend à l'offset indiqué.",
-  "engine unreachable": "moteur injoignable"
+  "engine unreachable": "moteur injoignable",
+  "bad offer": "offre invalide",
+  "relay unavailable": "relais indisponible"
 }

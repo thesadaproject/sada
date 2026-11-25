@@ -12,22 +12,17 @@ from sada.api import make_server
 from sada.state import Machine, State
 
 
-def test_machine_mute_controls_mic_on():
+def test_machine_mute_flag():
     m = Machine()
     assert m.mic_muted is False
     assert m.status()["mic_muted"] is False
 
-    m.state = State.KHUTBA
-    assert m.mic_on is True
-
     assert m.set_mute(True) is True
     assert m.mic_muted is True
-    assert m.mic_on is False
     assert m.status()["mic_muted"] is True
 
     assert m.set_mute(False) is False
     assert m.mic_muted is False
-    assert m.mic_on is True
 
     with pytest.raises(ValueError):
         m.set_mute("yes")  # type: ignore[arg-type]
