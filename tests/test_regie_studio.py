@@ -4,10 +4,9 @@ engine (scene, overlays, microphone, transition) with its own credential, no web
 from __future__ import annotations
 
 import pytest
-from conftest import client
+from conftest import client, one
 
 from sada.backoffice import live, models
-from conftest import one
 
 
 @pytest.fixture
@@ -106,7 +105,12 @@ def test_device_takes_a_scene(env, engine):
 
 def test_device_scene_with_transition_and_bad_mode(env, engine):
     c = dev(env)
-    assert c.post("/api/v1/studio/live/command", json={"command": "scene", "arg": "priere", "transition": "cut"}).status_code == 200
+    assert (
+        c.post(
+            "/api/v1/studio/live/command", json={"command": "scene", "arg": "priere", "transition": "cut"}
+        ).status_code
+        == 200
+    )
     assert ("command", "scene", "priere", "cut") in engine
     bad = c.post("/api/v1/studio/live/command", json={"command": "scene", "arg": "priere", "transition": "spin"})
     assert bad.status_code == 400 and "spin" in bad.text
