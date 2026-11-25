@@ -383,14 +383,27 @@ def test_local_api_setup_route_and_marked_commands():
     ]
 
 
-def test_the_background_is_re_read_so_a_template_screen_can_change_during_a_run(tmp_path):
-    """The imported template replaces the background on each screen change (`show_image`): an input read once and
-    repeated in memory would keep showing the first screen until ffmpeg restarts."""
+def test_the_background_stays_in_memory_unless_a_template_needs_it_re_read(tmp_path):
+    """Default: one image repeated in memory (no PNG read per frame, for every live). With a template, which
+    replaces the background on each screen change (`show_image`), the file is re-read."""
     args = cmd_of(enc_mod.Encoder(cfg(), tmp_path))
     fond = args.index(str(tmp_path / "scene_fond.png"))
     fps = str(cfg().fps)
     assert args[fond - 8 : fond] == ["-re", "-f", "image2", "-loop", "1", "-framerate", fps, "-i"]
-    assert "loop=loop" not in " ".join(args)
+    graph = args[args.index("-filter_complex") + 1]
+    assert "[1:v]format=rgba,loop=loop=-1:size=1," in graph
+
+    reread = cmd_of(enc_mod.Encoder(cfg(), tmp_path, reload_background=True))
+    graph = reread[reread.index("-filter_complex") + 1]
+    assert "loop=loop" not in graph
+    assert f"[1:v]format=rgba,fps={fps}," in graph
+
+
+def test_showing_a_template_image_switches_the_next_launch_to_a_re_read_background(tmp_path):
+    e = enc_mod.Encoder(cfg(), tmp_path)
+    assert e.reload_background is False
+    e.show_image("prayer", True, Image.new("RGBA", (1280, 720), (1, 2, 3, 255)), "k")
+    assert e.reload_background is True
 
 
 def test_a_template_screen_replacing_the_camera_is_revealed_in_a_running_graph(tmp_path, monkeypatch):

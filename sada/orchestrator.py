@@ -137,6 +137,7 @@ class Orchestrator:
         self.gabarit = gabarit_antenne.depuis_backoffice(cfg, cfg.backoffice_url, cfg.api_port, log_fn=log.info)
         self.renderer = SceneRenderer(cfg)
         self.encoder = Encoder(cfg, self.run_dir, log=log.info)
+        self.encoder.reload_background = self._template_active()
         self.encoder.prepare(self.renderer.background())
         self.machine = Machine(sessions, cfg, log=log.info, pos_fn=self.encoder.position, extras=extras)
         # The live stage is the machine and the encoder above; the setup (rehearsal) stage exists only while an
@@ -329,6 +330,8 @@ class Orchestrator:
             self.gabarit = self.gabarit or gabarit_antenne.depuis_backoffice(
                 self.cfg, self.cfg.backoffice_url, self.cfg.api_port, log_fn=log.info
             )
+            if self._template_active():
+                self.encoder.reload_background = True  # read by the next ffmpeg launch
             log.info(
                 _(
                     "Back office reached: {count} destination(s), video input {input}",
@@ -515,6 +518,10 @@ class Orchestrator:
             stage.overlay_key = ov_key
             enc.set_overlay(self.renderer.render_overlays(m.overlays))
 
+    def _template_active(self) -> bool:
+        """The mosque imported a template: its screens replace the background during a run (see Encoder)."""
+        return bool(getattr(self.gabarit, "actif", False))
+
     def _afficher_gabarit(self, scene: str, full: bool, moment, encoder=None) -> bool:
         """Le fichier de la mosquée pour cet écran ; ``False`` s'il n'en fournit pas.
 
@@ -690,6 +697,7 @@ class Orchestrator:
         run_dir = self.run_dir / "setup"
         run_dir.mkdir(parents=True, exist_ok=True)
         enc = Encoder(cfg, run_dir, log=log.info, rehearsal=True)
+        enc.reload_background = self._template_active()
         enc.prepare(self.renderer.background())
         sessions, extras = self.day_plan(self.clock.now().date())
         machine = Machine(sessions, cfg, log=log.info, extras=extras)
