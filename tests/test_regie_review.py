@@ -435,6 +435,11 @@ class _Sink(http.server.BaseHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
 
+    def do_GET(self):  # noqa: N802
+        type(self).hits.append(dict(self.headers))
+        self.send_response(200)
+        self.end_headers()
+
     def log_message(self, *a):
         pass
 
@@ -454,7 +459,7 @@ def test_the_wake_hook_never_follows_a_redirect_with_the_internal_token():
     class Redirect(http.server.BaseHTTPRequestHandler):
         def do_POST(self):  # noqa: N802
             self.rfile.read(int(self.headers.get("Content-Length") or 0))
-            self.send_response(307)
+            self.send_response(302)  # urllib follows it (as a GET, with the custom headers)
             self.send_header("Location", f"http://127.0.0.1:{target.server_address[1]}/leak")
             self.end_headers()
 
