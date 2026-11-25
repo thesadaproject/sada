@@ -201,5 +201,6 @@
   "Setup mode: lease lapsed, rehearsal stopped": "Mode réglage : bail expiré, répétition arrêtée",
   "Setup mode: started": "Mode réglage : démarré",
   "setup mode is not active": "le mode réglage n'est pas actif",
-  "setup mode needs the monitoring copy (SADA_PREVIEW_URL)": "le mode réglage nécessite la copie de contrôle (SADA_PREVIEW_URL)"
+  "setup mode needs the monitoring copy (SADA_PREVIEW_URL)": "le mode réglage nécessite la copie de contrôle (SADA_PREVIEW_URL)",
+  "muted must be a boolean": "« muted » doit être un booléen"
 }

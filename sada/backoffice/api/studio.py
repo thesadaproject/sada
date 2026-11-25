@@ -237,7 +237,8 @@ async def live_command(request: Request, a: DeviceDep):
     if isinstance(out, JSONResponse):
         return out
     a.audit("studio.live.commande", commande=cmd, valeur=arg or "", setup=setup)
-    return JSONResponse(live_flat(a.mosque, forcer=True, setup=setup), headers={"Cache-Control": "no-store"})
+    fresh = await run_in_threadpool(live_flat, a.mosque, True, setup)  # blocking HTTP to the engine
+    return JSONResponse(fresh, headers={"Cache-Control": "no-store"})
 
 
 @router.patch("/studio/live/overlays/{kind}")
@@ -250,7 +251,8 @@ async def live_overlay(kind: str, request: Request, a: DeviceDep):
         return JSONResponse({"error": _("unknown overlay: {kind}", kind=kind)}, status_code=422)
     patch = await _json(request)
     setup = patch.pop("setup", None) is True
-    current = (live_flat(a.mosque, forcer=setup, setup=setup).get("overlays") or {}).get(kind)
+    snapshot = await run_in_threadpool(live_flat, a.mosque, setup, setup)  # blocking HTTP to the engine
+    current = (snapshot.get("overlays") or {}).get(kind)
     try:
         merged = normalize_overlay(kind, patch, current)
     except ValueError as e:
@@ -279,7 +281,11 @@ async def setup_enter(request: Request, a: DeviceDep):
     if on:
         out = await run_in_threadpool(setup_session.enter, a.conn, a.mosque, a.device)
     else:
-        out = await run_in_threadpool(setup_session.leave, a.conn, a.mosque)
+        out = await run_in_threadpool(setup_session.leave, a.conn, a.mosque, a.device)
+        if out.get("held_by_other"):
+            return JSONResponse(
+                {"error": _("setup mode is held by another device"), "code": "setup_held"}, status_code=409
+            )
     return JSONResponse(out, headers={"Cache-Control": "no-store"})
 
 
@@ -293,11 +299,11 @@ async def setup_whep_offer(request: Request, a: DeviceDep):
     path = setup_session.program_path(a.conn, a.mosque)
     sdp = await request.body()
     if not sdp or len(sdp) > MAX_SDP:
-        return JSONResponse({"error": "bad offer"}, status_code=400)
+        return JSONResponse({"error": _("bad offer")}, status_code=400)
     try:
         status, answer, session = await live_watch.whep_offer(path, sdp)
     except live_watch.RelayUnavailable:
-        return JSONResponse({"error": "relay unavailable"}, status_code=503)
+        return JSONResponse({"error": _("relay unavailable")}, status_code=503)
     if status != 201 or not session:
         # 404 from the relay: the orchestrator is not publishing the programme (yet)
         if status in (400, 404):

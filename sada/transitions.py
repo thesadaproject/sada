@@ -22,6 +22,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from .i18n import _
+
 DELAI_CHARGEMENT = 1.0  # s: the layer PNG is re-read in ≤ 0.65 s (ffmpeg queue at 25 fps)
 OUT_DUR = 0.45  # fade-out of the old content
 FOND_DUR = 0.80  # background fade (camera <-> full screen)
@@ -38,7 +40,7 @@ DEFAULT_TRANSITION = "fade"
 def duration(mode: str = DEFAULT_TRANSITION) -> float:
     """Total animation duration in seconds for a transition mode (0.0 for cut)."""
     if mode not in TRANSITIONS:
-        raise ValueError(f"unknown transition: {mode}")
+        raise ValueError(_("unknown transition: {mode}", mode=mode))
     return 0.0 if mode == "cut" else TOTAL
 
 
@@ -107,7 +109,7 @@ def plan(
     mode: str = DEFAULT_TRANSITION,
 ) -> Plan:
     if mode not in TRANSITIONS:
-        raise ValueError(f"unknown transition: {mode}")
+        raise ValueError(_("unknown transition: {mode}", mode=mode))
     dst = "b" if src == "a" else "a"
     return Plan(src, dst, 1.0 if old_full else 0.0, 1.0 if new_full else 0.0, new_full, scale, mode=mode)
 

@@ -47,6 +47,18 @@ def zmq_ports(base: int = ZMQ_APORT) -> tuple[int, tuple[int, ...]]:
     return base, tuple(range(base + 1, base + 1 + ZMQ_VIDEO))
 
 
+def setup_zmq_port(cfg) -> int:
+    """Base port of the rehearsal encoder: its own block, never overlapping the live encoder's.
+
+    `zmq_port_setup` when set (and clear of the live block), otherwise the block right after the live's."""
+    live = int(getattr(cfg, "zmq_port", ZMQ_APORT) or ZMQ_APORT)
+    span = 1 + ZMQ_VIDEO
+    chosen = int(getattr(cfg, "zmq_port_setup", 0) or 0)
+    if chosen and (chosen + span <= live or chosen >= live + span):
+        return chosen
+    return live + span
+
+
 ZMQ_ADDR = f"tcp://127.0.0.1:{ZMQ_APORT}"
 ZMQ_ESC = _zmq_esc(ZMQ_APORT)
 ZMQ_VPORTS = zmq_ports()[1]
@@ -89,13 +101,16 @@ def rehearsal_input(cfg) -> list[str]:
 
 
 class Encoder:
-    def __init__(self, cfg, run_dir: Path, log=print, rehearsal: bool = False):
+    def __init__(self, cfg, run_dir: Path, log=print, rehearsal: bool = False, reload_background: bool = False):
         """`rehearsal`: the programme as the orchestrator would compose it, for the setup view only.
 
         No destination, no recording, no camera: the picture goes to the monitoring copy (`preview_url`) and
         nowhere else, so an operator setting up the screens never broadcasts anything."""
         self.cfg, self.log = cfg, log
         self.rehearsal = rehearsal
+        # False: the background is one image kept in memory (cheap, the default). True: it is re-read at `fps`, which
+        # an imported template needs (show_image replaces it on each screen change); read at the next ffmpeg launch.
+        self.reload_background = reload_background
         # layers: shared background of the full screens + two content layers (double buffer) + independent overlays
         self.run_dir = Path(run_dir)
         self.layer_png = {k: str(self.run_dir / f"scene_{k}.png") for k in ("fond", "a", "b", "ov")}
@@ -149,6 +164,12 @@ class Encoder:
             rec = clean = None  # nothing is recorded in setup
         copy = bool(clean and c.clean_copy)
         L = {k: f"{v:g}" for k, v in self.levels.items()}
+        # background: one image repeated in memory, unless a template may replace it during the run
+        fond_in = (
+            f"[1:v]format=rgba,fps={c.fps},colorchannelmixer@fond=aa={L['fond']}[fond];"
+            if self.reload_background
+            else f"[1:v]format=rgba,loop=loop=-1:size=1,colorchannelmixer@fond=aa={L['fond']}[fond];"
+        )
         fg = (
             f"[0:v]scale={c.width}:{c.height}:force_original_aspect_ratio=decrease,"
             f"pad={c.width}:{c.height}:(ow-iw)/2:(oh-ih)/2,fps={c.fps},setsar=1,format=yuv420p"
@@ -156,10 +177,8 @@ class Encoder:
             + "[cam]"
             + ",".join(f"zmq@z{i}=bind_address={_zmq_esc(p)}" for i, p in enumerate(self.zmq_vports))
             + "[camz];"
-            # background: re-read like the content layers, because an imported template replaces it when the screen
-            # changes (show_image): a frame repeated in memory would keep showing the first screen of the run
-            f"[1:v]format=rgba,fps={c.fps},colorchannelmixer@fond=aa={L['fond']}[fond];"
-            f"[2:v]format=rgba,fps={c.fps},colorchannelmixer@ca=aa={L['a_a']}[ca];"
+            + fond_in
+            + f"[2:v]format=rgba,fps={c.fps},colorchannelmixer@ca=aa={L['a_a']}[ca];"
             f"[3:v]format=rgba,fps={c.fps},colorchannelmixer@cb=aa={L['a_b']}[cb];"
             f"[4:v]format=rgba,fps={c.fps}[ov];"
             f"[camz][fond]overlay@fond=format=auto:shortest=0:repeatlast=1[v0];"
@@ -502,6 +521,7 @@ class Encoder:
         if self.shown and self.shown[0] == scene and len(self.shown) > 2 and self.shown[2] == cle:
             return
         with self._mx:
+            self.reload_background = True  # a template screen is on: the next ffmpeg launch re-reads the background
             write_png_atomic(image, self.layer_png["fond"])
             vide = Image.new("RGBA", image.size, (0, 0, 0, 0))
             for k in ("a", "b"):

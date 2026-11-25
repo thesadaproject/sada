@@ -201,5 +201,6 @@
   "Setup mode: lease lapsed, rehearsal stopped": "وضع الضبط: انتهت المدة، توقفت البروفة",
   "Setup mode: started": "وضع الضبط: بدأ",
   "setup mode is not active": "وضع الضبط غير مفعّل",
-  "setup mode needs the monitoring copy (SADA_PREVIEW_URL)": "وضع الضبط يحتاج إلى نسخة المراقبة (SADA_PREVIEW_URL)"
+  "setup mode needs the monitoring copy (SADA_PREVIEW_URL)": "وضع الضبط يحتاج إلى نسخة المراقبة (SADA_PREVIEW_URL)",
+  "muted must be a boolean": "يجب أن تكون قيمة « muted » منطقية (true/false)"
 }

@@ -753,14 +753,6 @@ SCENES = {
 }
 
 
-def is_full_scene(name: str) -> bool:
-    """True for full-screen slates (built-in or custom uploaded slates)."""
-    if name.startswith("custom:"):
-        return True
-    spec = SCENES.get(name)
-    return bool(spec and spec.full)
-
-
 def render_custom_scene(image: Image.Image, cfg) -> Image.Image:
     """Fit a custom slate image onto the full-screen canvas with dark letterboxing."""
     w, h = int(cfg.width), int(cfg.height)

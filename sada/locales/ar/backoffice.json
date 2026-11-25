@@ -223,5 +223,9 @@
   "night {n}": "الليلة {n}",
   "Chunk too large.": "الجزء كبير جداً.",
   "Out of sequence.": "الجزء خارج التسلسل: يُستأنف الإرسال من الموضع المحدد.",
-  "engine unreachable": "تعذر الوصول إلى المحرك"
+  "engine unreachable": "تعذر الوصول إلى المحرك",
+  "bad offer": "عرض غير صالح",
+  "relay unavailable": "المرحّل غير متاح",
+  "image dimensions too large": "أبعاد الصورة كبيرة جدًا",
+  "setup mode is held by another device": "وضع الإعداد بيد جهاز آخر"
 }

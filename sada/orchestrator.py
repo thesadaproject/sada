@@ -14,6 +14,7 @@ import signal
 import sys
 import threading
 import time
+from collections import OrderedDict
 from dataclasses import replace
 from pathlib import Path
 
@@ -37,13 +38,15 @@ from . import events as events_mod
 from .api import make_server
 from .clock import SimClock, parse_hhmm
 from .config import Config
-from .encoder import Encoder
+from .encoder import Encoder, setup_zmq_port
 from .faces import FaceGate, FaceMonitor, yunet_detector
 from .i18n import _
 from .presence import MotionGate, PresenceMonitor
 from .scenes import SCENES, Moment, SceneRenderer, render_custom_scene
 from .state import Machine, SessionParams, Signals
 from .vad import VadMonitor
+
+MAX_CUSTOM_IMAGES = 24  # custom scene images kept in memory (a mosque holds at most 12, see custom_scenes.MAX_SCENES)
 
 log = logging.getLogger("sada")
 
@@ -137,6 +140,7 @@ class Orchestrator:
         self.gabarit = gabarit_antenne.depuis_backoffice(cfg, cfg.backoffice_url, cfg.api_port, log_fn=log.info)
         self.renderer = SceneRenderer(cfg)
         self.encoder = Encoder(cfg, self.run_dir, log=log.info)
+        self.encoder.reload_background = self._template_active()
         self.encoder.prepare(self.renderer.background())
         self.machine = Machine(sessions, cfg, log=log.info, pos_fn=self.encoder.position, extras=extras)
         # The live stage is the machine and the encoder above; the setup (rehearsal) stage exists only while an
@@ -191,10 +195,13 @@ class Orchestrator:
                 )
             )
         self.lock = threading.RLock()
+        self._setup_gate = threading.Lock()  # one setup lease change at a time (see set_setup)
         self._stream_since: float | None = None  # monotonic time the stream started, None while it is off
         self.telemetry = telemetry.start("sada-orchestrator", cfg.mosque_slug)
         self.telemetry.watch_orchestrator(self.telemetry_snapshot)
-        self._custom_scenes: dict[str, Image.Image] = {}
+        # Images of the custom scenes the engine holds, least recently used first; bounded (see _remember_custom).
+        self._custom_scenes: OrderedDict[str, Image.Image] = OrderedDict()
+        self.machine.custom_known = self._custom_scenes.__contains__
         self._saved = None
         self._stop = threading.Event()
         self.api = None
@@ -329,6 +336,8 @@ class Orchestrator:
             self.gabarit = self.gabarit or gabarit_antenne.depuis_backoffice(
                 self.cfg, self.cfg.backoffice_url, self.cfg.api_port, log_fn=log.info
             )
+            if self._template_active():
+                self.encoder.reload_background = True  # read by the next ffmpeg launch
             log.info(
                 _(
                     "Back office reached: {count} destination(s), video input {input}",
@@ -472,7 +481,7 @@ class Orchestrator:
         if m.scene is not None:
             now = self.clock.now()
             if m.scene.startswith("custom:"):
-                custom_img = self._custom_scenes.get(m.scene)
+                custom_img = self._custom_image(m.scene)
                 key = (m.scene, id(custom_img))
                 if key != stage.shown_key and custom_img is not None:
                     stage.shown_key = key
@@ -514,6 +523,10 @@ class Orchestrator:
         if ov_key != stage.overlay_key:
             stage.overlay_key = ov_key
             enc.set_overlay(self.renderer.render_overlays(m.overlays))
+
+    def _template_active(self) -> bool:
+        """The mosque imported a template: its screens replace the background during a run (see Encoder)."""
+        return bool(getattr(self.gabarit, "actif", False))
 
     def _afficher_gabarit(self, scene: str, full: bool, moment, encoder=None) -> bool:
         """Le fichier de la mosquée pour cet écran ; ``False`` s'il n'en fournit pas.
@@ -621,6 +634,24 @@ class Orchestrator:
             mode = m.set_transition(mode)
             return {"transition": mode, "state": m.state.value}
 
+    def _custom_image(self, scene_id: str) -> Image.Image | None:
+        img = self._custom_scenes.get(scene_id)
+        if img is not None:
+            self._custom_scenes.move_to_end(scene_id)
+        return img
+
+    def _remember_custom(self, scene_id: str, img: Image.Image) -> None:
+        """Keeps the image of a custom scene; the least recently used go when the cap is reached, except the
+        ones a stage is showing (an evicted scene would just have to be uploaded again)."""
+        self._custom_scenes[scene_id] = img
+        self._custom_scenes.move_to_end(scene_id)
+        shown = {self.machine.scene} | ({self.rehearsal.machine.scene} if self.rehearsal else set())
+        for key in list(self._custom_scenes):
+            if len(self._custom_scenes) <= MAX_CUSTOM_IMAGES:
+                break
+            if key not in shown and key != scene_id:
+                del self._custom_scenes[key]
+
     def set_custom_scene(
         self, scene_id: str, image_bytes: bytes | None, transition: str | None = None, setup: bool = False
     ) -> dict:
@@ -637,7 +668,7 @@ class Orchestrator:
                 try:
                     im = Image.open(io.BytesIO(image_bytes))
                     im.load()
-                    self._custom_scenes[scene_id] = im.convert("RGBA")
+                    self._remember_custom(scene_id, im.convert("RGBA"))
                 except Exception:
                     raise ValueError(_("unreadable image file")) from None
             elif scene_id not in self._custom_scenes:
@@ -668,45 +699,75 @@ class Orchestrator:
 
     def set_setup(self, on: bool, ttl=None) -> dict:
         """Takes, renews or releases the setup lease. Opening wakes nothing by itself (the process is already
-        running when this is called); it prepares the rehearsal stage, which starts once a scene is shown."""
-        with self.lock:
+        running when this is called); it prepares the rehearsal stage, which starts once a scene is shown.
+
+        Stopping an encoder waits for ffmpeg (seconds): that happens outside `self.lock`, so the engine's loop and
+        the other commands are not held. `_setup_gate` serialises lease changes, so a new stage is never built (same
+        ports, same folder) while the previous encoder is still going down."""
+        with self._setup_gate:
             if not on:
-                if self.setup.close():
-                    log.info(_("Setup mode: ended"))
-                self._stop_rehearsal(drop=True)
-                return self.setup_status()
+                with self.lock:
+                    if self.setup.close():
+                        log.info(_("Setup mode: ended"))
+                    old = self._detach_rehearsal()
+                self._stop_stage(old)
+                with self.lock:
+                    return self.setup_status()
             if not self.cfg.preview_url:
                 raise ValueError(_("setup mode needs the monitoring copy (SADA_PREVIEW_URL)"))
-            fresh = self.setup.open(setup_mode.clamp_ttl(ttl))
-            if fresh or self.rehearsal is None:
-                self._open_rehearsal()
-                log.info(_("Setup mode: started"))
-            return self.setup_status()
+            with self.lock:
+                fresh = self.setup.open(setup_mode.clamp_ttl(ttl))
+                rebuild = fresh or self.rehearsal is None
+                old = self._detach_rehearsal() if rebuild else None
+            if rebuild:
+                self._stop_stage(old)
+                stage = self._build_rehearsal()
+                with self.lock:
+                    if self.setup.active():  # the lease may have been released meanwhile
+                        self._install_rehearsal(stage)
+                        log.info(_("Setup mode: started"))
+            with self.lock:
+                return self.setup_status()
 
-    def _open_rehearsal(self) -> None:
+    def _build_rehearsal(self) -> setup_mode.Stage:
         """A fresh rehearsal stage: its own machine (the day's plan, for the texts), encoder and folders."""
-        self._stop_rehearsal(drop=True)
-        cfg = replace(self.cfg, rtmp_urls=[], record_clean=False, zmq_port=self.cfg.zmq_port + 8)
+        cfg = replace(self.cfg, rtmp_urls=[], record_clean=False, zmq_port=setup_zmq_port(self.cfg))
         run_dir = self.run_dir / "setup"
         run_dir.mkdir(parents=True, exist_ok=True)
         enc = Encoder(cfg, run_dir, log=log.info, rehearsal=True)
+        enc.reload_background = self._template_active()
         enc.prepare(self.renderer.background())
         sessions, extras = self.day_plan(self.clock.now().date())
         machine = Machine(sessions, cfg, log=log.info, extras=extras)
+        machine.custom_known = self._custom_scenes.__contains__
         machine.idx = min(self.machine.idx, len(machine.sessions))
         machine.transition = self.machine.transition
-        self.rehearsal = setup_mode.Stage(machine, enc, rehearsal=True)
+        return setup_mode.Stage(machine, enc, rehearsal=True)
+
+    def _install_rehearsal(self, stage: setup_mode.Stage) -> None:
+        """Makes the stage current (under `self.lock`) and aligns it; nothing slow happens here."""
+        self.rehearsal = stage
         if not self.machine.stream_on:
-            machine.command("scene", self.signals(), setup_mode.FIRST_SCENE)
+            stage.machine.command("scene", self.signals(), setup_mode.FIRST_SCENE)
         self._sync_setup()
+
+    def _detach_rehearsal(self) -> setup_mode.Stage | None:
+        """Forgets the current stage (under `self.lock`) and hands it back, to be stopped outside the lock."""
+        st, self.rehearsal = self.rehearsal, None
+        return st
+
+    @staticmethod
+    def _stop_stage(st: setup_mode.Stage | None) -> None:
+        """Stops a stage's encoder (the monitoring copy goes away with it): slow, never under `self.lock`."""
+        if st is not None and st.encoder.wanted:
+            st.encoder.stop()
 
     def _stop_rehearsal(self, drop: bool = False) -> None:
         """Stops the rehearsal encoder (the monitoring copy goes away with it); `drop` forgets the stage."""
         st = self.rehearsal
         if st is None:
             return
-        if st.encoder.wanted:
-            st.encoder.stop()
+        self._stop_stage(st)
         st.shown_key = None
         if drop:
             self.rehearsal = None

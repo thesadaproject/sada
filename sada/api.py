@@ -14,6 +14,7 @@ JSON only: the control screen is the back-office dashboard, there is no page ser
 from __future__ import annotations
 
 import base64
+import hmac
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -27,6 +28,11 @@ from .state import Machine
 def _setup_kw(body: dict) -> dict:
     """`setup=True` only when the caller marked the request: the engine's methods keep their plain shape otherwise."""
     return {"setup": True} if body.get("setup") is True else {}
+
+
+def _same(given: str, expected: str) -> bool:
+    """Constant-time comparison of a credential (bytes: header text may be non-ASCII)."""
+    return hmac.compare_digest(given.encode("utf-8", "surrogateescape"), expected.encode("utf-8", "surrogateescape"))
 
 
 def make_server(orch, host: str, port: int, token: str = "") -> ThreadingHTTPServer:
@@ -45,10 +51,9 @@ def make_server(orch, host: str, port: int, token: str = "") -> ThreadingHTTPSer
         def _auth(self) -> bool:
             if not token:
                 return True
-            if self.headers.get("X-Token") == token:
+            if _same(self.headers.get("X-Token") or "", token):
                 return True
-            auth = self.headers.get("Authorization") or ""
-            if auth == f"Bearer {token}":
+            if _same(self.headers.get("Authorization") or "", f"Bearer {token}"):
                 return True
             self._send(401, {"error": _("token required")})
             return False
