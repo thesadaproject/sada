@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.17](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.16...sada-v0.1.0-alpha.17) (2026-11-25)
+
+
+### Features
+
+* **regie:** serve the engine-drawn overlay layer to Studio ([#88](https://github.com/thesadaproject/sada/issues/88)) ([d86405f](https://github.com/thesadaproject/sada/commit/d86405f0f2d51cafa5a7aa59c340d50f30356aa9))
+
 ## [0.1.0-alpha.16](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.15...sada-v0.1.0-alpha.16) (2026-11-25)
 
 
