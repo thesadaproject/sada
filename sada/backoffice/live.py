@@ -6,6 +6,7 @@ Mode A: the orchestrator runs on the same machine (http://127.0.0.1:8088). Mode 
 
 from __future__ import annotations
 
+import base64
 import json
 import threading
 import time
@@ -38,12 +39,25 @@ class OrchestratorError(Exception):
     pass
 
 
-def _call(mosque: dict, method: str, path: str, params: dict | None = None, timeout: float = 3.0) -> dict:
+def _call(
+    mosque: dict,
+    method: str,
+    path: str,
+    params: dict | None = None,
+    timeout: float = 3.0,
+    json_body: dict | None = None,
+) -> dict:
     base = (mosque.get("orchestrator_url") or "").rstrip("/")
     if not base:
         raise OrchestratorError(_("orchestrator address not configured"))
     url = f"{base}/{path}" + (("?" + urllib.parse.urlencode(params)) if params else "")
-    req = urllib.request.Request(url, method=method, data=b"" if method == "POST" else None)
+    if json_body is not None:
+        data = json.dumps(json_body).encode("utf-8")
+    else:
+        data = b"" if method == "POST" else None
+    req = urllib.request.Request(url, method=method, data=data)
+    if json_body is not None:
+        req.add_header("Content-Type", "application/json")
     if mosque.get("orchestrator_token"):
         req.add_header("X-Token", mosque["orchestrator_token"])
     try:
@@ -115,7 +129,14 @@ def _rafraichir(mosque: dict, cle: str) -> None:
             _en_cours.discard(cle)
 
 
-def command(mosque: dict, cmd: str, arg: str | None = None, info: str | None = None, valeur: str | None = None) -> dict:
+def command(
+    mosque: dict,
+    cmd: str,
+    arg: str | None = None,
+    info: str | None = None,
+    valeur: str | None = None,
+    transition: str | None = None,
+) -> dict:
     """arg: name of the deceased (janaza); info: note on the janaza record; valeur: choice of a
     command with a parameter (minutes of extend, scene name of scene).
 
@@ -127,7 +148,7 @@ def command(mosque: dict, cmd: str, arg: str | None = None, info: str | None = N
     params = {}
     if permises:
         valeur = valeur or (permises[0] if cmd == "extend" else None)  # extend: first value by default
-        if valeur not in permises:
+        if not (cmd == "scene" and isinstance(valeur, str) and valeur.startswith("custom:")) and valeur not in permises:
             raise ValueError(_("invalid value for “{command}”", command=cmd))
         params[_VARIED[cmd][0]] = valeur
     if cmd == "janaza":
@@ -135,7 +156,35 @@ def command(mosque: dict, cmd: str, arg: str | None = None, info: str | None = N
             params["name"] = arg[:80]
         if info and arg:  # a note alone makes no sense without a name
             params["info"] = info[:60]
+    if transition is not None:
+        params["transition"] = transition
     return _call(mosque, "POST", cmd, params or None)
+
+
+def set_transition(mosque: dict, mode: str) -> dict:
+    return _call(mosque, "POST", "transition", json_body={"mode": mode})
+
+
+def set_custom_scene(
+    mosque: dict,
+    scene_id: str,
+    image_bytes: bytes | None = None,
+    transition: str | None = None,
+) -> dict:
+    body: dict[str, object] = {"scene": scene_id}
+    if image_bytes:
+        body["image_b64"] = base64.b64encode(image_bytes).decode("ascii")
+    if transition is not None:
+        body["transition"] = transition
+    return _call(mosque, "POST", "custom-scene", json_body=body, timeout=5.0)
+
+
+def set_overlay(mosque: dict, kind: str, data: dict) -> dict:
+    return _call(mosque, "POST", "overlay", json_body={"kind": kind, **data})
+
+
+def set_mute(mosque: dict, muted: bool) -> dict:
+    return _call(mosque, "POST", "mute", json_body={"muted": bool(muted)})
 
 
 def _tarawih(ev: dict | None) -> dict | None:
@@ -193,4 +242,8 @@ def summarize(st: dict) -> dict:
         "tarawih": _tarawih(st.get("event")),
         "encoder_alive": bool((st.get("encoder") or {}).get("alive")),
         "vad_connected": bool((st.get("vad") or {}).get("connected")),
+        "transition": st.get("transition") or "fade",
+        "overlays": st.get("overlays"),
+        "mic_muted": bool(st.get("mic_muted", False)),
+        "audio_level_db": st.get("audio_level_db"),
     }

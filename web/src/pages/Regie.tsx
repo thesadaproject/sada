@@ -19,8 +19,10 @@ type Live = {
   session?: { n?: number | null; total?: number; planned?: string | null; started?: string | null } | null;
   has_sessions?: boolean; next_session?: string | null; stream_on?: boolean; override?: boolean; paused?: boolean;
   last_reason?: string; janaza_name?: string | null; janaza_info?: string | null;
+  mic?: boolean; mic_muted?: boolean; audio_level_db?: number | null;
   tarawih?: { night?: number | null; mode?: string; reciters: string[]; reciter?: string | null } | null;
 };
+type AudioState = { mic_on: boolean; muted: boolean; level_db: number | null };
 type Commande = { key: string; destructive: boolean; choices: string[] };
 
 /** "HH:MM:SS" -> seconds of the day. */
@@ -184,6 +186,7 @@ function RegieEcran() {
   const [nom, setNom] = useState("");
   const [mention, setMention] = useState("");
   const [prepa, setPrepa] = useState<string | null>(null);
+  const [audio, setAudio] = useState<AudioState>({ mic_on: false, muted: false, level_db: null });
   // Who already publishes (a device, the OBS key, another control room): one publisher per mosque.
   const [editeur, setEditeur] = useState<{ source: string; label: string; text: string } | null>(null);
 
@@ -195,6 +198,19 @@ function RegieEcran() {
       setCommandes(d.commands ?? []);
       setMoniteurs(d.monitors ?? {});
       setEditeur(d.publisher ?? null);
+      if (d.audio) {
+        setAudio({
+          mic_on: Boolean(d.audio.mic_on),
+          muted: Boolean(d.audio.muted),
+          level_db: typeof d.audio.level_db === "number" ? d.audio.level_db : null,
+        });
+      } else if (d.live) {
+        setAudio({
+          mic_on: Boolean(d.live.mic),
+          muted: Boolean(d.live.mic_muted),
+          level_db: typeof d.live.audio_level_db === "number" ? d.live.audio_level_db : null,
+        });
+      }
     } catch {
       setLive((v) => v ?? { ok: false });
     }
@@ -211,6 +227,21 @@ function RegieEcran() {
       setRetour({ ok: true, texte: r.message });
       if (r.live) { setLive(r.live); setLu(Date.now()); }
       if (key === "scene") setPrepa(null);
+    } catch (e: any) {
+      setRetour({ ok: false, texte: e?.message ?? t("common.error") });
+    } finally {
+      setOccupe(false);
+    }
+  }
+
+  async function basculerMuet() {
+    setOccupe(true);
+    setRetour(null);
+    const nextMuted = !audio.muted;
+    try {
+      await api.regieMute(nextMuted);
+      setAudio((a) => ({ ...a, muted: nextMuted, mic_on: nextMuted ? false : a.mic_on }));
+      setRetour({ ok: true, texte: nextMuted ? t("regie.micMuted") : t("regie.micLive") });
     } catch (e: any) {
       setRetour({ ok: false, texte: e?.message ?? t("common.error") });
     } finally {
@@ -243,6 +274,42 @@ function RegieEcran() {
           {etat}
         </p>
         {!horsService && <LiveFacts live={live} lu={lu} />}
+        {!horsService && (
+          <div className="ml-auto flex items-center gap-3">
+            {audio.level_db !== null && (
+              <div className="flex items-center gap-2" title={t("regie.audioLevel")}>
+                <div
+                  role="meter"
+                  aria-label={t("regie.audioLevel")}
+                  aria-valuemin={-60}
+                  aria-valuemax={0}
+                  aria-valuenow={Math.round(Math.max(-60, Math.min(0, audio.muted ? -60 : audio.level_db)))}
+                  className="h-2 w-24 overflow-hidden rounded-full bg-white/15"
+                >
+                  <div
+                    className="h-full rounded-full transition-[width] duration-100"
+                    style={{
+                      width: `${Math.min(100, Math.max(0, ((audio.muted ? -60 : audio.level_db) + 60) / 60 * 100))}%`,
+                      background: audio.muted ? "#9ca3af" : audio.level_db > -3 ? "#ef4444" : audio.level_db > -12 ? "#eab308" : "#22c55e",
+                    }}
+                  />
+                </div>
+                <span className="text-[0.78rem] text-night-muted tabular-nums">
+                  {audio.muted ? "—" : `${Math.round(audio.level_db)} dB`}
+                </span>
+              </div>
+            )}
+            <Btn
+              variante={audio.muted ? "danger" : "light"}
+              className="min-h-9 px-3 py-1 text-[0.85rem]"
+              aria-pressed={audio.muted}
+              disabled={occupe}
+              onClick={() => void basculerMuet()}
+            >
+              {audio.muted ? t("regie.micUnmute") : t("regie.micMute")}
+            </Btn>
+          </div>
+        )}
         {horsService && <p className="m-0 text-[0.9rem] text-night-muted">{t("dashboard.unreachableHint")}</p>}
       </section>
 

@@ -23,7 +23,7 @@ from sada.state import Machine, MachineParams, Signals, State
 
 DAY = dt.date(2026, 3, 6)
 COMMANDS = ("start", "pause", "resume", "auto", "extend", "skip", "scene", "janaza", "tarawih", "next_reciter", "stop")
-SCENES = ("avant", "khutba", "priere", "entracte", "termine", "dars", "dars_fin", "tarawih", "bogus")
+SCENES = ("avant", "khutba", "priere", "entracte", "termine", "dars", "dars_fin", "tarawih", "bogus", "custom:attente")
 PLANS = {
     "khutba2": [("12:30", {}), ("13:30", {})],
     "dars": [("12:30", {"kind": "dars", "title": "T"}), ("13:30", {"kind": "conference"})],

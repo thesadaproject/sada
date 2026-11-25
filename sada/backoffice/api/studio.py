@@ -16,13 +16,16 @@ from __future__ import annotations
 import time
 
 from fastapi import APIRouter, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy import select
 
-from ... import mailer
+from ... import mailer, transitions
 from ...i18n import _
+from ...state import OVERLAY_KINDS, normalize_overlay
 from .. import (
     db,
+    live,
     live_watch,
     orm,
     studio_devices,
@@ -175,6 +178,83 @@ async def live_announce(request: Request, a: DeviceDep):
     return _manual(
         lambda: studio_service.announce(a.conn, a.mosque, a.device, body.get("type"), body.get("title"), a.ip)
     )
+
+
+# ------------------------------------------------------------------ live control (device)
+
+
+@router.get("/studio/regie")
+def studio_regie(a: DeviceDep):
+    """Control-room payload for the paired device: mosque, engine state, scenes, commands."""
+    from .regie import regie_data
+
+    return JSONResponse(regie_data(a.conn, a.mosque), headers={"Cache-Control": "no-store"})
+
+
+@router.get("/studio/live/status")
+def live_status(a: DeviceDep):
+    """Engine snapshot, flat, as the studio screen reads it."""
+    from .regie import live_flat
+
+    return JSONResponse(live_flat(a.mosque), headers={"Cache-Control": "no-store"})
+
+
+@router.post("/studio/live/command")
+async def live_command(request: Request, a: DeviceDep):
+    """A command from the console: `scene` takes `arg` as the scene name, other commands relay theirs.
+
+    The answer is the fresh engine state (forced read), so the screen never shows a stale scene.
+    """
+    from .regie import apply_scene, live_flat
+
+    body = await _json(request)
+    cmd = str(body.get("command") or "").strip().lower()
+    arg = body.get("arg")
+    tr = body.get("transition")
+    if tr is not None:
+        tr = str(tr).strip().lower()
+        if tr not in transitions.TRANSITIONS:
+            return JSONResponse({"error": _("unknown transition: {mode}", mode=tr)}, status_code=400)
+    if cmd == "scene":
+        out = await apply_scene(a.conn, a.mosque, arg, tr)
+    elif cmd in live.COMMANDS:
+        kwargs = {"transition": tr} if tr else {}
+        try:
+            if live.choices(cmd):
+                out = await run_in_threadpool(live.command, a.mosque, cmd, valeur=arg, **kwargs)
+            else:
+                out = await run_in_threadpool(live.command, a.mosque, cmd, arg=arg, **kwargs)
+        except ValueError as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
+        except live.OrchestratorError as e:
+            return JSONResponse({"error": str(e)}, status_code=503)
+    else:
+        return JSONResponse({"error": _("unknown command")}, status_code=400)
+    if isinstance(out, JSONResponse):
+        return out
+    a.audit("studio.live.commande", commande=cmd, valeur=arg or "")
+    return JSONResponse(live_flat(a.mosque, forcer=True), headers={"Cache-Control": "no-store"})
+
+
+@router.patch("/studio/live/overlays/{kind}")
+async def live_overlay(kind: str, request: Request, a: DeviceDep):
+    """Updates one overlay layer (qr, banner, logo); the patch is merged onto the current state."""
+    from .regie import live_flat
+
+    kind = str(kind or "").strip().lower()
+    if kind not in OVERLAY_KINDS:
+        return JSONResponse({"error": _("unknown overlay: {kind}", kind=kind)}, status_code=422)
+    current = (live_flat(a.mosque).get("overlays") or {}).get(kind)
+    try:
+        merged = normalize_overlay(kind, await _json(request), current)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    try:
+        r = await run_in_threadpool(live.set_overlay, a.mosque, kind, merged)
+    except live.OrchestratorError as e:
+        return JSONResponse({"error": str(e)}, status_code=503)
+    a.audit("studio.live.incrustation", incrustation=kind, visible=bool(merged.get("visible")))
+    return {"ok": True, "overlays": r.get("overlays") or {kind: merged}}
 
 
 # ------------------------------------------------------------------ console

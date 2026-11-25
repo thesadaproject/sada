@@ -330,12 +330,14 @@ def test_tableau_de_bord_et_commandes_live(env, orch):
         "extend",
         "skip",
         "scene",
+        "transition",
         "janaza",
         "tarawih",
         "next_reciter",
         "stop",
         "cancel",
     ]
+    assert "transition" in [c["key"] for c in d["live_commands"]]
     for cmd in ("extend", "janaza", "stop", "cancel"):
         assert c.ecrire(f"/live/{cmd}").status_code == 200
     assert orch.calls == [("extend", "5"), ("janaza", None), ("stop", None), ("cancel", None)]

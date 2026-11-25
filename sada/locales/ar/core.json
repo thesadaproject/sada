@@ -131,6 +131,8 @@
   "replan needs the current signals": "إعادة التخطيط تحتاج إلى الإشارات الحالية",
   "resumed on {state}": "استُؤنف على {state}",
   "scene {scene} (auto suspended)": "المشهد {scene} (التشغيل التلقائي موقوف)",
+  "transition: {mode}": "انتقال: {mode}",
+  "unknown scene: {scene}": "مشهد غير معروف: {scene}",
   "screen {screen}: an object is expected": "الشاشة {screen}: يُتوقع كائن",
   "session skipped, state {state}": "تم تجاوز الجلسة، الحالة {state}",
   "silence {silence:.0f}s: grace delay {grace:.0f}s": "صمت {silence:.0f} ثانية: مهلة السماح {grace:.0f} ثانية",

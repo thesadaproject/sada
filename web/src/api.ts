@@ -154,6 +154,7 @@ export const api = {
   dashboard: () => demande<any>("/dashboard"),
   /** Control room: live state, commands, scenes and the health of the two monitors. */
   regie: () => demande<any>("/live/regie"),
+  regieMute: (muted: boolean) => ecrire<{ ok: boolean; muted: boolean; mic_muted: boolean }>("POST", "/live/regie/mute", { muted }),
   /** Studio devices (pairing, list, incidents, schedule) — see docs/studio-devices.md. */
   studioDevices: () => demande<any>("/studio/devices"),
   studioPair: (user_code: string, name: string) =>

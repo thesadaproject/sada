@@ -616,6 +616,105 @@ class SceneRenderer:
         img.alpha_composite(layer)
         return img
 
+    # --- independent live overlays (QR code, free banner, mosque logo) -------
+    def _qr_card(self, url: str, label: str) -> Image.Image:
+        """Crisp QR code card in the Sada charter (white quiet-zone box, gold rim, optional short label)."""
+        from reportlab.graphics.barcode import qr as rl_qr
+
+        px = self.px
+        code = rl_qr.QrCodeWidget(url).qr
+        n = code.getModuleCount()
+        quiet = 2
+        target = px(152)
+        cell = max(2, target // (n + 2 * quiet))
+        qr_px = cell * (n + 2 * quiet)
+        pad = px(10)
+        label = label.strip()
+        f_lbl = _font(SANS_SB, px(18))
+        w = qr_px + 2 * pad
+        lbl_h = px(30) if label else 0
+        h = qr_px + 2 * pad + lbl_h
+        card = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        d = ImageDraw.Draw(card)
+        r = px(10)
+        d.rounded_rectangle([0, 0, w - 1, h - 1], r, fill=_alpha(self.panel, 244), outline=GOLD, width=max(1, px(1.5)))
+        qx0, qy0 = pad, pad
+        d.rounded_rectangle([qx0, qy0, qx0 + qr_px - 1, qy0 + qr_px - 1], px(6), fill=(255, 255, 255, 255))
+        dark = (14, 24, 19, 255)
+        for row in range(n):
+            y = qy0 + (row + quiet) * cell
+            for col in range(n):
+                if code.isDark(row, col):
+                    x = qx0 + (col + quiet) * cell
+                    d.rectangle([x, y, x + cell - 1, y + cell - 1], fill=dark)
+        if label:
+            txt = self._ellipsize(d, label, f_lbl, w - 2 * pad)
+            self._text(d, (w / 2, qy0 + qr_px + lbl_h / 2 + px(2)), txt, f_lbl, IVORY, anchor="mm")
+        return card
+
+    def _overlay_banner(self, title: str, subtitle: str, max_right: int) -> Image.Image:
+        """Free lower-third announcement banner, independent of the active scene."""
+        px = self.px
+        img = Image.new("RGBA", (self.W, self.H), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        has_sub = bool(subtitle.strip())
+        h = px(106) if has_sub else px(74)
+        x0 = px(56)
+        y1 = self.H - px(46)
+        y0 = y1 - h
+        tx = x0 + px(5) + px(22)
+        max_x1 = max(tx + px(180), max_right)
+        f_t = self._fit(d, title, _font(SERIF, px(40)), SERIF, px(40), max_x1 - px(24) - tx)
+        f_s = _font(SANS_SB, px(24))
+        sub = self._ellipsize(d, subtitle.strip(), f_s, max_x1 - px(24) - tx) if has_sub else ""
+        w_text = max(self._width(d, title, f_t), self._width(d, sub, f_s) if sub else 0)
+        x1 = int(min(max_x1, tx + w_text + px(28)))
+        r = px(6)
+        self._panel_shadow(img, (x0, y0, x1, y1), r)
+        d = ImageDraw.Draw(img)
+        d.rounded_rectangle([x0, y0, x1, y1], r, fill=_alpha(self.panel, 244), corners=(False, True, True, False))
+        d.rectangle([x0, y0, x0 + px(5) - 1, y1], fill=GOLD)
+        if has_sub:
+            self._text(d, (tx, y0 + px(48)), title, f_t, IVORY, anchor="ls")
+            self._text(d, (tx, y0 + px(84)), sub, f_s, IVORY_DIM, anchor="ls")
+        else:
+            self._text(d, (tx, y0 + h / 2 + px(2)), title, f_t, IVORY, anchor="lm")
+        return img
+
+    def render_overlays(self, overlays: dict[str, dict] | None) -> Image.Image:
+        """Composite all visible independent overlays onto one transparent 1280x720 RGBA layer."""
+        px = self.px
+        img = Image.new("RGBA", (self.W, self.H), (0, 0, 0, 0))
+        if not overlays:
+            return img
+        qr = overlays.get("qr") or {}
+        banner = overlays.get("banner") or {}
+        logo = overlays.get("logo") or {}
+        qr_visible = bool(qr.get("visible")) and bool(qr.get("url"))
+        qr_corner = str(qr.get("corner") or "tr")
+        qr_card = self._qr_card(qr["url"], str(qr.get("label") or "")) if qr_visible else None
+        margin = px(40)
+
+        if logo.get("visible"):
+            med = self.medallion(px(74), ring=max(1, px(1.5)))
+            # Top-left by default; shift to top-right if the QR occupies top-left.
+            lx = (self.W - margin - med.width) if (qr_visible and qr_corner == "tl") else margin
+            img.alpha_composite(med, (lx, px(30)))
+
+        if banner.get("visible") and str(banner.get("title") or "").strip():
+            max_right = self.W - px(56)
+            if qr_card is not None and qr_corner == "br":
+                max_right = self.W - margin - qr_card.width - px(24)
+            b_img = self._overlay_banner(str(banner["title"]).strip(), str(banner.get("subtitle") or ""), max_right)
+            img.alpha_composite(b_img)
+
+        if qr_card is not None:
+            qx = margin if qr_corner in ("tl", "bl") else self.W - margin - qr_card.width
+            qy = margin if qr_corner in ("tl", "tr") else self.H - margin - qr_card.height
+            img.alpha_composite(qr_card, (qx, qy))
+
+        return img
+
 
 @dataclass(frozen=True)
 class Moment:
@@ -651,3 +750,26 @@ SCENES = {
     "tarawih": Scene(full=True, mic=True, draw=SceneRenderer._tarawih),
     "tarawih_video": Scene(full=False, mic=True, draw=SceneRenderer._tarawih_video),
 }
+
+
+def is_full_scene(name: str) -> bool:
+    """True for full-screen slates (built-in or custom uploaded slates)."""
+    if name.startswith("custom:"):
+        return True
+    spec = SCENES.get(name)
+    return bool(spec and spec.full)
+
+
+def render_custom_scene(image: Image.Image, cfg) -> Image.Image:
+    """Fit a custom slate image onto the full-screen canvas with dark letterboxing."""
+    w, h = int(cfg.width), int(cfg.height)
+    canvas = Image.new("RGBA", (w, h), (10, 13, 18, 255))
+    src = image.convert("RGBA")
+    if src.width <= 0 or src.height <= 0:
+        return canvas
+    scale = min(w / src.width, h / src.height)
+    nw = max(1, int(round(src.width * scale)))
+    nh = max(1, int(round(src.height * scale)))
+    resized = src.resize((nw, nh), Image.Resampling.LANCZOS)
+    canvas.alpha_composite(resized, ((w - nw) // 2, (h - nh) // 2))
+    return canvas

@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import io
+import json
 import logging
 import signal
 import sys
@@ -38,7 +39,7 @@ from .encoder import Encoder
 from .faces import FaceGate, FaceMonitor, yunet_detector
 from .i18n import _
 from .presence import MotionGate, PresenceMonitor
-from .scenes import SCENES, Moment, SceneRenderer
+from .scenes import SCENES, Moment, SceneRenderer, render_custom_scene
 from .state import Machine, SessionParams, Signals
 from .vad import VadMonitor
 
@@ -187,6 +188,8 @@ class Orchestrator:
         self.telemetry = telemetry.start("sada-orchestrator", cfg.mosque_slug)
         self.telemetry.watch_orchestrator(self.telemetry_snapshot)
         self._shown_key = None
+        self._custom_scenes: dict[str, Image.Image] = {}
+        self._overlay_key = None
         self._saved = None
         self._stop = threading.Event()
         self.api = None
@@ -442,28 +445,49 @@ class Orchestrator:
         m, enc = self.machine, self.encoder
         if m.scene is not None:
             now = self.clock.now()
-            spec = SCENES[m.scene]
-            ev = (
-                m.playing.event() if m.scene in ("dars", "tarawih", "tarawih_video") and m.playing is not None else None
-            )
-            nxt = self._next_event(now) if m.scene in ("dars_fin", "entracte") else None
-            key = (
-                m.scene,
-                m.session,
-                m.janaza_name,
-                m.janaza_info,
-                (ev or {}).get("title"),
-                (ev or {}).get("reciter"),
-                getattr(nxt, "starts", None),
-                now.strftime("%H:%M:%S") if spec.ticking else None,
-            )
-            if key != self._shown_key:
-                self._shown_key = key
-                moment = Moment(now, m.session, m.janaza_name, m.janaza_info, event=ev, next_event=nxt)
-                if not self._afficher_gabarit(m.scene, spec.full, moment):
-                    enc.show(m.scene, spec.full, self.renderer.content(m.scene, moment))
-            if spec.mic != enc.mic_on:
-                enc.mic(spec.mic)
+            if m.scene.startswith("custom:"):
+                custom_img = self._custom_scenes.get(m.scene)
+                key = (m.scene, id(custom_img))
+                if key != self._shown_key and custom_img is not None:
+                    self._shown_key = key
+                    enc.show(
+                        m.scene,
+                        True,
+                        render_custom_scene(custom_img, self.cfg),
+                        transition=m.transition,
+                    )
+                if enc.mic_on:
+                    enc.mic(False)
+            else:
+                spec = SCENES[m.scene]
+                ev = (
+                    m.playing.event()
+                    if m.scene in ("dars", "tarawih", "tarawih_video") and m.playing is not None
+                    else None
+                )
+                nxt = self._next_event(now) if m.scene in ("dars_fin", "entracte") else None
+                key = (
+                    m.scene,
+                    m.session,
+                    m.janaza_name,
+                    m.janaza_info,
+                    (ev or {}).get("title"),
+                    (ev or {}).get("reciter"),
+                    getattr(nxt, "starts", None),
+                    now.strftime("%H:%M:%S") if spec.ticking else None,
+                )
+                if key != self._shown_key:
+                    self._shown_key = key
+                    moment = Moment(now, m.session, m.janaza_name, m.janaza_info, event=ev, next_event=nxt)
+                    if not self._afficher_gabarit(m.scene, spec.full, moment):
+                        enc.show(m.scene, spec.full, self.renderer.content(m.scene, moment), transition=m.transition)
+                want_mic = spec.mic and not m.mic_muted
+                if want_mic != enc.mic_on:
+                    enc.mic(want_mic)
+        ov_key = json.dumps(m.overlays, sort_keys=True)
+        if ov_key != self._overlay_key:
+            self._overlay_key = ov_key
+            enc.set_overlay(self.renderer.render_overlays(m.overlays))
         if m.state != self._notified_state:
             if self._notified_state is not None:
                 self.telemetry.state_changed(self._notified_state.value, m.state.value)
@@ -552,11 +576,62 @@ class Orchestrator:
             ingest_connected=self.vad.connected,
         )
 
-    def manual(self, cmd: str, arg=None) -> dict:
+    def manual(self, cmd: str, arg=None, transition: str | None = None) -> dict:
         with self.lock:
+            if transition is not None:
+                self.machine.set_transition(transition)
             msg = self.machine.command(cmd, self.signals(), arg)
             self._sync()
-            return {"message": msg, "state": self.machine.state.value}
+            return {"message": msg, "state": self.machine.state.value, "transition": self.machine.transition}
+
+    def set_transition(self, mode: str) -> dict:
+        with self.lock:
+            m = self.machine.set_transition(mode)
+            return {"transition": m, "state": self.machine.state.value}
+
+    def set_custom_scene(self, scene_id: str, image_bytes: bytes | None, transition: str | None = None) -> dict:
+        import io
+
+        from PIL import Image
+
+        if not isinstance(scene_id, str) or not scene_id.startswith("custom:") or len(scene_id) <= 7:
+            raise ValueError(_("unknown scene: {scene}", scene=scene_id))
+        with self.lock:
+            if image_bytes:
+                try:
+                    im = Image.open(io.BytesIO(image_bytes))
+                    im.load()
+                    self._custom_scenes[scene_id] = im.convert("RGBA")
+                except Exception:
+                    raise ValueError(_("unreadable image file")) from None
+            elif scene_id not in self._custom_scenes:
+                raise ValueError(_("unknown scene: {scene}", scene=scene_id))
+            if transition is not None:
+                self.machine.set_transition(transition)
+            msg = self.machine.command("scene", self.signals(), scene_id)
+            self._sync()
+            return {
+                "message": msg,
+                "state": self.machine.state.value,
+                "scene": scene_id,
+                "transition": self.machine.transition,
+            }
+
+    def set_overlay(self, kind: str, data: dict) -> dict:
+        with self.lock:
+            overlays = self.machine.set_overlay(kind, data)
+            self._sync()
+            return {"overlays": overlays, "state": self.machine.state.value}
+
+    def set_mute(self, muted: bool) -> dict:
+        with self.lock:
+            self.machine.set_mute(muted)
+            self._sync()
+            return {
+                "mic_muted": self.machine.mic_muted,
+                "mic": self.encoder.mic_on,
+                "state": self.machine.state.value,
+            }
 
     def status(self) -> dict:
         with self.lock:
@@ -578,6 +653,8 @@ class Orchestrator:
                         "pos_s": round(pos, 1),
                     },
                     "mic": self.encoder.mic_on,
+                    "mic_muted": self.machine.mic_muted,
+                    "audio_level_db": getattr(self.vad, "last_db", lambda: None)(),
                     "presence": (
                         {"mode": "motion", "present": self.presence.present(), "score": self.presence.last_score()}
                         if self.presence
