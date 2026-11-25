@@ -6,6 +6,11 @@ stream name from the request: the path comes from the session's mosque (live_wat
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+import threading
+from collections import OrderedDict
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
@@ -308,6 +313,79 @@ async def scene_preview(name: str, ctx: CtxDep):
     textes = screens_mod.saved(ctx.conn, ctx.mosque["id"])
     png = await run_in_threadpool(screens_mod.preview, ctx.mosque, textes, name, True, ctx.conn)
     return Response(png, media_type="image/png", headers={"Cache-Control": "private, max-age=30"})
+
+
+# ------------------------------------------------------------------ overlay layer
+# The studio lays this PNG over its local monitor: the very layer the engine composites over the camera
+# (SceneRenderer.render_overlays), for the overlay state the caller sees (the rehearsal's in setup mode).
+# The ETag is a digest of what the drawing depends on, so the client revalidates cheaply (304) every few
+# seconds and a new image is drawn only when an overlay (or the logo) changed. (The API middleware marks
+# every response `no-store`: the client keeps the last image itself and sends If-None-Match.)
+
+_LAYER_CACHE: OrderedDict[str, bytes] = OrderedDict()
+_LAYER_CACHE_MAX = 32
+_LAYER_LOCK = threading.Lock()
+
+
+def _layer_etag(mosque: dict, overlays: dict | None) -> str:
+    logo = screens_mod.overlay_logo(mosque)
+    try:
+        st = os.stat(logo) if logo else None
+        stamp = f"{st.st_mtime_ns}:{st.st_size}" if st else ""
+    except OSError:
+        stamp = "missing"
+    key = json.dumps(
+        {"m": mosque["id"], "n": mosque.get("name") or "", "logo": [logo, stamp], "o": overlays or {}},
+        sort_keys=True,
+        ensure_ascii=False,
+        default=str,
+    )
+    return '"ov-' + hashlib.sha256(key.encode("utf-8")).hexdigest()[:24] + '"'
+
+
+def overlay_layer(mosque: dict, overlays: dict | None) -> tuple[str, bytes]:
+    """(ETag, PNG) of the overlay layer; drawn once per distinct state, then served from a small memory cache."""
+    etag = _layer_etag(mosque, overlays)
+    with _LAYER_LOCK:
+        png = _LAYER_CACHE.get(etag)
+        if png is not None:
+            _LAYER_CACHE.move_to_end(etag)
+            return etag, png
+    png = screens_mod.overlays_layer(mosque, overlays)
+    with _LAYER_LOCK:
+        _LAYER_CACHE[etag] = png
+        while len(_LAYER_CACHE) > _LAYER_CACHE_MAX:
+            _LAYER_CACHE.popitem(last=False)
+    return etag, png
+
+
+def _matches(header: str | None, etag: str) -> bool:
+    if not header:
+        return False
+    return header.strip() == "*" or etag in {t.strip().removeprefix("W/") for t in header.split(",")}
+
+
+@router.get("/live/regie/overlays.png")
+async def overlays_png(request: Request, a: ActorDep, setup: int = 0):
+    """Transparent 1280×720 PNG of every overlay currently on air (logo, banner, QR), as the engine draws it.
+
+    `?setup=1`: the rehearsal's overlays, while the caller's setup view is open (same rule as the status).
+    The engine unreachable: 503 `offline` — the client then falls back to its own approximation.
+    """
+    a.need_live(write=False)
+    st = await run_in_threadpool(live_flat, a.mosque, False, bool(setup))
+    if not st.get("ok"):
+        return JSONResponse(
+            {"error": st.get("message") or _("engine unreachable"), "code": "offline"},
+            status_code=503,
+            headers={"Cache-Control": "no-store"},
+        )
+    overlays = st.get("overlays") if isinstance(st.get("overlays"), dict) else None
+    etag, png = await run_in_threadpool(overlay_layer, a.mosque, overlays)
+    headers = {"ETag": etag}
+    if _matches(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers=headers)
+    return Response(png, media_type="image/png", headers=headers)
 
 
 @router.post("/live/watch/{which}/whep")
