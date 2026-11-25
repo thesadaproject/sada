@@ -281,7 +281,11 @@ async def setup_enter(request: Request, a: DeviceDep):
     if on:
         out = await run_in_threadpool(setup_session.enter, a.conn, a.mosque, a.device)
     else:
-        out = await run_in_threadpool(setup_session.leave, a.conn, a.mosque)
+        out = await run_in_threadpool(setup_session.leave, a.conn, a.mosque, a.device)
+        if out.get("held_by_other"):
+            return JSONResponse(
+                {"error": _("setup mode is held by another device"), "code": "setup_held"}, status_code=409
+            )
     return JSONResponse(out, headers={"Cache-Control": "no-store"})
 
 

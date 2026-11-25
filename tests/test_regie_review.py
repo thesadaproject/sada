@@ -387,3 +387,100 @@ def test_scene_version_is_stable_across_processes_and_settings_key_is_gone():
     }
     assert len(outs) == 1 and custom_scenes._format(item)["preview_url"] in "".join(outs)
     assert not hasattr(custom_scenes, "SETTINGS_KEY")
+
+
+# ------------------------------------------------------------------ setup session
+import http.server  # noqa: E402
+
+from test_studio_setup import _fresh_limits, orch  # noqa: E402,F401  (fixtures)
+
+from sada.backoffice import setup_session  # noqa: E402
+
+
+def test_leave_only_cuts_the_lease_of_the_device_that_holds_it(env, orch):  # noqa: F811
+    holder = dev(env, pair(env, "Holder"))
+    other = dev(env, pair(env, "Other"))
+    assert holder.post("/api/v1/studio/setup", json={"on": True}).status_code == 200
+    r = other.post("/api/v1/studio/setup", json={"on": False})
+    assert r.status_code == 409 and r.json()["code"] == "setup_held"
+    assert one(env["conn"], models.SetupLease) is not None  # still held
+    assert not any(c[0] == "setup" and c[2] is False for c in orch["calls"])  # the orchestrator was not told
+    assert holder.post("/api/v1/studio/setup", json={"on": False}).json() == {"active": False}
+    assert one(env["conn"], models.SetupLease) is None
+
+
+def test_an_admin_may_end_a_lease_held_by_a_device(env, orch):  # noqa: F811
+    holder = dev(env, pair(env, "Holder"))
+    holder.post("/api/v1/studio/setup", json={"on": True})
+    mosque = _mosque(env)
+    assert setup_session.leave(env["conn"], mosque, {"id": -1}, admin=True) == {"active": False}
+    assert one(env["conn"], models.SetupLease) is None
+
+
+def test_the_wake_bookkeeping_is_dropped_when_the_lease_lapses(env):
+    mosque = _mosque(env)
+    setup_session._last_wake.clear()
+    setup_session.enter(env["conn"], mosque, None, now=1000.0)
+    assert mosque["slug"] in setup_session._last_wake
+    setup_session.leases(env["conn"], now=1000.0 + setup_session.TTL_S + 1)  # the scaler polls: the lease lapsed
+    assert setup_session._last_wake == {}
+
+
+class _Sink(http.server.BaseHTTPRequestHandler):
+    hits: list[dict] = []
+
+    def do_POST(self):  # noqa: N802
+        self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        type(self).hits.append(dict(self.headers))
+        self.send_response(200)
+        self.end_headers()
+
+    def log_message(self, *a):
+        pass
+
+
+def _serve(handler):
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+def test_the_wake_hook_never_follows_a_redirect_with_the_internal_token():
+    class Sink(_Sink):
+        hits: list[dict] = []
+
+    target = _serve(Sink)
+
+    class Redirect(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802
+            self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            self.send_response(307)
+            self.send_header("Location", f"http://127.0.0.1:{target.server_address[1]}/leak")
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    front = _serve(Redirect)
+    try:
+        setup_session._post_hook(f"http://127.0.0.1:{front.server_address[1]}/hook", "m", "wake")
+    finally:
+        front.shutdown()
+        target.shutdown()
+    assert Sink.hits == []
+
+
+def test_the_wake_hook_is_sent_to_a_loopback_http_host_but_refused_over_plain_http_elsewhere():
+    class Sink(_Sink):
+        hits: list[dict] = []
+
+    srv = _serve(Sink)
+    try:
+        setup_session._post_hook(f"http://127.0.0.1:{srv.server_address[1]}/hook", "m", "wake")
+    finally:
+        srv.shutdown()
+    assert len(Sink.hits) == 1
+    assert setup_session._hook_allowed("https://platform.example/hook")
+    assert not setup_session._hook_allowed("http://platform.example/hook")
+    assert not setup_session._hook_allowed("ftp://127.0.0.1/hook")
+    assert not setup_session._hook_allowed("http://127.0.0.1.evil.example/hook")

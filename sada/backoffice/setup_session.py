@@ -23,6 +23,8 @@ import logging
 import os
 import threading
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 
 from sqlalchemy import delete, select
@@ -79,6 +81,7 @@ def release(conn, mosque_id: int) -> bool:
 def leases(conn, now: float | None = None) -> list[dict]:
     """Every lease that holds, with the mosque's slug: what a scaler reads to know which orchestrators to keep."""
     now = time.time() if now is None else now
+    _purge_wake(conn, now)
     stmt = (
         select(Mosque.slug, SetupLease.until)
         .join(SetupLease, SetupLease.mosque_id == Mosque.id)
@@ -88,7 +91,26 @@ def leases(conn, now: float | None = None) -> list[dict]:
     return [{"mosque": r["slug"], "until": r["until"]} for r in orm.rows(conn, stmt)]
 
 
-def _post_hook(url: str, slug: str, action: str) -> None:  # pragma: no cover (network)
+_LOOPBACK = {"localhost", "127.0.0.1", "::1"}
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """The hook carries the internal token: a redirect must never carry it somewhere else."""
+
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+def _hook_allowed(url: str) -> bool:
+    """https only; plain http is for a loopback host (development, tests)."""
+    parts = urllib.parse.urlsplit(url)
+    return parts.scheme == "https" or (parts.scheme == "http" and (parts.hostname or "") in _LOOPBACK)
+
+
+def _post_hook(url: str, slug: str, action: str) -> None:
+    if not _hook_allowed(url):
+        log.warning("setup %s hook for %s not sent: the address must be https", action, slug)
+        return
     body = json.dumps({"mosque": slug, "action": action}).encode()
     req = urllib.request.Request(
         url,
@@ -97,7 +119,7 @@ def _post_hook(url: str, slug: str, action: str) -> None:  # pragma: no cover (n
         headers={"Content-Type": "application/json", internal.HEADER: internal.local_token()},
     )
     try:
-        with urllib.request.urlopen(req, timeout=3):  # noqa: S310 — operator-configured address
+        with urllib.request.build_opener(_NoRedirect).open(req, timeout=3):  # noqa: S310 — operator-configured address
             pass
     except Exception as e:  # noqa: BLE001 — a platform hook that fails must never fail the setup
         log.warning("setup %s hook for %s failed: %s", action, slug, e)
@@ -110,6 +132,19 @@ def notify_platform(slug: str, action: str, poster=_post_hook) -> bool:
         return False
     threading.Thread(target=poster, args=(url, slug, action), daemon=True, name="setup-hook").start()
     return True
+
+
+def _purge_wake(conn, now: float) -> None:
+    """Forgets the wake bookkeeping of every mosque whose lease no longer holds (it is fresh again next time)."""
+    stmt = (
+        select(Mosque.slug)
+        .join(SetupLease, SetupLease.mosque_id == Mosque.id)
+        .where(SetupLease.until > now)
+    )
+    live_slugs = {r["slug"] for r in orm.rows(conn, stmt)}
+    with _lock:
+        for slug in [k for k in _last_wake if k not in live_slugs]:
+            del _last_wake[slug]
 
 
 def _wake_due(slug: str, now: float, fresh: bool) -> bool:
@@ -145,6 +180,7 @@ def enter(conn, mosque: dict, device: dict | None, now: float | None = None) -> 
     """Takes or renews the lease, wakes the orchestrator when needed, and says where things stand."""
     now = time.time() if now is None else now
     lease, fresh = take(conn, mosque, device, now)
+    _purge_wake(conn, now)
     if _wake_due(mosque["slug"], now, fresh):
         notify_platform(mosque["slug"], "wake")
     try:
@@ -157,8 +193,13 @@ def enter(conn, mosque: dict, device: dict | None, now: float | None = None) -> 
     return view(mosque, lease, reply, now, online)
 
 
-def leave(conn, mosque: dict) -> dict:
-    """Ends the setup: the lease is given back, the orchestrator told (it stops the rehearsal and may sleep)."""
+def leave(conn, mosque: dict, device: dict | None = None, admin: bool = False) -> dict:
+    """Ends the setup: the lease is given back, the orchestrator told (it stops the rehearsal and may sleep).
+
+    A device only gives back the lease it holds: another device's lease stays (`held_by_other`), unless `admin`."""
+    row = current(conn, mosque["id"])
+    if row and device is not None and not admin and row["device_id"] not in (None, device["id"]):
+        return {"active": True, "held_by_other": True}
     held = release(conn, mosque["id"])
     if held:
         try:
