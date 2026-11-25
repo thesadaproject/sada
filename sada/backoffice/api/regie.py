@@ -6,6 +6,8 @@ stream name from the request: the path comes from the session's mosque (live_wat
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
@@ -80,6 +82,11 @@ def regie(ctx: CtxDep):
         "transition": tr_mode,
         "scenes": _all_scenes(ctx.conn, mosque),
         "overlays": live_st.get("overlays"),
+        "audio": {
+            "mic_on": bool(live_st.get("mic", False)),
+            "muted": bool(live_st.get("mic_muted", False)),
+            "level_db": live_st.get("audio_level_db"),
+        },
         "commands": [
             {"key": k, "destructive": k in live.DESTRUCTIVE, "choices": list(live.choices(k))} for k in live.COMMANDS
         ],
@@ -90,6 +97,22 @@ def regie(ctx: CtxDep):
             for w, p in paths.items()
         },
     }
+
+
+@router.post("/live/regie/mute")
+async def regie_mute(ctx: CtxDep):
+    body = await ctx.raw_body()
+    ctx.require("live")
+    mosque = ctx.mosque
+    assert mosque is not None
+    muted = body.get("muted")
+    if not isinstance(muted, bool):
+        return JSONResponse({"error": _("invalid body")}, status_code=400)
+    try:
+        r = await run_in_threadpool(live.set_mute, mosque, muted)
+    except live.OrchestratorError as e:
+        return JSONResponse({"error": str(e)}, status_code=503)
+    return {"ok": True, "muted": muted, "mic_muted": muted, "result": r}
 
 
 @router.post("/live/regie/transition")
@@ -113,9 +136,9 @@ async def regie_transition(ctx: CtxDep):
 @router.post("/live/regie/custom-scenes")
 async def regie_custom_scene_create(
     ctx: CtxDep,
+    file: Annotated[UploadFile, File(...)],
     label: str = Form(...),
     category: str = Form("autre"),
-    file: UploadFile = File(...),
 ):
     ctx.need_csrf()
     ctx.require("live")

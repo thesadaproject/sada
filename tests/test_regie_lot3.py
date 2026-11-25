@@ -9,7 +9,6 @@ import json
 import urllib.request
 
 import pytest
-from fastapi.testclient import TestClient
 from PIL import Image
 
 from sada import api, scenes, transitions
@@ -152,6 +151,7 @@ def test_local_api_transition_and_custom_scene():
 
 def test_backoffice_custom_scenes_and_transitions(env, tmp_path, monkeypatch):
     from conftest import client as make_client
+
     from sada.backoffice import custom_scenes, live
 
     monkeypatch.setattr(custom_scenes, "DIR", tmp_path / "custom_scenes")
@@ -164,13 +164,11 @@ def test_backoffice_custom_scenes_and_transitions(env, tmp_path, monkeypatch):
         "status_cached",
         lambda m, ttl=3.0, forcer=False: {"ok": True, "state": "KHUTBA", "scene": "khutba", "override": False},
     )
-    monkeypatch.setattr(
-        live, "set_transition", lambda m, mode: (calls.append(("tr", mode)) or {"ok": True})
-    )
+    monkeypatch.setattr(live, "set_transition", lambda m, mode: calls.append(("tr", mode)) or {"ok": True})
     monkeypatch.setattr(
         live,
         "set_custom_scene",
-        lambda m, sc, raw, transition=None, **kw: (calls.append(("custom", sc, len(raw), transition)) or {"ok": True}),
+        lambda m, sc, raw, transition=None, **kw: calls.append(("custom", sc, len(raw), transition)) or {"ok": True},
     )
     monkeypatch.setattr(
         live,

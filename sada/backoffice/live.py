@@ -50,7 +50,7 @@ def _call(
     base = (mosque.get("orchestrator_url") or "").rstrip("/")
     if not base:
         raise OrchestratorError(_("orchestrator address not configured"))
-    url = f"{base}/{path}" + (( "?" + urllib.parse.urlencode(params)) if params else "")
+    url = f"{base}/{path}" + (("?" + urllib.parse.urlencode(params)) if params else "")
     if json_body is not None:
         data = json.dumps(json_body).encode("utf-8")
     else:
@@ -183,6 +183,10 @@ def set_overlay(mosque: dict, kind: str, data: dict) -> dict:
     return _call(mosque, "POST", "overlay", json_body={"kind": kind, **data})
 
 
+def set_mute(mosque: dict, muted: bool) -> dict:
+    return _call(mosque, "POST", "mute", json_body={"muted": bool(muted)})
+
+
 def _tarawih(ev: dict | None) -> dict | None:
     """Tonight's tarawih as the control room needs it: night number, reciters, current reciter
     (None until the control room says who: never guessed)."""
@@ -240,4 +244,6 @@ def summarize(st: dict) -> dict:
         "vad_connected": bool((st.get("vad") or {}).get("connected")),
         "transition": st.get("transition") or "fade",
         "overlays": st.get("overlays"),
+        "mic_muted": bool(st.get("mic_muted", False)),
+        "audio_level_db": st.get("audio_level_db"),
     }

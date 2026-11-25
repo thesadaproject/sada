@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import io
+import json
 import logging
 import signal
 import sys
@@ -480,8 +481,9 @@ class Orchestrator:
                     moment = Moment(now, m.session, m.janaza_name, m.janaza_info, event=ev, next_event=nxt)
                     if not self._afficher_gabarit(m.scene, spec.full, moment):
                         enc.show(m.scene, spec.full, self.renderer.content(m.scene, moment), transition=m.transition)
-                if spec.mic != enc.mic_on:
-                    enc.mic(spec.mic)
+                want_mic = spec.mic and not m.mic_muted
+                if want_mic != enc.mic_on:
+                    enc.mic(want_mic)
         ov_key = json.dumps(m.overlays, sort_keys=True)
         if ov_key != self._overlay_key:
             self._overlay_key = ov_key
@@ -608,13 +610,28 @@ class Orchestrator:
                 self.machine.set_transition(transition)
             msg = self.machine.command("scene", self.signals(), scene_id)
             self._sync()
-            return {"message": msg, "state": self.machine.state.value, "scene": scene_id, "transition": self.machine.transition}
+            return {
+                "message": msg,
+                "state": self.machine.state.value,
+                "scene": scene_id,
+                "transition": self.machine.transition,
+            }
 
     def set_overlay(self, kind: str, data: dict) -> dict:
         with self.lock:
             overlays = self.machine.set_overlay(kind, data)
             self._sync()
             return {"overlays": overlays, "state": self.machine.state.value}
+
+    def set_mute(self, muted: bool) -> dict:
+        with self.lock:
+            self.machine.set_mute(muted)
+            self._sync()
+            return {
+                "mic_muted": self.machine.mic_muted,
+                "mic": self.encoder.mic_on,
+                "state": self.machine.state.value,
+            }
 
     def status(self) -> dict:
         with self.lock:
@@ -636,6 +653,8 @@ class Orchestrator:
                         "pos_s": round(pos, 1),
                     },
                     "mic": self.encoder.mic_on,
+                    "mic_muted": self.machine.mic_muted,
+                    "audio_level_db": getattr(self.vad, "last_db", lambda: None)(),
                     "presence": (
                         {"mode": "motion", "present": self.presence.present(), "score": self.presence.last_score()}
                         if self.presence

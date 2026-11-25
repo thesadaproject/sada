@@ -40,7 +40,7 @@ def test_scenes_dars_declarees():
 
 def test_les_tables_de_scenes_s_accordent():
     """A scene referenced by the state machine but missing from the renderer breaks the live."""
-    assert set(SCENES) == {v for v in SCENE_OF.values() if v} | {TARAWIH_VIDEO_SCENE}
+    assert set(SCENES) == {v for v in SCENE_OF.values() if v and v != "custom"} | {TARAWIH_VIDEO_SCENE}
 
 
 def test_calque_de_dars_se_pose_sur_la_camera():

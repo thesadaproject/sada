@@ -356,6 +356,7 @@ class Machine:
         self.overlays: dict[str, dict] = default_overlays()
         self.transition: str = DEFAULT_TRANSITION
         self.custom_scene: str | None = None
+        self.mic_muted: bool = False
 
     # ------------------------------------------------------------------ helpers
     def _rec_of(self, start: dt.datetime, meta: dict, index: int) -> SessionRec:
@@ -390,7 +391,13 @@ class Machine:
 
     @property
     def mic_on(self) -> bool:
-        return self.state in (*SESSION_STATES, State.JANAZA)
+        return (self.state in (*SESSION_STATES, State.JANAZA)) and not self.mic_muted
+
+    def set_mute(self, muted: bool) -> bool:
+        if not isinstance(muted, bool):
+            raise ValueError("muted must be a boolean")
+        self.mic_muted = muted
+        return self.mic_muted
 
     @property
     def stream_on(self) -> bool:
@@ -1099,6 +1106,7 @@ class Machine:
             "sessions": self.sessions_dicts(),
             "overlays": {k: dict(v) for k, v in self.overlays.items()},
             "transition": self.transition,
+            "mic_muted": self.mic_muted,
         }
 
     def sessions_dicts(self) -> list[dict]:

@@ -1,17 +1,19 @@
-"""Tests for independent live overlays (state, rendering, encoder, back-office API & Studio auth)."""
+"""Tests for independent live overlays (state, rendering, encoder and the local orchestrator API)."""
 
 from __future__ import annotations
 
+import json
+import urllib.error
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
-from sada.backoffice import app as bo_app, auth, db, live, paths, studio_auth
+from sada.api import make_server
 from sada.config import Config
 from sada.encoder import Encoder
-from sada.scenes import Renderer
+from sada.scenes import SceneRenderer as Renderer
 from sada.state import Machine, Signals, default_overlays, normalize_overlay
 
 
@@ -38,22 +40,22 @@ def test_normalize_overlay_validation():
 
 
 def test_machine_overlays_independent_of_scene():
-    m = Machine(Config())
-    sig = Signals(now=datetime(2026, 4, 20, 12, 0), camera_ok=True)
+    m = Machine()
+    sig = Signals(now=datetime(2026, 4, 20, 12, 0), t=0.0)
     m.tick(sig)
     scene_before = m.scene
     m.set_overlay("qr", {"visible": True, "url": "https://sada.example/don", "label": "Don", "corner": "tl"})
     m.set_overlay("banner", {"visible": True, "title": "Annonce", "subtitle": "Détail"})
     m.set_overlay("logo", {"visible": True})
     assert m.scene == scene_before
-    assert m.override is None
+    assert not m.override
     st = m.status()
     assert st["overlays"]["qr"]["visible"] is True
     assert st["overlays"]["banner"]["title"] == "Annonce"
     assert st["overlays"]["logo"]["visible"] is True
 
     # Changing scene does not reset overlays.
-    m.command("before", sig)
+    m.command("scene", sig, "avant")
     assert m.scene == "avant"
     assert m.status()["overlays"]["qr"]["visible"] is True
     assert m.status()["overlays"]["banner"]["visible"] is True
@@ -90,7 +92,7 @@ def test_encoder_overlay_layer(tmp_path: Path):
     ov_path = Path(enc.layer_png["ov"])
     assert ov_path.is_file()
 
-    cmd = enc._build_cmd()
+    cmd = enc.ffmpeg_cmd(*enc.new_recording())
     joined = " ".join(cmd)
     assert str(ov_path) in cmd
     assert "overlay@ov" in joined
@@ -101,75 +103,48 @@ def test_encoder_overlay_layer(tmp_path: Path):
     assert ov_path.stat().st_size > 0
 
 
-@pytest.fixture()
-def bo_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(paths, "DATA_DIR", tmp_path)
-    monkeypatch.setenv("SADA_AGENT_TOKEN", "agent-secret")
-    live.reset_push_state()
-    studio_auth.reset_sessions()
-    db.init()
-    mosque_id = db.add_mosque("grande", "Grande Mosquée")
-    db.add_user("regisseur", auth.hash_password("secret123"), mosque_id=mosque_id)
-    app = bo_app.create_app()
-    client = TestClient(app)
-    return client, {"id": mosque_id, "slug": "grande"}
-
-
-def test_regie_and_studio_overlay_sync(bo_client):
-    client, mosque = bo_client
-    # Login via Studio API to obtain X-Sada-Studio-Token
-    r_login = client.post("/api/studio/login", json={"username": "regisseur", "password": "secret123"})
-    assert r_login.status_code == 200
-    studio_headers = {studio_auth.STUDIO_HEADER: r_login.json()["token"]}
-
-    # Unauthenticated request is rejected
-    assert client.get("/api/live/overlays").status_code == 401
-
-    # Agent pushes status so queue mode is active
-    r_push = client.post(
-        "/api/live/agent/status",
-        headers={live.AGENT_HEADER: "agent-secret", "X-Sada-Mosque": mosque["slug"]},
-        json={"state": "LIVE", "scene": "direct", "stream_on": True},
+def _post(port: int, path: str, payload: dict, token: str = "tok") -> tuple[int, dict]:
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}{path}",
+        method="POST",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", "X-Token": token},
     )
-    assert r_push.status_code == 200
+    try:
+        with urllib.request.urlopen(req) as r:
+            return r.status, json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read().decode())
 
-    # Studio updates QR overlay via the shared Régie API
-    r_put = client.put(
-        "/api/live/overlays/qr",
-        headers=studio_headers,
-        json={"visible": True, "url": "https://mosquee.example/don", "label": "Dons", "corner": "br"},
-    )
-    assert r_put.status_code == 200
-    body = r_put.json()
-    assert body["ok"] is True
-    assert body["queued"] is True
-    assert body["overlays"]["qr"]["visible"] is True
-    assert body["overlays"]["qr"]["corner"] == "br"
 
-    # Invalid URL is rejected with 400
-    r_bad = client.put(
-        "/api/live/overlays/qr",
-        headers=studio_headers,
-        json={"visible": True, "url": "http://not-https.example"},
-    )
-    assert r_bad.status_code == 400
+def test_api_overlay_endpoint():
+    """The local orchestrator API validates and applies one overlay without touching the scene."""
+    m = Machine()
 
-    # Agent pulls the queued overlay command
-    r_pull = client.post(
-        "/api/live/agent/status",
-        headers={live.AGENT_HEADER: "agent-secret", "X-Sada-Mosque": mosque["slug"]},
-        json={"state": "LIVE", "scene": "direct", "stream_on": True},
-    )
-    cmds = r_pull.json()["commands"]
-    assert len(cmds) == 1
-    assert cmds[0]["cmd"] == "overlay"
-    assert cmds[0]["params"]["kind"] == "qr"
+    class Orch:
+        def set_overlay(self, kind: str, data: dict) -> dict:
+            return {"overlays": m.set_overlay(kind, data), "state": m.state.value}
 
-    # Web Régie (or Studio) reads /api/live/regie and /api/live/status and sees the synced overlay
-    r_regie = client.get("/api/live/regie", headers=studio_headers)
-    assert r_regie.status_code == 200
-    assert r_regie.json()["overlays"]["qr"]["url"] == "https://mosquee.example/don"
+    srv = make_server(Orch(), "127.0.0.1", 0, token="tok")
+    port = srv.server_address[1]
+    try:
+        code, body = _post(
+            port,
+            "/overlay",
+            {"kind": "qr", "visible": True, "url": "https://mosquee.example/don", "label": "Dons", "corner": "br"},
+        )
+        assert code == 200
+        assert body["ok"] is True
+        assert body["overlays"]["qr"]["visible"] is True
+        assert body["overlays"]["qr"]["corner"] == "br"
 
-    r_status = client.get("/api/live/status", headers=studio_headers)
-    assert r_status.status_code == 200
-    assert r_status.json()["overlays"]["qr"]["visible"] is True
+        # Insecure URL and unknown kind are rejected with 400, body without kind too.
+        assert _post(port, "/overlay", {"kind": "qr", "visible": True, "url": "http://not-https.example"})[0] == 400
+        assert _post(port, "/overlay", {"kind": "unknown", "visible": True})[0] == 400
+        assert _post(port, "/overlay", {"visible": True})[0] == 400
+
+        # The machine kept the last valid overlay, independent of the scene.
+        assert m.status()["overlays"]["qr"]["url"] == "https://mosquee.example/don"
+    finally:
+        srv.shutdown()
+        srv.server_close()

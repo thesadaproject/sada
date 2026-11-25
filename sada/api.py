@@ -80,6 +80,15 @@ def make_server(orch, host: str, port: int, token: str = "") -> ThreadingHTTPSer
                 except ValueError as e:
                     return self._send(400, {"error": str(e)})
                 return self._send(200, {"ok": True, **res})
+            if cmd == "mute":
+                body = self._read_json(4096)
+                if body is None or not isinstance(body.get("muted"), bool):
+                    return self._send(400, {"error": _("invalid body")})
+                try:
+                    res = orch.set_mute(body["muted"])
+                except ValueError as e:
+                    return self._send(400, {"error": str(e)})
+                return self._send(200, {"ok": True, **res})
             if cmd == "transition":
                 body = self._read_json(4096)
                 if body is None or not isinstance(body.get("mode"), str):

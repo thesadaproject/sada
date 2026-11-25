@@ -131,6 +131,8 @@
   "replan needs the current signals": "le recalage a besoin des signaux courants",
   "resumed on {state}": "reprise sur {state}",
   "scene {scene} (auto suspended)": "scène {scene} (auto suspendu)",
+  "transition: {mode}": "transition : {mode}",
+  "unknown scene: {scene}": "scène inconnue : {scene}",
   "screen {screen}: an object is expected": "écran {screen} : objet attendu",
   "session skipped, state {state}": "session sautée, état {state}",
   "silence {silence:.0f}s: grace delay {grace:.0f}s": "silence {silence:.0f}s : délai de grâce {grace:.0f}s",

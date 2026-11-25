@@ -8,7 +8,9 @@ Exposes voice_run / silence_run (real consecutive seconds of voice / of non-voic
 from __future__ import annotations
 
 import collections
+import math
 import shutil
+import struct
 import subprocess
 import threading
 import time
@@ -62,6 +64,16 @@ def _last_voice_offset(path: str) -> float | None:
     return last
 
 
+def _frame_db(buf: bytes) -> float:
+    """RMS level in dBFS (-100 = silence) of a s16le mono frame."""
+    n = len(buf) // 2
+    if n == 0:
+        return -100.0
+    samples = struct.unpack(f"<{n}h", buf[: n * 2])
+    rms = math.sqrt(sum(x * x for x in samples) / n) / 32768.0
+    return round(20 * math.log10(rms), 1) if rms > 1e-5 else -100.0
+
+
 class VadMonitor(threading.Thread):
     def __init__(self, url: str, aggressiveness: int = 3, ratio: float = 0.5, log=print):
         super().__init__(daemon=True, name="vad")
@@ -73,6 +85,7 @@ class VadMonitor(threading.Thread):
         self._dense_since = None
         self.dense_min = 0.4
         self.connected = False
+        self._db: float | None = None
         self.proc: subprocess.Popen | None = None
 
     def run(self):
@@ -114,6 +127,7 @@ class VadMonitor(threading.Thread):
             if len(buf) < FRAME_BYTES:
                 return
             self.connected = True
+            self._db = _frame_db(buf)
             try:
                 win.append(self.vad.is_speech(buf, RATE))
             except Exception:
@@ -132,6 +146,10 @@ class VadMonitor(threading.Thread):
                     self._dense_since = now
                 elif not dense:
                     self._dense_since = None
+
+    def last_db(self) -> float | None:
+        """RMS level (dBFS) of the latest audio frame, None while the stream is not connected."""
+        return self._db if self.connected else None
 
     def runs(self) -> tuple[float, float]:
         """(voice_run, silence_run) in real seconds."""

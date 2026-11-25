@@ -220,12 +220,14 @@ def test_le_tableau_de_bord_n_envoie_aucun_texte_d_interface(env):
         "extend",
         "skip",
         "scene",
+        "transition",
         "janaza",
         "tarawih",
         "next_reciter",
         "stop",
         "cancel",
     ]
+    assert "transition" in [x["key"] for x in cmds]
     for x in cmds:
         assert set(x) == {"key", "destructive", "choices"}  # no label, style or confirm sentence
         assert all(isinstance(v, str) for v in x["choices"])
