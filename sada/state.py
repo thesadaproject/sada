@@ -356,6 +356,9 @@ class Machine:
         self.overlays: dict[str, dict] = default_overlays()
         self.transition: str = DEFAULT_TRANSITION
         self.custom_scene: str | None = None
+        # Which `custom:<slug>` scenes have an image the engine holds; set by the orchestrator. Nothing is known
+        # by default: a custom scene without an image would show a stale picture.
+        self.custom_known: Callable[[str], bool] = lambda scene: False
         self.mic_muted: bool = False
 
     # ------------------------------------------------------------------ helpers
@@ -389,13 +392,9 @@ class Machine:
             return TARAWIH_VIDEO_SCENE
         return SCENE_OF[self.state]
 
-    @property
-    def mic_on(self) -> bool:
-        return (self.state in (*SESSION_STATES, State.JANAZA)) and not self.mic_muted
-
     def set_mute(self, muted: bool) -> bool:
         if not isinstance(muted, bool):
-            raise ValueError("muted must be a boolean")
+            raise ValueError(_("muted must be a boolean"))
         self.mic_muted = muted
         return self.mic_muted
 
@@ -740,7 +739,9 @@ class Machine:
 
     def _scene(self, sig, arg):
         sc = str(arg or "").strip().lower()
-        if sc.startswith(CUSTOM_SCENE_PREFIX) and len(sc) > len(CUSTOM_SCENE_PREFIX):
+        if sc.startswith(CUSTOM_SCENE_PREFIX):
+            if not self.custom_known(sc):
+                return _("unknown scene: {scene}", scene=sc)
             self.custom_scene = sc
             self.override = True
             if self.state != State.CUSTOM:

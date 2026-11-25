@@ -295,11 +295,11 @@ async def setup_whep_offer(request: Request, a: DeviceDep):
     path = setup_session.program_path(a.conn, a.mosque)
     sdp = await request.body()
     if not sdp or len(sdp) > MAX_SDP:
-        return JSONResponse({"error": "bad offer"}, status_code=400)
+        return JSONResponse({"error": _("bad offer")}, status_code=400)
     try:
         status, answer, session = await live_watch.whep_offer(path, sdp)
     except live_watch.RelayUnavailable:
-        return JSONResponse({"error": "relay unavailable"}, status_code=503)
+        return JSONResponse({"error": _("relay unavailable")}, status_code=503)
     if status != 201 or not session:
         # 404 from the relay: the orchestrator is not publishing the programme (yet)
         if status in (400, 404):

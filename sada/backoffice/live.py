@@ -155,7 +155,8 @@ def command(
     params = {}
     if permises:
         valeur = valeur or (permises[0] if cmd == "extend" else None)  # extend: first value by default
-        if not (cmd == "scene" and isinstance(valeur, str) and valeur.startswith("custom:")) and valeur not in permises:
+        # a `custom:<slug>` scene goes through set_custom_scene (it carries the image), never through here
+        if valeur not in permises:
             raise ValueError(_("invalid value for “{command}”", command=cmd))
         params[_VARIED[cmd][0]] = valeur
     if cmd == "janaza":

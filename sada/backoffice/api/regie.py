@@ -397,11 +397,11 @@ async def whep_offer(which: str, request: Request, ctx: CtxDep):
         return _offline()
     sdp = await request.body()
     if not sdp or len(sdp) > MAX_SDP:
-        return JSONResponse({"error": "bad offer"}, status_code=400)
+        return JSONResponse({"error": _("bad offer")}, status_code=400)
     try:
         status, answer, session = await live_watch.whep_offer(path, sdp)
     except live_watch.RelayUnavailable:
-        return JSONResponse({"error": "relay unavailable"}, status_code=503)
+        return JSONResponse({"error": _("relay unavailable")}, status_code=503)
     if status != 201 or not session:
         # 404 from the relay: nothing is published on this path right now
         return _offline() if status in (400, 404) else JSONResponse({"error": "relay"}, status_code=502)
@@ -436,7 +436,7 @@ async def hls(which: str, name: str, ctx: CtxDep, session: str | None = None):
     try:
         status, body, ctype = await live_watch.hls_file(path, name, session)
     except live_watch.RelayUnavailable:
-        return JSONResponse({"error": "relay unavailable"}, status_code=503)
+        return JSONResponse({"error": _("relay unavailable")}, status_code=503)
     if status != 200:
         return _offline()
     return Response(body, media_type=ctype, headers={"Cache-Control": "no-store"})
@@ -499,11 +499,11 @@ async def whip_offer(request: Request, a: ActorDep):
         return refused
     sdp = await request.body()
     if not sdp or len(sdp) > MAX_SDP:
-        return JSONResponse({"error": "bad offer"}, status_code=400)
+        return JSONResponse({"error": _("bad offer")}, status_code=400)
     try:
         r = await live_watch.whip_request("POST", _studio_path(a), _studio_token(a), body=sdp, ctype="application/sdp")
     except live_watch.RelayUnavailable:
-        return JSONResponse({"error": "relay unavailable"}, status_code=503)
+        return JSONResponse({"error": _("relay unavailable")}, status_code=503)
     session = (r.headers.get("location") or "").rstrip("/").rsplit("/", 1)[-1]
     if r.status_code in (401, 403):
         holder = studio_publisher.current(a.conn, a.mosque)  # the relay refused: say why when somebody holds the stream
@@ -539,7 +539,7 @@ async def whip_ice(session: str, request: Request, a: ActorDep):
     try:
         r = await live_watch.whip_request("PATCH", _studio_path(a), _studio_token(a), session, body, ICE_TYPE)
     except live_watch.RelayUnavailable:
-        return JSONResponse({"error": "relay unavailable"}, status_code=503)
+        return JSONResponse({"error": _("relay unavailable")}, status_code=503)
     if r.status_code == 404:
         raise NotFound()
     return Response(status_code=204 if r.status_code in (200, 204) else 502)

@@ -47,6 +47,18 @@ def zmq_ports(base: int = ZMQ_APORT) -> tuple[int, tuple[int, ...]]:
     return base, tuple(range(base + 1, base + 1 + ZMQ_VIDEO))
 
 
+def setup_zmq_port(cfg) -> int:
+    """Base port of the rehearsal encoder: its own block, never overlapping the live encoder's.
+
+    `zmq_port_setup` when set (and clear of the live block), otherwise the block right after the live's."""
+    live = int(getattr(cfg, "zmq_port", ZMQ_APORT) or ZMQ_APORT)
+    span = 1 + ZMQ_VIDEO
+    chosen = int(getattr(cfg, "zmq_port_setup", 0) or 0)
+    if chosen and (chosen + span <= live or chosen >= live + span):
+        return chosen
+    return live + span
+
+
 ZMQ_ADDR = f"tcp://127.0.0.1:{ZMQ_APORT}"
 ZMQ_ESC = _zmq_esc(ZMQ_APORT)
 ZMQ_VPORTS = zmq_ports()[1]

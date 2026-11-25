@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import threading
+from collections import OrderedDict
 from types import SimpleNamespace
 
 import pytest
@@ -165,7 +166,8 @@ def make(monkeypatch, preview="rtmp://receiver:1935/live/x-prog"):
     o.renderer = FakeRenderer()
     o.gabarit = None
     o.lock = threading.RLock()
-    o._custom_scenes = {}
+    o._custom_scenes = OrderedDict()
+    o._setup_gate = threading.Lock()
     o._notified_state = None
     o._stream_since = None
     o._saved = None
@@ -183,6 +185,7 @@ def make(monkeypatch, preview="rtmp://receiver:1935/live/x-prog"):
     o.signals = lambda: SimpleNamespace(now=dt.datetime(2026, 11, 20, 12, 0), t=1000.0)
     o.encoder = FakeEncoder(o.cfg, None)
     o.machine = Machine([dt.datetime(2026, 11, 20, 13, 0)], MachineParams(), extras=[{}])
+    o.machine.custom_known = o._custom_scenes.__contains__
     o.live_stage = setup_mode.Stage(o.machine, o.encoder)
     o.setup = setup_mode.SetupLease()
     o.rehearsal = None

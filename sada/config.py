@@ -118,6 +118,9 @@ class Config(MachineParams):
     # Base of the 5 local ports that drive the encoder (audio, then video): distinct per
     # orchestrator when several share one machine without containers.
     zmq_port: int = 5556
+    # Same, for the setup rehearsal encoder (SADA_ZMQ_PORT_SETUP). 0 = the block right after the live's; set it
+    # when another orchestrator of the machine already sits there.
+    zmq_port_setup: int = 0
     # --- Back-office (same machine) ------------------------------------------
     # Where to ask for the settings an administrator saved in the interface (notifications).
     backoffice_url: str = "http://127.0.0.1:8090"

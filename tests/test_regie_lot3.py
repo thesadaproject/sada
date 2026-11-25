@@ -59,9 +59,11 @@ def test_machine_custom_scene_and_transition():
         m.set_transition("dissolve")
 
     m.command("scene", sig, "custom:collecte")
+    assert m.state != State.CUSTOM  # no image known for it: refused
+    m.custom_known = {"custom:collecte", "custom:pause"}.__contains__
+    m.command("scene", sig, "custom:collecte")
     assert m.state == State.CUSTOM
     assert m.scene == "custom:collecte"
-    assert m.mic_on is False
     assert m.override is True
 
     # Switching between two custom scenes stays in CUSTOM and updates scene id
@@ -78,7 +80,6 @@ def test_machine_custom_scene_and_transition():
 
 def test_render_custom_scene_fits_canvas():
     cfg = Config(width=1280, height=720)
-    assert scenes.is_full_scene("custom:collecte") is True
     src = Image.new("RGB", (400, 400), (200, 120, 40))
     out = scenes.render_custom_scene(src, cfg)
     assert out.size == (1280, 720)
@@ -105,6 +106,7 @@ def test_local_api_transition_and_custom_scene():
                 self.machine.set_transition(transition)
             if image_bytes:
                 self.custom_images[scene_id] = image_bytes
+            self.machine.custom_known = self.custom_images.__contains__
             sig = Signals(now=dt.datetime(2026, 11, 20, 12, 30), t=100.0)
             msg = self.machine.command("scene", sig, scene_id)
             return {"message": msg, "scene": scene_id, "transition": self.machine.transition}
