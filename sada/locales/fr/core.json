@@ -195,5 +195,11 @@
   "the tarawih is already on air": "les tarawih sont déjà à l'antenne",
   "the tarawih": "les tarawih",
   "ENCODER: source unavailable (ffmpeg code {code}), retrying with backoff": "ENCODEUR : source indisponible (code ffmpeg {code}), nouvelles tentatives espacées",
-  "ENCODER: source available again after {count} failed attempts": "ENCODEUR : source de nouveau disponible après {count} tentatives échouées"
+  "ENCODER: source available again after {count} failed attempts": "ENCODEUR : source de nouveau disponible après {count} tentatives échouées",
+  "ENCODER: starting the setup programme (monitoring copy only, no destination, no recording)": "ENCODEUR : démarrage du programme de réglage (copie de contrôle seulement, aucune destination, aucun enregistrement)",
+  "Setup mode: ended": "Mode réglage : terminé",
+  "Setup mode: lease lapsed, rehearsal stopped": "Mode réglage : bail expiré, répétition arrêtée",
+  "Setup mode: started": "Mode réglage : démarré",
+  "setup mode is not active": "le mode réglage n'est pas actif",
+  "setup mode needs the monitoring copy (SADA_PREVIEW_URL)": "le mode réglage nécessite la copie de contrôle (SADA_PREVIEW_URL)"
 }

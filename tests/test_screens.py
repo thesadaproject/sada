@@ -129,3 +129,32 @@ def test_les_ecrans_pleins_se_dessinent_avec_les_textes_personnalises():
     for ecran in ("avant", "priere", "entracte", "termine", "janaza", "dars_fin"):
         img = r.content(ecran, moment)
         assert img.size == (1280, 720)
+
+
+def test_a_big_template_answer_is_read_whole():
+    """The template answer (one page per screen, logo embedded) is far over 64 KB: it must not be cut."""
+    import http.server
+    import json
+    import threading
+
+    from sada import screens
+
+    body = json.dumps({"pages": {"avant": "x" * 300_000}}).encode()
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        got = screens._http_get(f"http://127.0.0.1:{srv.server_port}/", "t")
+    finally:
+        srv.shutdown()
+    assert len(got["pages"]["avant"]) == 300_000

@@ -39,6 +39,10 @@ class OrchestratorError(Exception):
     pass
 
 
+class SetupLapsed(OrchestratorError):
+    """A command of the setup view reached an orchestrator whose setup lease has lapsed (it was not applied)."""
+
+
 def _call(
     mosque: dict,
     method: str,
@@ -64,6 +68,8 @@ def _call(
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read().decode() or "{}")
     except urllib.error.HTTPError as e:
+        if e.code == 409:
+            raise SetupLapsed(_("setup mode is not active")) from e
         raise OrchestratorError(_("orchestrator: HTTP error {code}", code=e.code)) from e
     except (urllib.error.URLError, OSError, ValueError) as e:
         raise OrchestratorError(_("orchestrator unreachable (is the live not started on this machine?)")) from e
@@ -136,6 +142,7 @@ def command(
     info: str | None = None,
     valeur: str | None = None,
     transition: str | None = None,
+    setup: bool = False,
 ) -> dict:
     """arg: name of the deceased (janaza); info: note on the janaza record; valeur: choice of a
     command with a parameter (minutes of extend, scene name of scene).
@@ -158,11 +165,13 @@ def command(
             params["info"] = info[:60]
     if transition is not None:
         params["transition"] = transition
+    if setup:
+        params["setup"] = "1"  # the setup rehearsal stage, never the live (see sada/setup_mode.py)
     return _call(mosque, "POST", cmd, params or None)
 
 
-def set_transition(mosque: dict, mode: str) -> dict:
-    return _call(mosque, "POST", "transition", json_body={"mode": mode})
+def set_transition(mosque: dict, mode: str, setup: bool = False) -> dict:
+    return _call(mosque, "POST", "transition", json_body={"mode": mode, **({"setup": True} if setup else {})})
 
 
 def set_custom_scene(
@@ -170,8 +179,11 @@ def set_custom_scene(
     scene_id: str,
     image_bytes: bytes | None = None,
     transition: str | None = None,
+    setup: bool = False,
 ) -> dict:
     body: dict[str, object] = {"scene": scene_id}
+    if setup:
+        body["setup"] = True
     if image_bytes:
         body["image_b64"] = base64.b64encode(image_bytes).decode("ascii")
     if transition is not None:
@@ -179,12 +191,20 @@ def set_custom_scene(
     return _call(mosque, "POST", "custom-scene", json_body=body, timeout=5.0)
 
 
-def set_overlay(mosque: dict, kind: str, data: dict) -> dict:
-    return _call(mosque, "POST", "overlay", json_body={"kind": kind, **data})
+def set_overlay(mosque: dict, kind: str, data: dict, setup: bool = False) -> dict:
+    return _call(mosque, "POST", "overlay", json_body={"kind": kind, **data, **({"setup": True} if setup else {})})
 
 
-def set_mute(mosque: dict, muted: bool) -> dict:
-    return _call(mosque, "POST", "mute", json_body={"muted": bool(muted)})
+def set_mute(mosque: dict, muted: bool, setup: bool = False) -> dict:
+    return _call(mosque, "POST", "mute", json_body={"muted": bool(muted), **({"setup": True} if setup else {})})
+
+
+def set_setup(mosque: dict, on: bool, ttl: float | None = None, timeout: float = 4.0) -> dict:
+    """Takes, renews or releases the setup lease on the mosque's orchestrator (a short wait: it may be asleep)."""
+    body: dict[str, object] = {"on": bool(on)}
+    if ttl is not None:
+        body["ttl"] = ttl
+    return _call(mosque, "POST", "setup", json_body=body, timeout=timeout)
 
 
 def _tarawih(ev: dict | None) -> dict | None:
@@ -246,4 +266,5 @@ def summarize(st: dict) -> dict:
         "overlays": st.get("overlays"),
         "mic_muted": bool(st.get("mic_muted", False)),
         "audio_level_db": st.get("audio_level_db"),
+        "setup": st.get("setup") if isinstance(st.get("setup"), dict) else None,
     }

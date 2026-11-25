@@ -3,6 +3,10 @@
 GET  /status
 POST /<command>?name=...|min=...    Machine.COMMANDS commands (e.g. /extend?min=5, /scene?name=priere,
                                     /janaza?name=...[&info=...]: name and note of the deceased, only with the family's consent)
+POST /setup {"on": bool, "ttl": seconds}   takes, renews or releases the setup lease (see setup_mode.py)
+
+Any command, overlay, mute or transition may carry `setup` (`?setup=1`, or `"setup": true` in the body): it then
+acts on the setup rehearsal stage instead of the live, and is refused once the setup lease lapsed.
 
 JSON only: the control screen is the back-office dashboard, there is no page served here.
 """
@@ -16,7 +20,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from .i18n import _
+from .setup_mode import SetupInactive
 from .state import Machine
+
+
+def _setup_kw(body: dict) -> dict:
+    """`setup=True` only when the caller marked the request: the engine's methods keep their plain shape otherwise."""
+    return {"setup": True} if body.get("setup") is True else {}
 
 
 def make_server(orch, host: str, port: int, token: str = "") -> ThreadingHTTPServer:
@@ -74,9 +84,11 @@ def make_server(orch, host: str, port: int, token: str = "") -> ThreadingHTTPSer
                 if body is None or not isinstance(body.get("kind"), str):
                     return self._send(400, {"error": _("invalid body")})
                 kind = body["kind"]
-                data = {k: v for k, v in body.items() if k != "kind"}
+                data = {k: v for k, v in body.items() if k not in ("kind", "setup")}
                 try:
-                    res = orch.set_overlay(kind, data)
+                    res = orch.set_overlay(kind, data, **_setup_kw(body))
+                except SetupInactive as e:
+                    return self._send(409, {"error": str(e), "code": "setup_off"})
                 except ValueError as e:
                     return self._send(400, {"error": str(e)})
                 return self._send(200, {"ok": True, **res})
@@ -85,7 +97,9 @@ def make_server(orch, host: str, port: int, token: str = "") -> ThreadingHTTPSer
                 if body is None or not isinstance(body.get("muted"), bool):
                     return self._send(400, {"error": _("invalid body")})
                 try:
-                    res = orch.set_mute(body["muted"])
+                    res = orch.set_mute(body["muted"], **_setup_kw(body))
+                except SetupInactive as e:
+                    return self._send(409, {"error": str(e), "code": "setup_off"})
                 except ValueError as e:
                     return self._send(400, {"error": str(e)})
                 return self._send(200, {"ok": True, **res})
@@ -94,7 +108,9 @@ def make_server(orch, host: str, port: int, token: str = "") -> ThreadingHTTPSer
                 if body is None or not isinstance(body.get("mode"), str):
                     return self._send(400, {"error": _("invalid body")})
                 try:
-                    res = orch.set_transition(body["mode"])
+                    res = orch.set_transition(body["mode"], **_setup_kw(body))
+                except SetupInactive as e:
+                    return self._send(409, {"error": str(e), "code": "setup_off"})
                 except ValueError as e:
                     return self._send(400, {"error": str(e)})
                 return self._send(200, {"ok": True, **res})
@@ -110,7 +126,20 @@ def make_server(orch, host: str, port: int, token: str = "") -> ThreadingHTTPSer
                         return self._send(400, {"error": _("invalid body")})
                 transition = body.get("transition")
                 try:
-                    res = orch.set_custom_scene(body["scene"], raw, transition=transition)
+                    res = orch.set_custom_scene(body["scene"], raw, transition=transition, **_setup_kw(body))
+                except SetupInactive as e:
+                    return self._send(409, {"error": str(e), "code": "setup_off"})
+                except ValueError as e:
+                    return self._send(400, {"error": str(e)})
+                return self._send(200, {"ok": True, **res})
+            if cmd == "setup":
+                body = self._read_json(4096)
+                if body is None or not isinstance(body.get("on"), bool):
+                    return self._send(400, {"error": _("invalid body")})
+                try:
+                    res = orch.set_setup(body["on"], body.get("ttl"))
+                except SetupInactive as e:
+                    return self._send(409, {"error": str(e), "code": "setup_off"})
                 except ValueError as e:
                     return self._send(400, {"error": str(e)})
                 return self._send(200, {"ok": True, **res})
@@ -120,8 +149,15 @@ def make_server(orch, host: str, port: int, token: str = "") -> ThreadingHTTPSer
                 arg = f"{q.get('name', '')}|{q['info']}"
             if cmd not in Machine.COMMANDS:
                 return self._send(404, {"error": _("unknown command")})
-            tr_mode = q.get("transition")
-            res = orch.manual(cmd, arg, transition=tr_mode) if tr_mode is not None else orch.manual(cmd, arg)
+            kwargs: dict = {"setup": True} if q.get("setup") == "1" else {}
+            if q.get("transition") is not None:
+                kwargs["transition"] = q["transition"]
+            try:
+                res = orch.manual(cmd, arg, **kwargs)
+            except SetupInactive as e:
+                return self._send(409, {"error": str(e), "code": "setup_off"})
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
             self._send(200, {"ok": True, **res})
 
     srv = ThreadingHTTPServer((host, port), H)
