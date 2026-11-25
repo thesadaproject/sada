@@ -524,7 +524,9 @@ class Encoder:
         with self._anim:
             p = tr.plan(self.active, was_full, full, scale=self.cfg.height / 720, mode="cut")
             frames = self._animate(p)
-            self.log(_("TRANSITION -> {scene} (layer {layer}, {frames} frames)", scene=scene, layer=p.dst, frames=frames))
+            self.log(
+                _("TRANSITION -> {scene} (layer {layer}, {frames} frames)", scene=scene, layer=p.dst, frames=frames)
+            )
             with self._mx:
                 self.active = p.dst
                 if self.shown and self.shown[0] == scene:
