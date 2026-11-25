@@ -237,7 +237,8 @@ async def live_command(request: Request, a: DeviceDep):
     if isinstance(out, JSONResponse):
         return out
     a.audit("studio.live.commande", commande=cmd, valeur=arg or "", setup=setup)
-    return JSONResponse(live_flat(a.mosque, forcer=True, setup=setup), headers={"Cache-Control": "no-store"})
+    fresh = await run_in_threadpool(live_flat, a.mosque, True, setup)  # blocking HTTP to the engine
+    return JSONResponse(fresh, headers={"Cache-Control": "no-store"})
 
 
 @router.patch("/studio/live/overlays/{kind}")
@@ -250,7 +251,8 @@ async def live_overlay(kind: str, request: Request, a: DeviceDep):
         return JSONResponse({"error": _("unknown overlay: {kind}", kind=kind)}, status_code=422)
     patch = await _json(request)
     setup = patch.pop("setup", None) is True
-    current = (live_flat(a.mosque, forcer=setup, setup=setup).get("overlays") or {}).get(kind)
+    snapshot = await run_in_threadpool(live_flat, a.mosque, setup, setup)  # blocking HTTP to the engine
+    current = (snapshot.get("overlays") or {}).get(kind)
     try:
         merged = normalize_overlay(kind, patch, current)
     except ValueError as e:
