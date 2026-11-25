@@ -225,5 +225,6 @@
   "Out of sequence.": "الجزء خارج التسلسل: يُستأنف الإرسال من الموضع المحدد.",
   "engine unreachable": "تعذر الوصول إلى المحرك",
   "bad offer": "عرض غير صالح",
-  "relay unavailable": "المرحّل غير متاح"
+  "relay unavailable": "المرحّل غير متاح",
+  "image dimensions too large": "أبعاد الصورة كبيرة جدًا"
 }

@@ -146,7 +146,7 @@ async def apply_scene(conn, mosque: dict, scene_id, tr_mode, setup: bool = False
         if tr_mode not in transitions.TRANSITIONS:
             return JSONResponse({"error": _("unknown transition: {mode}", mode=tr_mode)}, status_code=400)
     if scene_id.startswith("custom:"):
-        raw = custom_scenes.image_bytes(mosque, scene_id[len("custom:") :])
+        raw = await run_in_threadpool(custom_scenes.image_bytes, mosque, scene_id[len("custom:") :])
         if raw is None:
             raise NotFound()
         try:
@@ -181,10 +181,13 @@ async def apply_transition(mosque: dict, mode, setup: bool = False) -> dict | JS
     mode = str(mode or "").strip().lower()
     if mode not in transitions.TRANSITIONS:
         return JSONResponse({"error": _("unknown transition: {mode}", mode=mode)}, status_code=400)
-    custom_scenes.set_transition(mosque, mode)
+    if not setup:  # the rehearsal's transition is not the mosque's setting
+        await run_in_threadpool(custom_scenes.set_transition, mosque, mode)
     synced = True
     try:
         await run_in_threadpool(live.set_transition, mosque, mode, **_setup_kwargs(setup))
+    except live.SetupLapsed as e:
+        return _setup_failure(e)
     except live.OrchestratorError:
         synced = False
     return {"ok": True, "transition": mode, "synced": synced}
@@ -234,14 +237,34 @@ async def regie_mute(request: Request, a: ActorDep):
     """Mutes the incoming microphone. Session (control room) or paired device (studio application)."""
     a.need_live()
     body = _body(await _json(request))
-    return await apply_mute(a.mosque, body.get("muted"), setup=body.get("setup") is True)
+    setup = body.get("setup") is True
+    out = await apply_mute(a.mosque, body.get("muted"), setup=setup)
+    if isinstance(out, dict):
+        a.audit("studio.live.sourdine", muted=out["muted"], setup=setup)
+    return out
 
 
 @router.post("/live/regie/transition")
 async def regie_transition(request: Request, a: ActorDep):
     a.need_live()
     body = _body(await _json(request))
-    return await apply_transition(a.mosque, body.get("mode"), setup=body.get("setup") is True)
+    setup = body.get("setup") is True
+    out = await apply_transition(a.mosque, body.get("mode"), setup=setup)
+    if isinstance(out, dict):
+        a.audit("studio.live.transition", transition=out["transition"], setup=setup)
+    return out
+
+
+async def _read_bounded(file: UploadFile, limit: int) -> bytes:
+    """The upload by chunks, refused as soon as it exceeds `limit`: the whole body is never held in memory."""
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := await file.read(64 * 1024):
+        total += len(chunk)
+        if total > limit:
+            raise ValueError(_("image too large (5 MB maximum)"))
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 @router.post("/live/regie/custom-scenes")
@@ -255,9 +278,10 @@ async def regie_custom_scene_create(
     ctx.require("live")
     mosque = ctx.mosque
     assert mosque is not None
-    raw = await file.read()
     try:
-        created = custom_scenes.create(
+        raw = await _read_bounded(file, custom_scenes.MAX_BYTES)
+        created = await run_in_threadpool(  # decoding and re-encoding the image is CPU-bound
+            custom_scenes.create,
             ctx.conn,
             mosque,
             label=label,
@@ -273,11 +297,10 @@ async def regie_custom_scene_create(
 
 
 @router.get("/live/regie/custom-scenes/{slug}/image")
-def regie_custom_scene_image(slug: str, ctx: CtxDep):
-    ctx.require("live")
-    mosque = ctx.mosque
-    assert mosque is not None
-    raw = custom_scenes.image_bytes(mosque, slug)
+def regie_custom_scene_image(slug: str, a: ActorDep):
+    """Read by the control room (session) and by the studio application (device): `preview_url` of a scene."""
+    a.need_live(write=False)
+    raw = custom_scenes.image_bytes(a.mosque, slug)
     if raw is None:
         raise NotFound()
     return Response(raw, media_type="image/png", headers={"Cache-Control": "private, max-age=30"})
@@ -298,20 +321,22 @@ def regie_custom_scene_delete(slug: str, ctx: CtxDep):
 async def regie_take_scene(request: Request, a: ActorDep):
     a.need_live()
     body = await _json(request)
-    return await apply_scene(
-        a.conn, a.mosque, body.get("scene"), body.get("transition"), setup=body.get("setup") is True
-    )
+    setup = body.get("setup") is True
+    out = await apply_scene(a.conn, a.mosque, body.get("scene"), body.get("transition"), setup=setup)
+    if isinstance(out, dict):
+        a.audit("studio.live.commande", commande="scene", valeur=out["scene"], setup=setup)
+    return out
 
 
 @router.get("/live/regie/scene/{name}.png")
-async def scene_preview(name: str, ctx: CtxDep):
+async def scene_preview(name: str, a: ActorDep):
     """Studio mode: the scene as it would go on air, with the mosque's saved texts. Banner scenes come
     without background, to be laid over the preview feed."""
-    ctx.require("live")
+    a.need_live(write=False)
     if name not in live.choices("scene"):
         raise NotFound()
-    textes = screens_mod.saved(ctx.conn, ctx.mosque["id"])
-    png = await run_in_threadpool(screens_mod.preview, ctx.mosque, textes, name, True, ctx.conn)
+    textes = screens_mod.saved(a.conn, a.mosque["id"])
+    png = await run_in_threadpool(screens_mod.preview, a.mosque, textes, name, True, a.conn)
     return Response(png, media_type="image/png", headers={"Cache-Control": "private, max-age=30"})
 
 

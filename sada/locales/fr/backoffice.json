@@ -225,5 +225,6 @@
   "Out of sequence.": "Morceau hors séquence : l'envoi reprend à l'offset indiqué.",
   "engine unreachable": "moteur injoignable",
   "bad offer": "offre invalide",
-  "relay unavailable": "relais indisponible"
+  "relay unavailable": "relais indisponible",
+  "image dimensions too large": "dimensions de l'image trop grandes"
 }

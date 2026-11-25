@@ -196,3 +196,194 @@ def test_api_token_is_compared_in_constant_time(monkeypatch):
     finally:
         srv.shutdown()
     assert calls, "the token was not compared with hmac.compare_digest"
+
+
+# ------------------------------------------------------------------ control room routes
+import io  # noqa: E402
+
+from conftest import client as make_client, one  # noqa: E402
+from test_regie_studio import pair  # noqa: E402
+
+from sada.backoffice import custom_scenes, models  # noqa: E402
+
+
+@pytest.fixture
+def scenes_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(custom_scenes, "DIR", tmp_path / "custom_scenes")
+    return tmp_path / "custom_scenes"
+
+
+def _upload_png(size=(320, 180)) -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGB", size, (30, 90, 60)).save(buf, "PNG")
+    return buf.getvalue()
+
+
+def test_scene_images_and_previews_are_readable_by_a_paired_device(env, engine, scenes_dir, monkeypatch):  # noqa: F811
+    """`/studio/regie` hands out these `preview_url`s to bearer devices, which carry no cookie."""
+    from sada.backoffice import screens
+
+    monkeypatch.setattr(screens, "preview", lambda *a, **k: _upload_png())
+    admin = make_client(env, "admin")
+    r = admin.post(
+        "/api/v1/live/regie/custom-scenes",
+        data={"label": "Pause", "category": "pause"},
+        files={"file": ("p.png", _upload_png(), "image/png")},
+        headers={"X-CSRF": admin.csrf},
+    )
+    assert r.status_code == 200, r.text
+    d = dev(env)
+    assert d.get("/api/v1/live/regie/custom-scenes/pause/image").status_code == 200
+    assert d.get("/api/v1/live/regie/scene/khutba.png").status_code == 200
+    anon = make_client(env)
+    assert anon.get("/api/v1/live/regie/custom-scenes/pause/image").status_code in (401, 403)
+
+
+def _admin_upload(env, data: bytes, name="big.png", label="Grande"):
+    admin = make_client(env, "admin")
+    return admin.post(
+        "/api/v1/live/regie/custom-scenes",
+        data={"label": label, "category": "autre"},
+        files={"file": (name, data, "image/png")},
+        headers={"X-CSRF": admin.csrf},
+    )
+
+
+def test_oversized_upload_is_refused_by_chunks_before_any_decoding(env, scenes_dir, monkeypatch):
+    seen: list[int] = []
+    real = regie._read_bounded
+
+    async def spy(file, limit):
+        try:
+            return await real(file, limit)
+        finally:
+            seen.append(limit)
+
+    monkeypatch.setattr(regie, "_read_bounded", spy)
+    monkeypatch.setattr(
+        custom_scenes, "prepare_image", lambda *a, **k: pytest.fail("a refused upload must not be decoded")
+    )
+    r = _admin_upload(env, b"\0" * (custom_scenes.MAX_BYTES + 1))
+    assert r.status_code == 400 and seen == [custom_scenes.MAX_BYTES]
+
+
+def test_decompression_bomb_is_refused_without_decoding(env, scenes_dir, monkeypatch):
+    monkeypatch.setattr(custom_scenes, "MAX_PIXELS", 1000)
+    r = _admin_upload(env, _upload_png((320, 180)))
+    assert r.status_code == 400
+    with pytest.raises(ValueError):
+        custom_scenes.prepare_image("a.png", _upload_png((320, 180)))
+
+
+def test_upload_decoding_and_scene_image_reads_run_off_the_event_loop(env, engine, scenes_dir, monkeypatch):  # noqa: F811
+    where: dict[str, bool] = {}
+
+    def probe(name, fn):
+        def wrapped(*a, **k):
+            try:
+                asyncio.get_running_loop()
+                where[name] = True
+            except RuntimeError:
+                where[name] = False
+            return fn(*a, **k)
+
+        return wrapped
+
+    monkeypatch.setattr(custom_scenes, "create", probe("create", custom_scenes.create))
+    monkeypatch.setattr(custom_scenes, "image_bytes", probe("image_bytes", custom_scenes.image_bytes))
+    monkeypatch.setattr(live, "set_custom_scene", lambda m, sc, raw, transition=None, **kw: {"ok": True})
+    assert _admin_upload(env, _upload_png(), "a.png", "Alpha").status_code == 200
+    admin = make_client(env, "admin")
+    r = admin.post("/api/v1/live/regie/scene", json={"scene": "custom:alpha"}, headers={"X-CSRF": admin.csrf})
+    assert r.status_code == 200, r.text
+    assert where == {"create": False, "image_bytes": False}
+
+
+def test_a_setup_transition_is_not_saved_and_a_lapsed_lease_is_a_409(env, engine, scenes_dir, monkeypatch):  # noqa: F811
+    d = dev(env)
+    assert d.post("/api/v1/live/regie/transition", json={"mode": "cut"}).status_code == 200
+    assert custom_scenes.get_transition(_mosque(env)) == "cut"
+
+    monkeypatch.setattr(live, "set_transition", lambda m, mode, setup=False: {"ok": True})
+    assert d.post("/api/v1/live/regie/transition", json={"mode": "fade", "setup": True}).status_code == 200
+    assert custom_scenes.get_transition(_mosque(env)) == "cut"  # the rehearsal did not touch the saved one
+
+    def lapsed(m, mode, setup=False):
+        raise live.SetupLapsed("setup lapsed")
+
+    monkeypatch.setattr(live, "set_transition", lapsed)
+    r = d.post("/api/v1/live/regie/transition", json={"mode": "fade", "setup": True})
+    assert r.status_code == 409 and r.json()["code"] == "setup_off"
+    assert custom_scenes.get_transition(_mosque(env)) == "cut"
+
+
+def _mosque(env) -> dict:
+    return one(env["conn"], models.Mosque, id=env["mid"])
+
+
+def test_scene_mute_and_transition_are_audited(env, engine, scenes_dir):  # noqa: F811
+    d = dev(env)
+    assert d.post("/api/v1/live/regie/scene", json={"scene": "khutba"}).status_code == 200
+    assert d.post("/api/v1/live/regie/mute", json={"muted": True}).status_code == 200
+    assert d.post("/api/v1/live/regie/transition", json={"mode": "cut"}).status_code == 200
+    for action in ("studio.live.commande", "studio.live.sourdine", "studio.live.transition"):
+        row = one(env["conn"], models.Audit, action=action)
+        assert row is not None, action
+        assert json.loads(row["details"])["appareil"]
+    # a refused command leaves no trace of a change
+    assert d.post("/api/v1/live/regie/mute", json={"muted": "yes"}).status_code == 400
+
+
+def test_custom_scene_audit_trail_exists(env, scenes_dir):
+    assert _admin_upload(env, _upload_png(), "a.png", "Alpha").status_code == 200
+    admin = make_client(env, "admin")
+    assert admin.delete("/api/v1/live/regie/custom-scenes/alpha", headers={"X-CSRF": admin.csrf}).status_code == 200
+    assert one(env["conn"], models.Audit, action="regie.custom_scene.create")
+    assert one(env["conn"], models.Audit, action="regie.custom_scene.delete")
+
+
+# ------------------------------------------------------------------ custom_scenes storage
+def test_concurrent_manifest_updates_lose_nothing(scenes_dir):
+    mosque = {"id": 1, "slug": "m1"}
+    errors: list[BaseException] = []
+
+    def make(i):
+        try:
+            custom_scenes.create(
+                _NoAudit(), mosque, f"Scene {i}", "autre", "a.png", _upload_png(), None, None
+            )
+        except BaseException as e:  # noqa: BLE001
+            errors.append(e)
+
+    threads = [threading.Thread(target=make, args=(i,)) for i in range(8)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert not errors, errors
+    assert len(custom_scenes._raw_list(mosque)) == 8
+    assert not list(scenes_dir.glob("m1/manifest.*.tmp"))  # no stray temporary file
+
+
+class _NoAudit:
+    """Stand-in connection: the audit insert and the commit are not what is under test."""
+
+    def execute(self, *a, **k):
+        return None
+
+    def commit(self):
+        return None
+
+
+def test_scene_version_is_stable_across_processes_and_settings_key_is_gone():
+    item = {"slug": "a", "updated_at": "2026-11-20T10:00:00"}
+    import subprocess
+    import sys
+
+    code = (
+        "from sada.backoffice import custom_scenes as c;"
+        "print(c._format({'slug':'a','updated_at':'2026-11-20T10:00:00'})['preview_url'])"
+    )
+    outs = {
+        subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout for _ in range(2)
+    }
+    assert len(outs) == 1 and custom_scenes._format(item)["preview_url"] in "".join(outs)
+    assert not hasattr(custom_scenes, "SETTINGS_KEY")
