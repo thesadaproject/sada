@@ -136,11 +136,7 @@ def notify_platform(slug: str, action: str, poster=_post_hook) -> bool:
 
 def _purge_wake(conn, now: float) -> None:
     """Forgets the wake bookkeeping of every mosque whose lease no longer holds (it is fresh again next time)."""
-    stmt = (
-        select(Mosque.slug)
-        .join(SetupLease, SetupLease.mosque_id == Mosque.id)
-        .where(SetupLease.until > now)
-    )
+    stmt = select(Mosque.slug).join(SetupLease, SetupLease.mosque_id == Mosque.id).where(SetupLease.until > now)
     live_slugs = {r["slug"] for r in orm.rows(conn, stmt)}
     with _lock:
         for slug in [k for k in _last_wake if k not in live_slugs]:

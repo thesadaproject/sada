@@ -9,7 +9,7 @@ import urllib.request
 import pytest
 
 from sada.api import make_server
-from sada.state import Machine, State
+from sada.state import Machine
 
 
 def test_machine_mute_flag():

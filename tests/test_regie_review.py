@@ -3,10 +3,30 @@
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
+import http.server
+import io
+import json
+import subprocess
+import sys
+import threading
+import urllib.error
+import urllib.request
+from types import SimpleNamespace
 
-from test_regie_studio import dev, engine  # noqa: F401  (fixture)
+import pytest
+from conftest import client as make_client
+from conftest import one
+from PIL import Image
+from test_regie_studio import dev, engine, pair  # noqa: F401  (engine: fixture)
+from test_setup_mode import cfg, make, open_setup  # noqa: F401
+from test_studio_setup import _fresh_limits, orch  # noqa: F401  (fixtures)
 
+from sada import api, i18n, transitions
+from sada import encoder as enc_mod
+from sada.backoffice import custom_scenes, live, models, setup_session
 from sada.backoffice.api import regie
+from sada.state import Machine, Signals, State
 
 
 def _spy_on_loop(monkeypatch):
@@ -30,26 +50,15 @@ def test_studio_async_routes_read_the_engine_off_the_event_loop(env, engine, mon
     on_loop = _spy_on_loop(monkeypatch)
     d = dev(env)
     assert d.post("/api/v1/studio/live/command", json={"command": "scene", "arg": "khutba"}).status_code == 200
-    assert d.patch("/api/v1/studio/live/overlays/qr", json={"visible": True, "url": "https://sada.example/q"}).status_code == 200
+    assert (
+        d.patch("/api/v1/studio/live/overlays/qr", json={"visible": True, "url": "https://sada.example/q"}).status_code
+        == 200
+    )
     assert len(on_loop) >= 2 and not any(on_loop), on_loop
 
 
 # ------------------------------------------------------------------ 3: unknown custom scene
-import base64  # noqa: E402
-import datetime as dt  # noqa: E402
-import json  # noqa: E402
-import threading  # noqa: E402
-import urllib.error  # noqa: E402
-import urllib.request  # noqa: E402
-from types import SimpleNamespace  # noqa: E402
 
-import pytest  # noqa: E402
-from PIL import Image  # noqa: E402
-from test_setup_mode import cfg, make, open_setup  # noqa: E402
-
-from sada import api, encoder as enc_mod, i18n, transitions  # noqa: E402
-from sada.backoffice import live  # noqa: E402
-from sada.state import Machine, Signals, State  # noqa: E402
 
 SIG = Signals(now=dt.datetime(2026, 11, 20, 12, 30), t=100.0)
 
@@ -77,8 +86,6 @@ def test_orchestrator_scene_command_for_an_unknown_custom_scene_changes_nothing(
 
 
 def _png() -> bytes:
-    import io
-
     buf = io.BytesIO()
     Image.new("RGB", (200, 120), (10, 80, 40)).save(buf, "PNG")
     return buf.getvalue()
@@ -132,10 +139,10 @@ def test_setup_encoder_ports_never_overlap_the_live_block_and_can_be_configured(
 
 
 def test_custom_scene_images_are_bounded_and_the_scenes_on_air_survive(monkeypatch, tmp_path):
-    from sada import orchestrator as orch
+    from sada import orchestrator as orchestrator_mod
 
     o = make(monkeypatch)
-    monkeypatch.setattr(orch, "MAX_CUSTOM_IMAGES", 3)
+    monkeypatch.setattr(orchestrator_mod, "MAX_CUSTOM_IMAGES", 3)
     png = _png()
     for i in range(6):
         o.set_custom_scene(f"custom:s{i}", png)
@@ -173,8 +180,8 @@ def test_api_token_is_compared_in_constant_time(monkeypatch):
         return real(a, b)
 
     monkeypatch.setattr(api.hmac, "compare_digest", spy)
-    orch = SimpleNamespace(status=lambda: {"ok": True})
-    srv = api.make_server(orch, "127.0.0.1", 0, token="tok")
+    fake = SimpleNamespace(status=lambda: {"ok": True})
+    srv = api.make_server(fake, "127.0.0.1", 0, token="tok")
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     port = srv.server_address[1]
     try:
@@ -199,12 +206,6 @@ def test_api_token_is_compared_in_constant_time(monkeypatch):
 
 
 # ------------------------------------------------------------------ control room routes
-import io  # noqa: E402
-
-from conftest import client as make_client, one  # noqa: E402
-from test_regie_studio import pair  # noqa: E402
-
-from sada.backoffice import custom_scenes, models  # noqa: E402
 
 
 @pytest.fixture
@@ -349,9 +350,7 @@ def test_concurrent_manifest_updates_lose_nothing(scenes_dir):
 
     def make(i):
         try:
-            custom_scenes.create(
-                _NoAudit(), mosque, f"Scene {i}", "autre", "a.png", _upload_png(), None, None
-            )
+            custom_scenes.create(_NoAudit(), mosque, f"Scene {i}", "autre", "a.png", _upload_png(), None, None)
         except BaseException as e:  # noqa: BLE001
             errors.append(e)
 
@@ -375,26 +374,19 @@ class _NoAudit:
 
 def test_scene_version_is_stable_across_processes_and_settings_key_is_gone():
     item = {"slug": "a", "updated_at": "2026-11-20T10:00:00"}
-    import subprocess
-    import sys
-
     code = (
         "from sada.backoffice import custom_scenes as c;"
         "print(c._format({'slug':'a','updated_at':'2026-11-20T10:00:00'})['preview_url'])"
     )
     outs = {
-        subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout for _ in range(2)
+        subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout
+        for _ in range(2)
     }
     assert len(outs) == 1 and custom_scenes._format(item)["preview_url"] in "".join(outs)
     assert not hasattr(custom_scenes, "SETTINGS_KEY")
 
 
 # ------------------------------------------------------------------ setup session
-import http.server  # noqa: E402
-
-from test_studio_setup import _fresh_limits, orch  # noqa: E402,F401  (fixtures)
-
-from sada.backoffice import setup_session  # noqa: E402
 
 
 def test_leave_only_cuts_the_lease_of_the_device_that_holds_it(env, orch):  # noqa: F811
