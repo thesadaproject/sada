@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.16](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.15...sada-v0.1.0-alpha.16) (2026-11-25)
+
+
+### Features
+
+* **regie:** control room — scenes, transitions, overlays, audio and the device routes the console calls ([#86](https://github.com/thesadaproject/sada/issues/86)) ([2ff5469](https://github.com/thesadaproject/sada/commit/2ff546927e46a09085a6812029dc3489434cb416))
+
 ## [0.1.0-alpha.15](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.14...sada-v0.1.0-alpha.15) (2026-11-23)
 
 
