@@ -60,6 +60,106 @@ def _all_scenes(conn, mosque: dict) -> list[dict]:
     return _builtin_scenes() + custom_scenes.list_scenes(conn, mosque)
 
 
+def live_flat(mosque: dict, forcer: bool = False) -> dict:
+    """Engine snapshot in the flat protocol shape the studio application reads (LiveStatus).
+
+    `forcer`: immediate read, used right after a command so the screen shows the consequence and not
+    the previous snapshot.
+    """
+    st = live.status_cached(mosque, ttl=STATUS_TTL, forcer=forcer)
+    ok = bool(st.get("ok"))
+    return {
+        "ok": ok,
+        "reachable": ok,
+        "state": st.get("state"),
+        "scene": st.get("scene"),
+        "override": bool(st.get("override")),
+        "transition": st.get("transition"),
+        "overlays": st.get("overlays"),
+        "mic": bool(st.get("mic", False)),
+        "mic_muted": bool(st.get("mic_muted", False)),
+        "audio_level_db": st.get("audio_level_db"),
+        "message": st.get("error") or st.get("last_reason") or "",
+    }
+
+
+def regie_data(conn, mosque: dict) -> dict:
+    """Control room payload for a paired device (RegieData): mosque, engine state, scenes, commands."""
+    st = live_flat(mosque)
+    return {
+        "mosque": mosque["name"],
+        "slug": mosque["slug"],
+        "status": st,
+        "transition": st.get("transition") or _saved_transition(mosque),
+        "scenes": _all_scenes(conn, mosque),
+        "audio": {"mic_on": st["mic"], "muted": st["mic_muted"], "level_db": st["audio_level_db"]},
+        "commands": list(live.COMMANDS),
+        "extend_minutes": [str(m) for m in live.choices("extend")],
+        "overlays": st.get("overlays"),
+    }
+
+
+def _body(corps) -> dict:
+    return corps if isinstance(corps, dict) else {}
+
+
+async def _json(request: Request) -> dict:
+    """JSON body as sent; an empty, form-encoded or unreadable body is `{}`."""
+    try:
+        corps = await request.json()
+    except Exception:  # noqa: BLE001 — empty or unreadable body
+        corps = {}
+    return corps if isinstance(corps, dict) else {}
+
+
+async def apply_scene(conn, mosque: dict, scene_id, tr_mode) -> dict | JSONResponse:
+    """Takes a scene (builtin or `custom:<slug>`), with an optional transition."""
+    scene_id = str(scene_id or "").strip().lower()
+    if tr_mode is not None:
+        tr_mode = str(tr_mode).strip().lower()
+        if tr_mode not in transitions.TRANSITIONS:
+            return JSONResponse({"error": _("unknown transition: {mode}", mode=tr_mode)}, status_code=400)
+    if scene_id.startswith("custom:"):
+        raw = custom_scenes.image_bytes(mosque, scene_id[len("custom:") :])
+        if raw is None:
+            raise NotFound()
+        try:
+            r = await run_in_threadpool(live.set_custom_scene, mosque, scene_id, raw, transition=tr_mode)
+        except live.OrchestratorError as e:
+            return JSONResponse({"error": str(e)}, status_code=503)
+        return {"ok": True, "scene": scene_id, "transition": tr_mode or _saved_transition(mosque), "result": r}
+    try:
+        r = await run_in_threadpool(live.command, mosque, "scene", valeur=scene_id, transition=tr_mode)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except live.OrchestratorError as e:
+        return JSONResponse({"error": str(e)}, status_code=503)
+    return {"ok": True, "scene": scene_id, "transition": tr_mode or _saved_transition(mosque), "result": r}
+
+
+async def apply_mute(mosque: dict, muted) -> dict | JSONResponse:
+    if not isinstance(muted, bool):
+        return JSONResponse({"error": _("invalid body")}, status_code=400)
+    try:
+        r = await run_in_threadpool(live.set_mute, mosque, muted)
+    except live.OrchestratorError as e:
+        return JSONResponse({"error": str(e)}, status_code=503)
+    return {"ok": True, "muted": muted, "mic_muted": muted, "result": r}
+
+
+async def apply_transition(mosque: dict, mode) -> dict | JSONResponse:
+    mode = str(mode or "").strip().lower()
+    if mode not in transitions.TRANSITIONS:
+        return JSONResponse({"error": _("unknown transition: {mode}", mode=mode)}, status_code=400)
+    custom_scenes.set_transition(mosque, mode)
+    synced = True
+    try:
+        await run_in_threadpool(live.set_transition, mosque, mode)
+    except live.OrchestratorError:
+        synced = False
+    return {"ok": True, "transition": mode, "synced": synced}
+
+
 def _saved_transition(mosque: dict) -> str:
     return custom_scenes.get_transition(mosque)
 
@@ -100,37 +200,18 @@ def regie(ctx: CtxDep):
 
 
 @router.post("/live/regie/mute")
-async def regie_mute(ctx: CtxDep):
-    body = await ctx.raw_body()
-    ctx.require("live")
-    mosque = ctx.mosque
-    assert mosque is not None
-    muted = body.get("muted")
-    if not isinstance(muted, bool):
-        return JSONResponse({"error": _("invalid body")}, status_code=400)
-    try:
-        r = await run_in_threadpool(live.set_mute, mosque, muted)
-    except live.OrchestratorError as e:
-        return JSONResponse({"error": str(e)}, status_code=503)
-    return {"ok": True, "muted": muted, "mic_muted": muted, "result": r}
+async def regie_mute(request: Request, a: ActorDep):
+    """Mutes the incoming microphone. Session (control room) or paired device (studio application)."""
+    a.need_live()
+    body = _body(await _json(request))
+    return await apply_mute(a.mosque, body.get("muted"))
 
 
 @router.post("/live/regie/transition")
-async def regie_transition(ctx: CtxDep):
-    body = await ctx.raw_body()
-    ctx.require("live")
-    mosque = ctx.mosque
-    assert mosque is not None
-    mode = str(body.get("mode") or "").strip().lower()
-    if mode not in transitions.TRANSITIONS:
-        return JSONResponse({"error": _("unknown transition: {mode}", mode=mode)}, status_code=400)
-    custom_scenes.set_transition(mosque, mode)
-    synced = True
-    try:
-        await run_in_threadpool(live.set_transition, mosque, mode)
-    except live.OrchestratorError:
-        synced = False
-    return {"ok": True, "transition": mode, "synced": synced}
+async def regie_transition(request: Request, a: ActorDep):
+    a.need_live()
+    body = _body(await _json(request))
+    return await apply_transition(a.mosque, body.get("mode"))
 
 
 @router.post("/live/regie/custom-scenes")
@@ -184,34 +265,10 @@ def regie_custom_scene_delete(slug: str, ctx: CtxDep):
 
 
 @router.post("/live/regie/scene")
-async def regie_take_scene(ctx: CtxDep):
-    body = await ctx.raw_body()
-    ctx.require("live")
-    mosque = ctx.mosque
-    assert mosque is not None
-    scene_id = str(body.get("scene") or "").strip().lower()
-    tr_mode = body.get("transition")
-    if tr_mode is not None:
-        tr_mode = str(tr_mode).strip().lower()
-        if tr_mode not in transitions.TRANSITIONS:
-            return JSONResponse({"error": _("unknown transition: {mode}", mode=tr_mode)}, status_code=400)
-    if scene_id.startswith("custom:"):
-        slug = scene_id[len("custom:") :]
-        raw = custom_scenes.image_bytes(mosque, slug)
-        if raw is None:
-            raise NotFound()
-        try:
-            r = await run_in_threadpool(live.set_custom_scene, mosque, scene_id, raw, transition=tr_mode)
-        except live.OrchestratorError as e:
-            return JSONResponse({"error": str(e)}, status_code=503)
-        return {"ok": True, "scene": scene_id, "transition": tr_mode or _saved_transition(mosque), "result": r}
-    try:
-        r = await run_in_threadpool(live.command, mosque, "scene", valeur=scene_id, transition=tr_mode)
-    except ValueError as e:
-        return JSONResponse({"error": str(e)}, status_code=400)
-    except live.OrchestratorError as e:
-        return JSONResponse({"error": str(e)}, status_code=503)
-    return {"ok": True, "scene": scene_id, "transition": tr_mode or _saved_transition(mosque), "result": r}
+async def regie_take_scene(request: Request, a: ActorDep):
+    a.need_live()
+    body = await _json(request)
+    return await apply_scene(a.conn, a.mosque, body.get("scene"), body.get("transition"))
 
 
 @router.get("/live/regie/scene/{name}.png")
