@@ -6,7 +6,15 @@ signals and manual commands (pause/resume, janaza, extend, skip, scene, ...). Ev
 state, scene, reason, session records, log lines and command answers; the digest of the whole trace
 is compared to the one recorded before the refactor.
 
-To re-record after an INTENDED behaviour change: `python tests/test_state_trace.py`.
+Two golden files:
+
+* `state_trace_golden.json` is the one recorded BEFORE the control-room work (2ff5469) and is never regenerated
+  for it: the scenes and commands that existed then must still trace identically. The only difference allowed is
+  the status keys that work added (`NEW_STATUS_KEYS`), which are left out of that digest.
+* `state_trace_custom_golden.json` records the same days with the `custom:` scene commands mixed in (a custom
+  scene is known to the machine), so the new behaviour is pinned without touching the old proof.
+
+To re-record the second one after an INTENDED change: `python tests/test_state_trace.py`.
 """
 
 from __future__ import annotations
@@ -23,7 +31,9 @@ from sada.state import Machine, MachineParams, Signals, State
 
 DAY = dt.date(2026, 3, 6)
 COMMANDS = ("start", "pause", "resume", "auto", "extend", "skip", "scene", "janaza", "tarawih", "next_reciter", "stop")
-SCENES = ("avant", "khutba", "priere", "entracte", "termine", "dars", "dars_fin", "tarawih", "bogus", "custom:attente")
+SCENES = ("avant", "khutba", "priere", "entracte", "termine", "dars", "dars_fin", "tarawih", "bogus")
+CUSTOM_SCENES = (*SCENES, "custom:attente")
+NEW_STATUS_KEYS = ("overlays", "transition", "mic_muted")  # added to Machine.status() after the old golden
 PLANS = {
     "khutba2": [("12:30", {}), ("13:30", {})],
     "dars": [("12:30", {"kind": "dars", "title": "T"}), ("13:30", {"kind": "conference"})],
@@ -58,12 +68,17 @@ def _plan(name: str) -> tuple[list[dt.datetime], list[dict]]:
     )
 
 
-def run_scenario(plan: str, seed: int, steps: int = 700) -> tuple[str, set[str]]:
-    """Replay one random day; return (digest of the whole trace, names of the states visited)."""
+def run_scenario(plan: str, seed: int, steps: int = 700, custom: bool = False) -> tuple[str, set[str]]:
+    """Replay one random day; return (digest of the whole trace, names of the states visited).
+
+    `custom`: the `custom:attente` scene is among the scene commands, and the machine knows it."""
+    scenes = CUSTOM_SCENES if custom else SCENES
     rnd = random.Random(f"{plan}/{seed}")
     sessions, extras = _plan(plan)
     logs: list[str] = []
     m = Machine(sessions, MachineParams(), log=logs.append, extras=extras, pos_fn=lambda: (1, round(t - 1000.0, 1)))
+    if custom:
+        m.custom_known = {"custom:attente"}.__contains__
     now = dt.datetime.combine(DAY, dt.time(12, 0)) + dt.timedelta(minutes=rnd.choice((0, 5, 60, 100)))
     t = 1000.0
     voice = silence = 0.0
@@ -85,7 +100,7 @@ def run_scenario(plan: str, seed: int, steps: int = 700) -> tuple[str, set[str]]
         if rnd.random() < 0.04:
             cmd = rnd.choice(COMMANDS)
             arg = {
-                "scene": rnd.choice(SCENES),
+                "scene": rnd.choice(scenes),
                 "extend": rnd.choice(("5", "15", "x")),
                 "janaza": rnd.choice(("Name|note", "", "N")),
             }.get(cmd)
@@ -111,7 +126,10 @@ def run_scenario(plan: str, seed: int, steps: int = 700) -> tuple[str, set[str]]
                 answer,
             ]
         )
-    final = {"status": m.status(), "timing": m.timing().__dict__, "logs": logs, "trace": trace}
+    status = m.status()
+    if not custom:
+        status = {k: v for k, v in status.items() if k not in NEW_STATUS_KEYS}
+    final = {"status": status, "timing": m.timing().__dict__, "logs": logs, "trace": trace}
     blob = json.dumps(final, sort_keys=True, default=str, ensure_ascii=False)
     return hashlib.sha256(blob.encode()).hexdigest(), visited
 
@@ -119,10 +137,10 @@ def run_scenario(plan: str, seed: int, steps: int = 700) -> tuple[str, set[str]]
 SEEDS = range(40)
 
 
-def _golden() -> dict[str, str]:
+def _golden(name: str = "state_trace_golden.json") -> dict[str, str]:
     import pathlib
 
-    return json.loads((pathlib.Path(__file__).parent / "state_trace_golden.json").read_text())
+    return json.loads((pathlib.Path(__file__).parent / name).read_text())
 
 
 @pytest.mark.parametrize("plan", sorted(PLANS))
@@ -133,20 +151,35 @@ def test_trace_unchanged(plan):
         assert digest == golden[f"{plan}/{seed}"], f"trace of {plan}/{seed} changed"
 
 
+@pytest.mark.parametrize("plan", sorted(PLANS))
+def test_trace_with_custom_scenes_unchanged(plan):
+    golden = _golden("state_trace_custom_golden.json")
+    for seed in SEEDS:
+        digest, _visited = run_scenario(plan, seed, custom=True)
+        assert digest == golden[f"{plan}/{seed}"], f"custom trace of {plan}/{seed} changed"
+
+
+def test_a_custom_scene_the_machine_does_not_know_is_refused_in_every_day():
+    """Without a known image the `custom:` commands never leave the planned states."""
+    for plan in PLANS:
+        _digest, visited = run_scenario(plan, 0)
+        assert State.CUSTOM.value not in visited
+
+
 def test_traces_cover_every_state():
     """The digests only guard what the scenarios reach: they must reach every state."""
     seen: set[str] = set()
     for plan in PLANS:
         for seed in SEEDS:
-            seen |= run_scenario(plan, seed)[1]
+            seen |= run_scenario(plan, seed)[1] | run_scenario(plan, seed, custom=True)[1]
     assert seen == {s.value for s in State}
 
 
 if __name__ == "__main__":
     import pathlib
 
-    out = {f"{p}/{s}": run_scenario(p, s)[0] for p in sorted(PLANS) for s in SEEDS}
-    pathlib.Path(__file__).with_name("state_trace_golden.json").write_text(
+    out = {f"{p}/{s}": run_scenario(p, s, custom=True)[0] for p in sorted(PLANS) for s in SEEDS}
+    pathlib.Path(__file__).with_name("state_trace_custom_golden.json").write_text(
         json.dumps(out, indent=0, sort_keys=True) + "\n"
     )
     print(len(out), "digests recorded", file=sys.stderr)
