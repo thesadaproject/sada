@@ -4,6 +4,10 @@ import { Link } from "react-router-dom";
 import { api, ApiError, type Traitement } from "../api";
 import { currentSession } from "../session";
 import { Btn, Card, Kicker, Pill, Title } from "@sada/ui";
+import { BusyBtn } from "../BusyBtn";
+import { useAppDispatch, useAppSelector } from "../store";
+import { actionId, selectPending, selectRetour, selectView, type Commande } from "../store/liveSlice";
+import { fetchDashboard, sendCommand } from "../store/liveThunks";
 import { dateFr, horloge, mmss } from "../format";
 import { useConfirm } from "../confirmContext";
 
@@ -29,11 +33,13 @@ function sansChemin(texte: string, mot: string): string {
 export default function Dashboard() {
   const { t, i18n } = useTranslation();
   const confirm = useConfirm();
+  const dispatch = useAppDispatch();
+  /** Counters, latest khutbas and command log; the live part lives in the store (store/liveSlice.ts). */
   const [d, setD] = useState<any>(null);
   const [erreur, setErreur] = useState(false);
-
-  const [occupe, setOccupe] = useState(false);
-  const [retour, setRetour] = useState<{ ok: boolean; texte: string } | null>(null);
+  const vue = useAppSelector(selectView);
+  const pending = useAppSelector(selectPending);
+  const retour = useAppSelector(selectRetour);
   const [choixScene, setChoixScene] = useState("");
   const [nom, setNom] = useState("");
   const [mention, setMention] = useState("");
@@ -45,8 +51,8 @@ export default function Dashboard() {
   const traitementsRef = useRef<Traitement[] | null>(null);
 
   useEffect(() => {
-    api.dashboard().then(setD).catch(() => setErreur(true));
-  }, []);
+    dispatch(fetchDashboard()).then(setD).catch(() => setErreur(true));
+  }, [dispatch]);
 
   /** Runs after the live, polled fast (10 s) while one waits or runs, slowly (60 s) otherwise.
    *  An older back end does not serve the route yet: 404 keeps the panel hidden, without an error. */
@@ -80,25 +86,18 @@ export default function Dashboard() {
 
   /** Label of a command or choice: the translation is the only source. The server sends stable
    *  keys and values, never interface text. */
-  const variante = (c: any): "leaf" | "light" | "danger" =>
+  const variante = (c: Commande): "leaf" | "light" | "danger" =>
     c.destructive ? "danger" : c.key === "start" ? "leaf" : "light";
 
-  /** Sends a command to the live. The server answers with the re-read state: the card updates without a reload. */
-  async function envoyer(c: any, corps: Record<string, string> = {}) {
+  /** Sends a command to the live: the card shows its effect at once, the server's answer confirms it
+   *  (or the card falls back to the confirmed state). Only the clicked button waits. */
+  async function envoyer(c: Commande, corps: Record<string, string> = {}) {
     if (c.destructive && !(await confirm({ message: t(`dashboard.confirm.${c.key}`), action: t(`dashboard.cmd.${c.key}`) }))) return;
-    setOccupe(true);
-    setRetour(null);
-    try {
-      const r = await api.liveCommande(c.key, corps);
-      setRetour({ ok: true, texte: r.message });
-      setD((prev: any) => ({ ...prev, live: r.live ?? prev.live }));
-      api.dashboard().then(setD).catch(() => {});   // command log up to date
-    } catch (e: any) {
-      setRetour({ ok: false, texte: e?.message ?? t("common.error") });
-    } finally {
-      setOccupe(false);
+    if (await dispatch(sendCommand(c.key, corps))) {
+      dispatch(fetchDashboard()).then(setD).catch(() => {});   // command log up to date
     }
   }
+  const enCours = (key: string, valeur?: string) => Boolean(pending[actionId(key, valeur)]);
 
   /** Asks the server to run one processing again (failed or finished run). */
   async function relancer(it: Traitement) {
@@ -126,12 +125,13 @@ export default function Dashboard() {
   }
 
   if (erreur) return <p className="py-16 text-center text-muted">{t("common.error")}</p>;
-  if (!d) return <p className="py-16 text-center text-muted">{t("common.loading")}</p>;
+  if (!d || !vue) return <p className="py-16 text-center text-muted">{t("common.loading")}</p>;
 
   const peutPublier = currentSession()?.user.permissions.includes("publish") ?? false;
   const peutAssigner = currentSession()?.user.permissions.includes("assign") ?? false;
-  const v = d.live ?? {};
-  const commandes: any[] = d.live_commands ?? [];
+  const v = vue.live;
+  const commandes = vue.commands;
+  const texteRetour = retour && (retour.texte ?? (retour.cle ? t(retour.cle) : ""));
   const scene = commandes.find((c) => c.key === "scene");
   const janaza = commandes.find((c) => c.key === "janaza");
   const horsService = v.ok === false;
@@ -169,14 +169,14 @@ export default function Dashboard() {
             danger flag only. Commands with choices (extend, scene) expand; the janaza has its
             collapsible form; the tarawih commands live in the Régie, next to tonight's reciters. */}
         <div className="mt-4 flex flex-wrap items-center gap-2.5">
-          {commandes.filter((c: any) => !["janaza", "scene", "tarawih", "next_reciter"].includes(c.key)).map((c: any) =>
+          {commandes.filter((c) => !["janaza", "scene", "tarawih", "next_reciter"].includes(c.key)).map((c) =>
             c.choices.length > 0 ? (
               c.choices.map((valeur: string) => (
-                <Btn key={`${c.key}-${valeur}`} variante={variante(c)} disabled={occupe}
-                     onClick={() => envoyer(c, { valeur })}>{t(`dashboard.choice.${valeur}`)}</Btn>
+                <BusyBtn key={`${c.key}-${valeur}`} variante={variante(c)} busy={enCours(c.key, valeur)}
+                     onClick={() => envoyer(c, { valeur })}>{t(`dashboard.choice.${valeur}`)}</BusyBtn>
               ))
             ) : (
-              <Btn key={c.key} variante={variante(c)} disabled={occupe} onClick={() => envoyer(c)}>{t(`dashboard.cmd.${c.key}`)}</Btn>
+              <BusyBtn key={c.key} variante={variante(c)} busy={enCours(c.key)} onClick={() => envoyer(c)}>{t(`dashboard.cmd.${c.key}`)}</BusyBtn>
             ))}
         </div>
         {scene && (
@@ -187,12 +187,12 @@ export default function Dashboard() {
               <option value="" className="text-ink">{t("dashboard.sceneChoose")}</option>
               {scene.choices.map((valeur: string) => <option key={valeur} value={valeur} className="text-ink">{t(`dashboard.choice.${valeur}`)}</option>)}
             </select>
-            <Btn variante="light" disabled={occupe || !choixScene} className="min-h-9 px-3 py-1.5 text-[0.9rem] max-md:min-h-11 pointer-coarse:min-h-11"
-                 onClick={() => envoyer(scene, { valeur: choixScene })}>{t("dashboard.sceneApply")}</Btn>
+            <BusyBtn variante="light" disabled={!choixScene} busy={enCours(scene.key, choixScene)} className="min-h-9 px-3 py-1.5 text-[0.9rem] max-md:min-h-11 pointer-coarse:min-h-11"
+                 onClick={() => envoyer(scene, { valeur: choixScene })}>{t("dashboard.sceneApply")}</BusyBtn>
           </div>
         )}
-        {retour && (
-          <p role="status" className={`m-0 mt-3 text-[0.92rem] ${retour.ok ? "text-leaf" : "text-[#ff9b94]"}`}>{retour.texte}</p>
+        {retour && texteRetour && (
+          <p role="status" className={`m-0 mt-3 text-[0.92rem] ${retour.ok ? "text-leaf" : "text-[#ff9b94]"}`}>{texteRetour}</p>
         )}
         {janaza && (
           <details className="group mt-3 rounded-[10px] border border-white/18 bg-white/5 px-3 py-2.5 [&>summary::-webkit-details-marker]:hidden">
@@ -204,10 +204,10 @@ export default function Dashboard() {
                      placeholder={t("dashboard.janazaName")} value={nom} maxLength={80} onChange={(e) => setNom(e.target.value)} />
               <input className="rounded-md border border-white/25 bg-white/10 px-2.5 py-1.5 text-[0.9rem] text-white placeholder:text-night-muted max-md:min-h-11 pointer-coarse:min-h-11"
                      placeholder={t("dashboard.janazaInfo")} value={mention} maxLength={60} onChange={(e) => setMention(e.target.value)} />
-              <Btn variante="leaf" disabled={occupe} className="min-h-9 w-fit px-3 py-1.5 text-[0.9rem] max-md:min-h-11 pointer-coarse:min-h-11"
+              <BusyBtn variante="leaf" busy={enCours(janaza.key)} className="min-h-9 w-fit px-3 py-1.5 text-[0.9rem] max-md:min-h-11 pointer-coarse:min-h-11"
                    onClick={() => envoyer(janaza, { name: nom.trim(), info: mention.trim() })}>
                 {t("dashboard.janazaSend")}
-              </Btn>
+              </BusyBtn>
             </div>
           </details>
         )}
