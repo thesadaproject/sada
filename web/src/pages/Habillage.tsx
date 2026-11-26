@@ -1,9 +1,12 @@
-import { useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api, type Habillage as Etat, type HabillageOptions } from "../api";
-import { Btn, Bulle, Card, Field, Kicker, Pill, Segmented, Tabs, inputClass } from "@sada/ui";
+import { Bulle, Card, Field, Kicker, Pill, Segmented, Tabs, inputClass } from "@sada/ui";
 import { usePolling } from "../usePolling";
+import { useFenced } from "../fenced";
+import { previewMonotone } from "../habillageEtat";
+import { BusyBtn } from "../BusyBtn";
 import { idOnglet, idPanneau } from "@sada/ui";
 
 /** Branding of an imported video (dars, lecture, khutba): the mosque's identity over the picture.
@@ -21,51 +24,58 @@ export default function Habillage() {
   const { id } = useParams();
   const kid = Number(id);
   const { t } = useTranslation();
-  const [etat, setEtat] = useState<Etat | null>(null);
   const [o, setO] = useState<HabillageOptions | null>(null);
   const [onglet, setOnglet] = useState<Onglet>("ouverture");
-  const [occupe, setOccupe] = useState<"" | "apercu" | "rendu">("");
   const [message, setMessage] = useState<Message>(null);
   const [erreur, setErreur] = useState("");
+  // Server state fenced against reads that left before an action (fenced.ts); the preview version
+  // never steps back (habillageEtat.ts). Each action waits on its own button.
+  const charger = useCallback(() => api.habillage(kid), [kid]);
+  const { data: etat, enCours, reload, run, reset } = useFenced<Etat>(charger, previewMonotone);
 
   useEffect(() => {
-    api.habillage(kid).then((e) => { setEtat(e); setO(e.options); }).catch((e) => setErreur(e?.message ?? t("common.error")));
-  }, [kid, t]);
+    reset();
+    reload().then((e) => { if (e) setO(e.options); }).catch((e) => setErreur(e?.message ?? t("common.error")));
+  }, [kid, t, reset, reload]);
 
   // While rendering (or translating the subtitle tracks), the status is polled every 2 s (paused
   // while the tab is hidden); the form keeps what is being typed.
   const renduEnCours = etat?.status === "en_cours";
   const traductionEnCours = etat?.translation?.status === "en_cours";
   usePolling(
-    () => api.habillage(kid).then(setEtat),
+    () => reload().catch(() => {}),
     2000,
     { enabled: renduEnCours || traductionEnCours, immediate: false },
   );
 
   /** Relit l'état après une action (traduction lancée), sans toucher au formulaire en cours. */
-  const rafraichir = () => { api.habillage(kid).then(setEtat).catch(() => {}); };
+  const rafraichir = () => { reload().catch(() => {}); };
 
   if (erreur) return <p className="text-[#7a1f20]">{erreur}</p>;
   if (!etat || !o) return <p className="text-muted">{t("common.loading")}</p>;
 
   const lecture = !etat.can_edit;
-  const bloque = lecture || !etat.has_source || occupe !== "" || renduEnCours;
+  // Blocked on purpose while the server renders; otherwise each button only waits for its own action.
+  const bloque = lecture || !etat.has_source || renduEnCours;
+  const apercuEnCours = enCours("apercu");
   const maj = (champs: Partial<HabillageOptions>) => setO({ ...o, ...champs });
 
   async function agir(quoi: "apercu" | "rendu", e?: FormEvent) {
     e?.preventDefault();
     if (!o) return;
-    setOccupe(quoi);
+    const envoye = o;
     setMessage(null);
-    try {
-      const r = quoi === "apercu" ? await api.habillageApercu(kid, o) : await api.habillageLancer(kid, o);
-      setEtat(r);
-      setO(r.options);
-      if (quoi === "rendu") setMessage({ texte: r.message, ko: false });
-    } catch (err: any) {
-      setMessage({ texte: err?.message ?? t("common.error"), ko: true });
-    } finally {
-      setOccupe("");
+    // A rendering shows as started at once (the form locks as it will once the server confirms).
+    const res = await run(quoi, () => (quoi === "apercu" ? api.habillageApercu(kid, envoye) : api.habillageLancer(kid, envoye)), {
+      apply: quoi === "rendu" ? (x) => ({ ...x, status: "en_cours", progress: 0, error: "" }) : undefined,
+      confirmed: (r) => r,
+    });
+    if (res.ok) {
+      // What is typed meanwhile is kept: the server's options only replace the ones that were sent.
+      setO((cur) => (cur === envoye ? res.r.options : cur));
+      if (quoi === "rendu") setMessage({ texte: res.r.message, ko: false });
+    } else if (!res.skipped) {
+      setMessage({ texte: (res.error as any)?.message ?? t("common.error"), ko: true });
     }
   }
 
@@ -215,12 +225,12 @@ export default function Habillage() {
 
             {!lecture && (
               <div className="flex flex-wrap items-center gap-2.5 border-t border-line pt-4">
-                <Btn variante="ghost" disabled={bloque} onClick={() => agir("apercu")}>
-                  {occupe === "apercu" ? t("habillage.previewing") : t("habillage.previewDo")}
-                </Btn>
-                <Btn type="submit" disabled={bloque}>
+                <BusyBtn variante="ghost" disabled={bloque} busy={apercuEnCours} onClick={() => agir("apercu")}>
+                  {apercuEnCours ? t("habillage.previewing") : t("habillage.previewDo")}
+                </BusyBtn>
+                <BusyBtn type="submit" disabled={bloque && !enCours("rendu")} busy={enCours("rendu")}>
                   {etat.video_ready ? t("habillage.rerender") : t("habillage.render")}
-                </Btn>
+                </BusyBtn>
                 <span className="text-[0.82rem] text-muted">{t("habillage.renderHelp")}</span>
               </div>
             )}
@@ -238,10 +248,10 @@ export default function Habillage() {
             </div>
             {etat.preview_ready ? (
               <img src={`/api/v1/sermons/${kid}/habillage/apercu.jpg?v=${etat.preview_v}`} alt={t("habillage.preview")}
-                className={`block w-full rounded-[8px] bg-night ${occupe === "apercu" ? "opacity-50" : ""}`} />
+                className={`block w-full rounded-[8px] bg-night ${apercuEnCours ? "opacity-50" : ""}`} />
             ) : (
               <p className="m-0 rounded-[8px] border border-dashed border-line px-4 py-8 text-center text-[0.9rem] text-muted">
-                {occupe === "apercu" ? t("habillage.previewing") : t("habillage.previewEmpty")}
+                {apercuEnCours ? t("habillage.previewing") : t("habillage.previewEmpty")}
               </p>
             )}
           </Card>

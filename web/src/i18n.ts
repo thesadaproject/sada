@@ -125,7 +125,7 @@ const fr = {
     unreachableHint: "Aucun direct en cours : le moteur de diffusion n'est pas lancé.", noCommands: "Aucune commande manuelle.",
     janaza: "Déclarer une janaza", janazaName: "Nom du défunt", janazaInfo: "Mention (ex. 67 ans)",
     janazaSend: "Déclarer la janaza", more5: "+5 min", stop: "Arrêter", cancelDay: "Annuler aujourd'hui",
-    sceneChoose: "Choisir une scène", sceneApply: "Afficher",
+    sceneOnAir: "Scène", openRegie: "Ouvrir la régie",
     sessionN: "Session {{n}}/{{total}}", noSession: "Aucune session à venir",
     // Labels of the live commands, chosen by their key (the server only sends keys).
     // Engine states, chosen by their value: the server only sends the value.
@@ -933,7 +933,7 @@ const en: typeof fr = {
     unreachableHint: "No live in progress: the broadcast engine is not running.", noCommands: "No manual command.",
     janaza: "Declare a janaza", janazaName: "Name of the deceased", janazaInfo: "Note (e.g. 67 years old)",
     janazaSend: "Declare the janaza", more5: "+5 min", stop: "Stop", cancelDay: "Cancel today",
-    sceneChoose: "Choose a scene", sceneApply: "Show",
+    sceneOnAir: "Scene", openRegie: "Open the control room",
     sessionN: "Session {{n}}/{{total}}", noSession: "No upcoming session",
     state: {
       IDLE: "Idle", ARMED: "Armed (window open)", BEFORE: "Starting shortly",

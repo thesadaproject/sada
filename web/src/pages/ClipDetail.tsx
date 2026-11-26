@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useFenced, type Apply } from "../fenced";
+import { usePolling } from "../usePolling";
 import { Link, useParams } from "react-router-dom";
 import Player from "../Player";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
 import { auditActionKey } from "../i18n";
 import { Btn, Card, Field, Kicker, Pill, Segmented, inputClass } from "@sada/ui";
+import { BusyBtn } from "../BusyBtn";
 import { State } from "../State";
 import FormulaireClip from "../ClipBounds";
 import { ecrireInstant, lireInstant } from "../instant";
@@ -16,7 +19,13 @@ import { dateFr, mmss } from "../format";
  *  Under 1000 px, the two blocks stack. Everything needed to decide fits without scrolling. */
 
 type Message = { texte: string; ko: boolean } | null;
-type Agir = (action: () => Promise<any>, succes: string) => Promise<void>;
+/** Runs one action: `id` is its own wait (`decision:valide`, `correction:12`…), `apply` what it changes at once. */
+type Agir = (id: string, action: () => Promise<any>, succes: string, apply?: Apply<any>) => Promise<boolean>;
+/** Is this action in flight? With a trailing ":", any action of that group. */
+type EnCours = (id: string) => boolean;
+
+/** The sheet with one field of the clip changed. */
+const clipAvec = (champs: Record<string, unknown>): Apply<any> => (x) => ({ ...x, clip: { ...x.clip, ...champs } });
 
 /** A path from the machine is never displayed: only web addresses stay readable. */
 const estChemin = (v: unknown) => typeof v === "string" && /^(\/|~\/|[A-Za-z]:[\\/]|\\\\)/.test(v.trim());
@@ -28,41 +37,34 @@ export default function ClipDetail() {
   const { id } = useParams();
   const { t, i18n } = useTranslation();
   const cid = Number(id);
-  const [d, setD] = useState<any>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [onglet, setOnglet] = useState("decision");
   const [message, setMessage] = useState<Message>(null);
-  const [occupe, setOccupe] = useState(false);
+  // The sheet as the server gave it, fenced against reads that left before an action, with each
+  // action in flight shown on top (fenced.ts). Only the control of the action waits.
+  const charger = useCallback(() => api.clip(cid), [cid]);
+  const { data: d, enCours: attente, reload, run, reset } = useFenced<any>(charger);
 
   const recharger = useCallback(() =>
-    api.clip(cid).then((r) => { setD(r); setErreur(null); }).catch((e) => setErreur(e?.message ?? String(e))), [cid]);
+    reload().then((r) => { if (r) setErreur(null); }, (e) => setErreur(e?.message ?? String(e))), [reload]);
 
-  // Another clip: the sheet restarts from scratch.
+  // Another clip: the sheet restarts from scratch (answers about the previous one are dropped).
   const [cidVu, setCidVu] = useState(cid);
-  if (cidVu !== cid) { setCidVu(cid); setD(null); setMessage(null); setOnglet("decision"); }
-
-  useEffect(() => { recharger(); }, [recharger]);
+  if (cidVu !== cid) { setCidVu(cid); setMessage(null); setOnglet("decision"); }
+  useEffect(() => { reset(); recharger(); }, [cid, reset, recharger]);
 
   // Regeneration: the video is rebuilt on the server (about a minute), the sheet refreshes itself.
   const enCours = d?.clip?.regen_state === "en_cours";
-  useEffect(() => {
-    if (!enCours) return;
-    const minuteur = window.setTimeout(recharger, 4000);
-    return () => window.clearTimeout(minuteur);
-  }, [enCours, d, recharger]);
+  // A dropped (stale) read leaves `d` unchanged: the timer must not hang on it, hence usePolling.
+  usePolling(recharger, 4000, { enabled: enCours, immediate: false });
 
-  const agir: Agir = async (action, succes) => {
-    setOccupe(true);
+  const agir: Agir = async (id, action, succes, apply) => {
     setMessage(null);
-    try {
-      await action();
-      setMessage({ texte: succes, ko: false });
-      await recharger();
-    } catch (e: any) {
-      setMessage({ texte: e?.message ?? String(e), ko: true });
-    } finally {
-      setOccupe(false);
-    }
+    const res = await run(id, action, { apply });
+    if (res.ok) setMessage({ texte: succes, ko: false });
+    else if (!res.skipped) setMessage({ texte: (res.error as any)?.message ?? String(res.error), ko: true });
+    await recharger();
+    return res.ok;
   };
 
   if (!d) {
@@ -104,8 +106,9 @@ export default function ClipDetail() {
       {/* State of the video, above every tab (built by the server: `d.state`). */}
       <State
         state={d.state}
-        busy={occupe}
-        onAction={(a) => a.key === "regenerate" && agir(() => api.regenerer(c.id), t("clips.detail.regenStarted"))}
+        busy={attente("regenerate")}
+        onAction={(a) => a.key === "regenerate"
+          && agir("regenerate", () => api.regenerer(c.id), t("clips.detail.regenStarted"), clipAvec({ regen_state: "en_cours" }))}
       />
 
       <div className="grid items-start gap-4 min-[1000px]:grid-cols-[minmax(0,1.3fr)_minmax(360px,1fr)]">
@@ -127,11 +130,11 @@ export default function ClipDetail() {
           {message && <Bandeau ko={message.ko}>{message.texte}</Bandeau>}
 
           {ongletActif === "decision" && (
-            <Decision c={c} d={d} occupe={occupe} agir={agir} versPublication={() => setOnglet("publication")} />
+            <Decision c={c} d={d} enCours={attente} agir={agir} versPublication={() => setOnglet("publication")} />
           )}
-          {ongletActif === "sous-titres" && <SousTitres d={d} occupe={occupe} agir={agir} />}
-          {ongletActif === "bornes" && <Bornes d={d} occupe={occupe} agir={agir} />}
-          {ongletActif === "publication" && <Publication d={d} occupe={occupe} agir={agir} />}
+          {ongletActif === "sous-titres" && <SousTitres d={d} enCours={attente} agir={agir} />}
+          {ongletActif === "bornes" && <Bornes d={d} enCours={attente} agir={agir} />}
+          {ongletActif === "publication" && <Publication d={d} enCours={attente} agir={agir} />}
           {ongletActif === "historique" && <Historique d={d} />}
         </Card>
       </div>
@@ -296,8 +299,8 @@ function Ligne({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function Decision({ c, d, occupe, agir, versPublication }: {
-  c: any; d: any; occupe: boolean; agir: Agir; versPublication: () => void;
+function Decision({ c, d, enCours: attente, agir, versPublication }: {
+  c: any; d: any; enCours: EnCours; agir: Agir; versPublication: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const [motif, setMotif] = useState("");
@@ -308,6 +311,10 @@ function Decision({ c, d, occupe, agir, versPublication }: {
   const duree = Math.round(c.end - c.start);
   const contexte = d.contexte ?? { theme: "", avant: [], versets: [] };
   const contexteActif = Boolean(contexte.theme || contexte.avant.length || contexte.versets.length);
+  // The decision shows at once (the status changes); its buttons wait together, as they exclude each other.
+  const decision = attente("decision:");
+  const decider = (valeur: string, succes: string, champs: Record<string, unknown>, motifEnvoye = "") =>
+    agir(`decision:${valeur}`, () => api.decision(c.id, valeur, motifEnvoye), succes, clipAvec(champs));
 
   return (
     <div className="grid gap-3.5">
@@ -361,13 +368,14 @@ function Decision({ c, d, occupe, agir, versPublication }: {
 
       {aValider && (
         <div className="grid gap-2.5 border-t border-line pt-3.5">
-          <Btn
+          <BusyBtn
             variante={aRegenerer ? "ghost" : "plein"}
-            disabled={occupe || !valider || enCours}
-            onClick={() => agir(() => api.decision(c.id, "valide"), t("clips.detail.validated"))}
+            busy={decision}
+            disabled={!decision && (!valider || enCours)}
+            onClick={() => decider("valide", t("clips.detail.validated"), { status: "valide" })}
           >
             {t("clips.detail.validate")}
-          </Btn>
+          </BusyBtn>
           {!valider && !aRegenerer && (
             <p className="m-0 text-[0.82rem] text-muted">{t("clips.detail.validateBlocked")}</p>
           )}
@@ -379,14 +387,14 @@ function Decision({ c, d, occupe, agir, versPublication }: {
               value={motif}
               onChange={(e) => setMotif(e.target.value)}
             />
-            <Btn
+            <BusyBtn
               variante="dangerGhost"
               className="shrink-0"
-              disabled={occupe}
-              onClick={() => agir(() => api.decision(c.id, "rejete", motif), t("clips.detail.rejected"))}
+              busy={decision}
+              onClick={() => decider("rejete", t("clips.detail.rejected"), { status: "rejete", reject_reason: motif }, motif)}
             >
               {t("clips.detail.reject")}
-            </Btn>
+            </BusyBtn>
           </div>
         </div>
       )}
@@ -396,13 +404,13 @@ function Decision({ c, d, occupe, agir, versPublication }: {
           {c.status === "valide" && oui(d.can_publish) && (
             <Btn onClick={versPublication}>{t("clips.detail.goPublish")}</Btn>
           )}
-          <Btn
+          <BusyBtn
             variante="ghost"
-            disabled={occupe}
-            onClick={() => agir(() => api.decision(c.id, "rouvrir"), t("clips.detail.reopened"))}
+            busy={decision}
+            onClick={() => decider("rouvrir", t("clips.detail.reopened"), { status: "a_valider" })}
           >
             {t("clips.detail.reopen")}
-          </Btn>
+          </BusyBtn>
         </div>
       )}
 
@@ -411,7 +419,7 @@ function Decision({ c, d, occupe, agir, versPublication }: {
   );
 }
 
-function SousTitres({ d, occupe, agir }: { d: any; occupe: boolean; agir: Agir }) {
+function SousTitres({ d, enCours, agir }: { d: any; enCours: EnCours; agir: Agir }) {
   const { t } = useTranslation();
   const [saisie, setSaisie] = useState<Record<number, string>>({});
   const lignes = useMemo(() => d.segments ?? [], [d]);
@@ -421,7 +429,7 @@ function SousTitres({ d, occupe, agir }: { d: any; occupe: boolean; agir: Agir }
   return (
     <div className="grid gap-2">
       <p className="m-0 text-[0.82rem] leading-snug text-muted">{t("clips.detail.subtitlesHelp")}</p>
-      {modifiable && <AjoutSousTitre d={d} occupe={occupe} agir={agir} />}
+      {modifiable && <AjoutSousTitre d={d} enCours={enCours} agir={agir} />}
       {!lignes.length && <p className="m-0 text-[0.9rem] text-muted">{t("clips.detail.noSubtitles")}</p>}
       <ul className="m-0 grid list-none p-0">
         {lignes.map((r: any) => {
@@ -442,8 +450,9 @@ function SousTitres({ d, occupe, agir }: { d: any; occupe: boolean; agir: Agir }
                       <button
                         type="button"
                         className="ml-auto cursor-pointer border-0 bg-transparent p-0 text-[0.76rem] text-deep underline underline-offset-2 disabled:opacity-50"
-                        disabled={occupe}
-                        onClick={() => agir(() => api.retirerSousTitre(d.sermon.id, r.added), t("clips.detail.removed"))}
+                        aria-busy={enCours(`retrait:${r.added}`) || undefined}
+                        onClick={() => agir(`retrait:${r.added}`, () => api.retirerSousTitre(d.sermon.id, r.added), t("clips.detail.removed"),
+                          (x) => ({ ...x, segments: (x.segments ?? []).filter((s: any) => s.added !== r.added) }))}
                       >
                         {t("clips.detail.remove")}
                       </button>
@@ -461,14 +470,17 @@ function SousTitres({ d, occupe, agir }: { d: any; occupe: boolean; agir: Agir }
                     value={valeur}
                     onChange={(e) => setSaisie({ ...saisie, [r.i]: e.target.value })}
                   />
-                  <Btn
-                    variante={change ? "plein" : "ghost"}
+                  <BusyBtn
+                    variante={change || enCours(`correction:${r.i}`) ? "plein" : "ghost"}
                     className="min-h-9 shrink-0 px-3 py-1 text-[0.85rem]"
-                    disabled={occupe || !change}
-                    onClick={() => agir(() => api.correction(d.sermon.id, r.i, r.field, valeur), t("clips.detail.saved"))}
+                    busy={enCours(`correction:${r.i}`)}
+                    disabled={!change && !enCours(`correction:${r.i}`)}
+                    onClick={() => agir(`correction:${r.i}`, () => api.correction(d.sermon.id, r.i, r.field, valeur), t("clips.detail.saved"),
+                      (x) => ({ ...x, segments: (x.segments ?? []).map((s: any) =>
+                        s.i === r.i ? { ...s, [r.field === "fr" ? "fr" : "text"]: valeur, corrected: true } : s) }))}
                   >
                     {t("common.save")}
-                  </Btn>
+                  </BusyBtn>
                 </div>
               )}
             </li>
@@ -481,7 +493,7 @@ function SousTitres({ d, occupe, agir }: { d: any; occupe: boolean; agir: Agir }
 
 /** Bounds of the clip, in the khutba's time. "Here" reads the clip being played (moving the end
  *  earlier, the start later); to look further, the khutba video opens with this clip ready to adjust. */
-function Bornes({ d, occupe, agir }: { d: any; occupe: boolean; agir: Agir }) {
+function Bornes({ d, enCours, agir }: { d: any; enCours: EnCours; agir: Agir }) {
   const { t } = useTranslation();
   const c = d.clip;
   const lim = d.clip_limits ?? { min: 5, max: 180, duration: null };
@@ -504,8 +516,8 @@ function Bornes({ d, occupe, agir }: { d: any; occupe: boolean; agir: Agir }) {
         initial={{ start: c.start, end: c.end, title: c.title ?? "", kind: c.kind }}
         kinds={[]} min={lim.min} max={lim.max} duree={lim.duration}
         ici={() => c.start + (document.querySelector("video")?.currentTime ?? 0)}
-        occupe={occupe}
-        onSubmit={(v) => agir(() => api.bornesClip(c.id, v.start, v.end, v.title), t("clipForm.savedOk"))}
+        occupe={enCours("bornes")}
+        onSubmit={async (v) => { await agir("bornes", () => api.bornesClip(c.id, v.start, v.end, v.title), t("clipForm.savedOk")); }}
       />
     </div>
   );
@@ -513,7 +525,7 @@ function Bornes({ d, occupe, agir }: { d: any; occupe: boolean; agir: Agir }) {
 
 /** Adds a subtitle at a precise instant of the clip (a passage the transcription skipped).
  *  Times are read in the clip; "Here" takes the current position of the player. */
-function AjoutSousTitre({ d, occupe, agir }: { d: any; occupe: boolean; agir: Agir }) {
+function AjoutSousTitre({ d, enCours, agir }: { d: any; enCours: EnCours; agir: Agir }) {
   const { t } = useTranslation();
   const [debut, setDebut] = useState("");
   const [fin, setFin] = useState("");
@@ -522,7 +534,7 @@ function AjoutSousTitre({ d, occupe, agir }: { d: any; occupe: boolean; agir: Ag
   const a = lireInstant(debut), b = lireInstant(fin);
   const pret = !Number.isNaN(a) && !Number.isNaN(b) && b > a && texte.trim().length > 0;
   const ajouter = () =>
-    agir(async () => {
+    agir("ajout", async () => {
       await api.ajouterSousTitre(d.sermon.id, d.clip.start + a, d.clip.start + b, texte);
       setDebut(""); setFin(""); setTexte("");
     }, t("clips.detail.addedOk"));
@@ -547,16 +559,16 @@ function AjoutSousTitre({ d, occupe, agir }: { d: any; occupe: boolean; agir: Ag
       <div className="flex items-center gap-1.5">
         <input aria-label={t("clips.detail.addText")} placeholder={t("clips.detail.addText")} dir="auto"
                className={`${inputClass} py-1.5 text-[0.88rem]`} value={texte} onChange={(e) => setTexte(e.target.value)} />
-        <Btn variante={pret ? "plein" : "ghost"} className="min-h-9 shrink-0 px-3 py-1 text-[0.85rem]"
-             disabled={occupe || !pret} onClick={ajouter}>
+        <BusyBtn variante={pret || enCours("ajout") ? "plein" : "ghost"} className="min-h-9 shrink-0 px-3 py-1 text-[0.85rem]"
+             busy={enCours("ajout")} disabled={!pret && !enCours("ajout")} onClick={ajouter}>
           {t("clips.detail.add")}
-        </Btn>
+        </BusyBtn>
       </div>
     </div>
   );
 }
 
-function Publication({ d, occupe, agir }: { d: any; occupe: boolean; agir: Agir }) {
+function Publication({ d, enCours, agir }: { d: any; enCours: EnCours; agir: Agir }) {
   const { t, i18n } = useTranslation();
   const connecteurs = d.connectors ?? [];
   const dispo = connecteurs.filter((x: any) => oui(x.available));
@@ -583,9 +595,9 @@ function Publication({ d, occupe, agir }: { d: any; occupe: boolean; agir: Agir 
           onChange={(e) => setLegende(e.target.value)}
         />
       </Field>
-      <Btn disabled={occupe || !dispo.length} onClick={() => agir(() => api.publier(d.clip.id, dest, legende), t("clips.detail.publishedOk"))}>
+      <BusyBtn busy={enCours("publier")} disabled={!dispo.length} onClick={() => agir("publier", () => api.publier(d.clip.id, dest, legende), t("clips.detail.publishedOk"))}>
         {t("clips.detail.publishBtn")}
-      </Btn>
+      </BusyBtn>
 
       {pubs.length > 0 && (
         <div className="border-t border-line pt-3">

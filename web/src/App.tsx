@@ -7,6 +7,8 @@ import FirstPassword from "./pages/FirstPassword";
 import MosquePicker from "./pages/MosquePicker";
 import { setCurrentSession } from "./session";
 import TopBar from "./TopBar";
+import { useAppDispatch } from "./store";
+import { liveReset } from "./store/liveSlice";
 
 // Each screen is its own chunk: signing in only downloads the shell, then the page being opened.
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -35,6 +37,11 @@ export default function App() {
   const navigate = useNavigate();
   const demarragePropose = useRef(false);
   const { pathname } = useLocation();
+  const dispatch = useAppDispatch();
+  const mosqueId = session?.mosque?.id ?? null;
+
+  // The live state belongs to one mosque: another one (or signing out) starts from nothing.
+  useEffect(() => { dispatch(liveReset()); }, [mosqueId, dispatch]);
 
   useEffect(() => {
     api.session()

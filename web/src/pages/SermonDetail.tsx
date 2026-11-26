@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useFenced, type Apply } from "../fenced";
+import { usePolling } from "../usePolling";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import FormulaireClip from "../ClipBounds";
 import Player from "../Player";
@@ -21,7 +23,10 @@ export default function SermonDetail() {
   const { id } = useParams();
   const kid = Number(id);
   const { t, i18n } = useTranslation();
-  const [d, setD] = useState<any | null>(null);
+  // The sheet as the server gave it, fenced against reads that left before a write, with each write
+  // in flight shown on top (fenced.ts): a correction stays on screen while the 5 s refresh runs.
+  const charger = useCallback(() => api.sermon(kid), [kid]);
+  const { data: d, reload, run, reset } = useFenced<any>(charger);
   const [erreur, setErreur] = useState<string | null>(null);
   const [onglet, setOnglet] = useState("transcription");
   const [message, setMessage] = useState<Message>(null);
@@ -29,7 +34,9 @@ export default function SermonDetail() {
   // ?clip=<id>: arriving from a clip sheet to move its bounds on the khutba video
   const [params, setParams] = useSearchParams();
   const ajuste = Number(params.get("clip")) || null;
-  useEffect(() => { if (ajuste) setOnglet("clip"); }, [ajuste]);
+  // Adjusted while rendering when ?clip= changes (React's pattern for state derived from the URL).
+  const [ajusteVu, setAjusteVu] = useState<number | null>(null);
+  if (ajuste && ajuste !== ajusteVu) { setAjusteVu(ajuste); setOnglet("clip"); }
   const video = useRef<HTMLVideoElement | null>(null);
   // ?t=<seconds>: arriving from a search result, the player opens on the passage (once).
   const depart = params.has("t") ? Math.max(0, Number(params.get("t")) || 0) : null;
@@ -45,32 +52,27 @@ export default function SermonDetail() {
   const peutAssigner = perms.includes("assign");
 
   const recharger = () =>
-    api.sermon(kid).then(setD).catch((e) => setErreur(e?.message ?? t("common.error")));
+    reload().catch((e) => setErreur(e?.message ?? t("common.error")));
 
+  // Another khutba: start from nothing; answers about the previous one are dropped.
   useEffect(() => {
-    recharger();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kid]);
+    reset();
+    reload().catch((e) => setErreur(e?.message ?? t("common.error")));
+  }, [kid, reset, reload, t]);
 
   // While something runs (processing, a clip being rendered), the sheet refreshes itself.
   const running = d?.state?.level === "running";
-  useEffect(() => {
-    if (!running) return;
-    const timer = window.setTimeout(recharger, 5000);
-    return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running, d]);
+  // A dropped (stale) read leaves `d` unchanged: the timer must not hang on it, hence usePolling.
+  usePolling(recharger, 5000, { enabled: running, immediate: false });
 
-  /** A write (correction, assignment): server message, then the sheet is reloaded. */
-  const enregistrer = async (action: () => Promise<any>) => {
+  /** A write (correction, assignment): shown at once, server message, then the sheet is reloaded.
+   *  `id` keys its wait; a refusal only takes back this write. */
+  const enregistrer = async (id: string, action: () => Promise<any>, apply?: Apply<any>) => {
     setMessage(null);
-    try {
-      const r = await action();
-      setMessage({ texte: r?.message ?? t("sermons.detail.saved"), ko: false });
-      await recharger();
-    } catch (e: any) {
-      setMessage({ texte: e?.message ?? t("common.error"), ko: true });
-    }
+    const res = await run(id, action, { apply });
+    if (res.ok) setMessage({ texte: res.r?.message ?? t("sermons.detail.saved"), ko: false });
+    else if (!res.skipped) setMessage({ texte: (res.error as any)?.message ?? t("common.error"), ko: true });
+    await recharger();
   };
 
   /** Brings the video to the passage and plays it: this is how a correction is checked by ear. */
@@ -298,7 +300,9 @@ export default function SermonDetail() {
                 video={avecVideo}
                 peutCorriger={peutCorriger}
                 aller={aller}
-                corriger={(r, valeur) => enregistrer(() => api.correction(kid, r.i, r.field, valeur))}
+                corriger={(r, valeur) => enregistrer(`correction:${r.i}`, () => api.correction(kid, r.i, r.field, valeur),
+                  (x) => ({ ...x, transcript: (x.transcript ?? []).map((l: any) =>
+                    l.i === r.i ? { ...l, [r.field === "fr" ? "fr" : "text"]: valeur, corrected: true } : l) }))}
               />
             )}
             {ongletActif === "versets" && <Versets versets={d.verses} video={avecVideo} aller={aller} />}
@@ -357,7 +361,8 @@ export default function SermonDetail() {
                 imams={d.imams ?? []}
                 imamId={k.imam_id ? String(k.imam_id) : ""}
                 intervenant={k.speaker ?? ""}
-                onSave={(imamId, speaker) => enregistrer(() => api.intervenant(kid, imamId, speaker))}
+                onSave={(imamId, speaker) => enregistrer("intervenant", () => api.intervenant(kid, imamId, speaker),
+                  (x) => ({ ...x, sermon: { ...x.sermon, imam_id: imamId || null, speaker } }))}
               />
             )}
           </div>

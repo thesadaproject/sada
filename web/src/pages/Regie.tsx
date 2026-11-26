@@ -1,29 +1,31 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { api } from "../api";
 import { playMonitor, type MonitorState } from "../monitor";
 import { Btn } from "@sada/ui";
+import { BusyBtn } from "../BusyBtn";
 import { currentSession } from "../session";
 import { useConfirm } from "../confirmContext";
 import { nombre } from "../format";
 import { usePolling, useNow } from "../usePolling";
+import { useAppDispatch, useAppSelector } from "../store";
+import {
+  actionId, selectConfirmed, selectPending, selectReadAt, selectRetour, selectView,
+  type Health, type Live, type SceneInfo,
+} from "../store/liveSlice";
+import { fetchRegie, sendCommand, takeover, toggleMute } from "../store/liveThunks";
 
 /** Control room (“Régie”): two monitors, the scene grid and the transport of the live.
  *
  *  Preview = raw feed of the mosque, Programme = what goes on air. Both are played through the back
  *  office (WebRTC, HLS fallback), which only serves the mosque of the session to the `live` right. */
 
-type Health = { online: boolean; kbps?: number | null; readers?: number } | null;
-type Live = {
-  ok?: boolean; state?: string; scene?: string | null; clock?: string | null;
-  session?: { n?: number | null; total?: number; planned?: string | null; started?: string | null } | null;
-  has_sessions?: boolean; next_session?: string | null; stream_on?: boolean; override?: boolean; paused?: boolean;
-  last_reason?: string; janaza_name?: string | null; janaza_info?: string | null;
-  mic?: boolean; mic_muted?: boolean; audio_level_db?: number | null;
-  tarawih?: { night?: number | null; mode?: string; reciters: string[]; reciter?: string | null } | null;
-};
-type AudioState = { mic_on: boolean; muted: boolean; level_db: number | null };
-type Commande = { key: string; destructive: boolean; choices: string[] };
+/** Full screen (the feed is hidden) or drawn over the camera: the server says it with `scene_kind`;
+ *  an older server does not, and only the khutba and the dars keep the camera then. */
+function pleinEcran(sc: string, scenes: SceneInfo[]): boolean {
+  const k = scenes.find((x) => x.id === sc)?.scene_kind;
+  if (k) return k === "full";
+  return sc !== "khutba" && sc !== "dars";
+}
 
 /** "HH:MM:SS" -> seconds of the day. */
 function secondes(h?: string | null): number | null {
@@ -177,79 +179,39 @@ function LiveFacts({ live, lu }: { live: Live; lu: number }) {
 function RegieEcran() {
   const { t } = useTranslation();
   const confirm = useConfirm();
-  const [live, setLive] = useState<Live | null>(null);
-  const [commandes, setCommandes] = useState<Commande[]>([]);
-  const [moniteurs, setMoniteurs] = useState<Record<string, { available: boolean; health: Health }>>({});
-  const [lu, setLu] = useState(() => Date.now());
-  const [occupe, setOccupe] = useState(false);
-  const [retour, setRetour] = useState<{ ok: boolean; texte: string } | null>(null);
+  const dispatch = useAppDispatch();
+  // What is shown: the confirmed state with the actions in flight on top (see store/liveSlice.ts).
+  const vue = useAppSelector(selectView);
+  const confirme = useAppSelector(selectConfirmed);
+  const pending = useAppSelector(selectPending);
+  const lu = useAppSelector(selectReadAt);
+  const retour = useAppSelector(selectRetour);
   const [nom, setNom] = useState("");
   const [mention, setMention] = useState("");
   const [prepa, setPrepa] = useState<string | null>(null);
-  const [audio, setAudio] = useState<AudioState>({ mic_on: false, muted: false, level_db: null });
-  // Who already publishes (a device, the OBS key, another control room): one publisher per mosque.
-  const [editeur, setEditeur] = useState<{ source: string; label: string; text: string } | null>(null);
 
-  // State refreshed every 3 s, paused while the tab is hidden; the clock ticks in LiveFacts.
-  usePolling(async () => {
-    try {
-      const d = await api.regie();
-      setLive(d.live ?? {}); setLu(Date.now());
-      setCommandes(d.commands ?? []);
-      setMoniteurs(d.monitors ?? {});
-      setEditeur(d.publisher ?? null);
-      if (d.audio) {
-        setAudio({
-          mic_on: Boolean(d.audio.mic_on),
-          muted: Boolean(d.audio.muted),
-          level_db: typeof d.audio.level_db === "number" ? d.audio.level_db : null,
-        });
-      } else if (d.live) {
-        setAudio({
-          mic_on: Boolean(d.live.mic),
-          muted: Boolean(d.live.mic_muted),
-          level_db: typeof d.live.audio_level_db === "number" ? d.live.audio_level_db : null,
-        });
-      }
-    } catch {
-      setLive((v) => v ?? { ok: false });
-    }
-  }, 3000);
+  // State refreshed every 3 s, paused while the tab is hidden; the clock ticks in LiveFacts. A poll
+  // that left before a command (or older than the last `rev`) is dropped by the slice.
+  usePolling(() => dispatch(fetchRegie()), 3000);
+
+  // The staged scene leaves the preview once the server confirms it on air, not when the click leaves.
+  const sceneConfirmee = confirme?.live.scene ?? null;
+  const prisePending = Object.keys(pending).some((k) => k.startsWith("scene:"));
+  // Adjusted while rendering (React's pattern for state derived from props), not in an effect.
+  if (prepa && sceneConfirmee === prepa && !prisePending) setPrepa(null);
+
+  const enCours = (key: string, valeur?: string) => Boolean(pending[actionId(key, valeur)]);
 
   async function envoyer(key: string, corps: Record<string, string> = {}) {
-    const c = commandes.find((x) => x.key === key);
+    const c = vue?.commands.find((x) => x.key === key);
     if (!c) return;
     if (c.destructive && !(await confirm({ message: t(`dashboard.confirm.${key}`), action: t(`dashboard.cmd.${key}`) }))) return;
-    setOccupe(true);
-    setRetour(null);
-    try {
-      const r = await api.liveCommande(key, corps);
-      setRetour({ ok: true, texte: r.message });
-      if (r.live) { setLive(r.live); setLu(Date.now()); }
-      if (key === "scene") setPrepa(null);
-    } catch (e: any) {
-      setRetour({ ok: false, texte: e?.message ?? t("common.error") });
-    } finally {
-      setOccupe(false);
-    }
+    await dispatch(sendCommand(key, corps));
   }
 
-  async function basculerMuet() {
-    setOccupe(true);
-    setRetour(null);
-    const nextMuted = !audio.muted;
-    try {
-      await api.regieMute(nextMuted);
-      setAudio((a) => ({ ...a, muted: nextMuted, mic_on: nextMuted ? false : a.mic_on }));
-      setRetour({ ok: true, texte: nextMuted ? t("regie.micMuted") : t("regie.micLive") });
-    } catch (e: any) {
-      setRetour({ ok: false, texte: e?.message ?? t("common.error") });
-    } finally {
-      setOccupe(false);
-    }
-  }
-
-  if (!live) return <p className="py-16 text-center text-muted">{t("common.loading")}</p>;
+  if (!vue) return <p className="py-16 text-center text-muted">{t("common.loading")}</p>;
+  const { live, commands: commandes, monitors: moniteurs, audio, publisher: editeur, scenes: infos } = vue;
+  const texteRetour = retour && (retour.texte ?? (retour.cle ? t(retour.cle) : ""));
 
   const horsService = live.ok === false;
   const etat = horsService
@@ -262,7 +224,7 @@ function RegieEcran() {
   const panneau = "rounded-[10px] bg-night p-4 text-night-ink";
   const enDirect = !!live.stream_on;
   const enPause = !!live.paused;
-  const plein = (sc: string) => sc !== "khutba" && sc !== "dars";
+  const plein = (sc: string) => pleinEcran(sc, infos);
   const petit = "min-h-9 px-3 py-1.5 text-[0.9rem]";
 
   return (
@@ -299,15 +261,15 @@ function RegieEcran() {
                 </span>
               </div>
             )}
-            <Btn
+            <BusyBtn
               variante={audio.muted ? "danger" : "light"}
               className="min-h-9 px-3 py-1 text-[0.85rem]"
               aria-pressed={audio.muted}
-              disabled={occupe}
-              onClick={() => void basculerMuet()}
+              busy={enCours("mute")}
+              onClick={() => void dispatch(toggleMute(!audio.muted))}
             >
               {audio.muted ? t("regie.micUnmute") : t("regie.micMute")}
-            </Btn>
+            </BusyBtn>
           </div>
         )}
         {horsService && <p className="m-0 text-[0.9rem] text-night-muted">{t("dashboard.unreachableHint")}</p>}
@@ -319,16 +281,13 @@ function RegieEcran() {
           <span className="font-semibold">{t("devices.liveRunning", { source: editeur.text })}</span>
           <span className="text-night-muted">{t("devices.liveRunningHint")}</span>
           {currentSession()?.user.permissions.includes("admin") && (
-            <Btn variante="danger" className="ml-auto min-h-9 px-3 py-1 text-[0.88rem]" disabled={occupe}
+            <BusyBtn variante="danger" className="ml-auto min-h-9 px-3 py-1 text-[0.88rem]" busy={enCours("takeover")}
                  onClick={async () => {
                    if (!(await confirm({ message: t("devices.takeoverConfirm", { source: editeur.text }), action: t("devices.takeover") }))) return;
-                   setOccupe(true);
-                   try { const r = await api.studioTakeover(); setRetour({ ok: true, texte: r.message }); setEditeur(null); }
-                   catch (e: any) { setRetour({ ok: false, texte: e?.message ?? t("common.error") }); }
-                   finally { setOccupe(false); }
+                   await dispatch(takeover());
                  }}>
               {t("devices.takeover")}
-            </Btn>
+            </BusyBtn>
           )}
         </section>
       )}
@@ -341,8 +300,8 @@ function RegieEcran() {
                     prepa={prepa ? { scene: prepa, plein: plein(prepa) } : null}
                     actions={prepa && (
                       <>
-                        <Btn variante="light" className="min-h-8 px-2.5 py-1 text-[0.85rem]" disabled={occupe} onClick={() => setPrepa(null)}>{t("regie.unstage")}</Btn>
-                        <Btn variante="leaf" className="min-h-8 px-2.5 py-1 text-[0.85rem]" disabled={occupe} onClick={() => envoyer("scene", { valeur: prepa })}>{t("regie.take")}</Btn>
+                        <Btn variante="light" className="min-h-8 px-2.5 py-1 text-[0.85rem]" onClick={() => setPrepa(null)}>{t("regie.unstage")}</Btn>
+                        <BusyBtn variante="leaf" className="min-h-8 px-2.5 py-1 text-[0.85rem]" busy={enCours("scene", prepa)} onClick={() => envoyer("scene", { valeur: prepa })}>{t("regie.take")}</BusyBtn>
                       </>
                     )} />
         <Moniteur which="program" titre={t("regie.program")} sousTitre={t("regie.programHint")}
@@ -358,7 +317,7 @@ function RegieEcran() {
               const actif = live.scene === sc;
               const prete = prepa === sc;
               return (
-                <button key={sc} type="button" disabled={occupe} aria-pressed={prete}
+                <button key={sc} type="button" aria-pressed={prete} aria-busy={enCours("scene", sc) || undefined}
                         onClick={() => setPrepa(prete || actif ? null : sc)}
                         className={`flex min-h-12 cursor-pointer flex-col items-start justify-center rounded-lg border px-2.5 py-1.5 text-left transition-colors disabled:cursor-not-allowed ${
                           actif ? "border-live bg-live/20 text-white"
@@ -380,24 +339,25 @@ function RegieEcran() {
           <h2 className="m-0 text-[0.75rem] font-semibold uppercase tracking-[0.12em] text-leaf">{t("regie.transport")}</h2>
           <div className="flex flex-wrap gap-2">
             {/* The transport follows the state: start only off air, pause or resume depending on the pause. */}
-            {a("start") && !enDirect && <Btn variante="leaf" className={petit} disabled={occupe} onClick={() => envoyer("start")}>{t("dashboard.cmd.start")}</Btn>}
-            {a("pause") && enDirect && !enPause && <Btn variante="light" className={petit} disabled={occupe} onClick={() => envoyer("pause")}>{t("dashboard.cmd.pause")}</Btn>}
-            {a("resume") && enPause && <Btn variante="leaf" className={petit} disabled={occupe} onClick={() => envoyer("resume")}>{t("dashboard.cmd.resume")}</Btn>}
+            {a("start") && !enDirect && <BusyBtn variante="leaf" className={petit} busy={enCours("start")} onClick={() => envoyer("start")}>{t("dashboard.cmd.start")}</BusyBtn>}
+            {a("pause") && enDirect && !enPause && <BusyBtn variante="light" className={petit} busy={enCours("pause")} onClick={() => envoyer("pause")}>{t("dashboard.cmd.pause")}</BusyBtn>}
+            {a("resume") && enPause && <BusyBtn variante="leaf" className={petit} busy={enCours("resume")} onClick={() => envoyer("resume")}>{t("dashboard.cmd.resume")}</BusyBtn>}
             {extend.map((m) => (
-              <Btn key={m} variante="light" className={petit} disabled={occupe} onClick={() => envoyer("extend", { valeur: m })}>{t(`dashboard.choice.${m}`)}</Btn>
+              <BusyBtn key={m} variante="light" className={petit} busy={enCours("extend", m)} onClick={() => envoyer("extend", { valeur: m })}>{t(`dashboard.choice.${m}`)}</BusyBtn>
             ))}
-            {a("skip") && <Btn variante="light" className={petit} disabled={occupe} onClick={() => envoyer("skip")}>{t("regie.skip")}</Btn>}
+            {a("skip") && <BusyBtn variante="light" className={petit} busy={enCours("skip")} onClick={() => envoyer("skip")}>{t("regie.skip")}</BusyBtn>}
             {a("auto") && (
-              <Btn variante={live.override ? "leaf" : "light"} className={petit} disabled={occupe || !live.override} onClick={() => envoyer("auto")}>
+              <BusyBtn variante={live.override || enCours("auto") ? "leaf" : "light"} className={petit} busy={enCours("auto")}
+                       disabled={!live.override && !enCours("auto")} onClick={() => envoyer("auto")}>
                 {live.override ? t("regie.autoResume") : t("regie.autoOn")}
-              </Btn>
+              </BusyBtn>
             )}
           </div>
           <div className="flex flex-wrap gap-2 border-t border-white/10 pt-2.5">
-            {a("stop") && <Btn variante="danger" className={petit} disabled={occupe} onClick={() => envoyer("stop")}>{t("dashboard.cmd.stop")}</Btn>}
-            {a("cancel") && <Btn variante="danger" className={petit} disabled={occupe} onClick={() => envoyer("cancel")}>{t("dashboard.cmd.cancel")}</Btn>}
+            {a("stop") && <BusyBtn variante="danger" className={petit} busy={enCours("stop")} onClick={() => envoyer("stop")}>{t("dashboard.cmd.stop")}</BusyBtn>}
+            {a("cancel") && <BusyBtn variante="danger" className={petit} busy={enCours("cancel")} onClick={() => envoyer("cancel")}>{t("dashboard.cmd.cancel")}</BusyBtn>}
           </div>
-          {retour && <p role="status" className={`m-0 text-[0.88rem] ${retour.ok ? "text-leaf" : "text-[#ff9b94]"}`}>{retour.texte}</p>}
+          {retour && texteRetour && <p role="status" className={`m-0 text-[0.88rem] ${retour.ok ? "text-leaf" : "text-[#ff9b94]"}`}>{texteRetour}</p>}
         </section>
 
         {live.tarawih && (a("tarawih") || a("next_reciter")) && (
@@ -416,10 +376,10 @@ function RegieEcran() {
             )}
             <div className="flex flex-wrap gap-2">
               {a("tarawih") && live.state !== "TARAWIH" && (
-                <Btn variante="leaf" className={petit} disabled={occupe} onClick={() => envoyer("tarawih")}>{t("dashboard.cmd.tarawih")}</Btn>
+                <BusyBtn variante="leaf" className={petit} busy={enCours("tarawih")} onClick={() => envoyer("tarawih")}>{t("dashboard.cmd.tarawih")}</BusyBtn>
               )}
               {a("next_reciter") && live.state === "TARAWIH" && live.tarawih.reciters.length > 0 && (
-                <Btn variante="light" className={petit} disabled={occupe} onClick={() => envoyer("next_reciter")}>{t("dashboard.cmd.next_reciter")}</Btn>
+                <BusyBtn variante="light" className={petit} busy={enCours("next_reciter")} onClick={() => envoyer("next_reciter")}>{t("dashboard.cmd.next_reciter")}</BusyBtn>
               )}
             </div>
             <p className="m-0 text-[0.76rem] leading-snug text-night-muted">{t("regie.tarawihHint")}</p>
@@ -438,10 +398,10 @@ function RegieEcran() {
                    placeholder={t("dashboard.janazaName")} value={nom} maxLength={80} onChange={(e) => setNom(e.target.value)} />
             <input className="rounded-md border border-white/25 bg-white/10 px-2.5 py-1.5 text-[0.9rem] text-white placeholder:text-night-muted max-md:min-h-11"
                    placeholder={t("dashboard.janazaInfo")} value={mention} maxLength={60} onChange={(e) => setMention(e.target.value)} />
-            <Btn variante="leaf" className={`${petit} justify-self-start`} disabled={occupe || !nom.trim()}
+            <BusyBtn variante="leaf" className={`${petit} justify-self-start`} busy={enCours("janaza")} disabled={!nom.trim()}
                  onClick={() => envoyer("janaza", { name: nom.trim(), info: mention.trim() })}>
               {t("dashboard.janazaSend")}
-            </Btn>
+            </BusyBtn>
             <p className="m-0 text-[0.76rem] leading-snug text-night-muted">{t("regie.janazaHint")}</p>
           </section>
         )}
