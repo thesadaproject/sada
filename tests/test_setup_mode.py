@@ -398,7 +398,7 @@ def test_the_background_stays_in_memory_unless_a_template_needs_it_re_read(tmp_p
     reread = cmd_of(enc_mod.Encoder(cfg(), tmp_path, reload_background=True))
     graph = reread[reread.index("-filter_complex") + 1]
     assert "loop=loop" not in graph
-    assert f"[1:v]format=rgba,colorchannelmixer@fond=aa=" in graph
+    assert "[1:v]format=rgba,colorchannelmixer@fond=aa=" in graph
     assert f",fps={cfg().fps}[fond]" in graph
 
 
