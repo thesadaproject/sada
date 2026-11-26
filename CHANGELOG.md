@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.21](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.20...sada-v0.1.0-alpha.21) (2026-11-26)
+
+
+### Features
+
+* **live:** the studio composes its own picture, the server keeps the state ([#101](https://github.com/thesadaproject/sada/issues/101)) ([0326206](https://github.com/thesadaproject/sada/commit/0326206458a1ef3d3b46a517aa22cffda468f531))
+
 ## [0.1.0-alpha.20](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.19...sada-v0.1.0-alpha.20) (2026-11-26)
 
 
