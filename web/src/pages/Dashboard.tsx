@@ -4,12 +4,10 @@ import { Link } from "react-router-dom";
 import { api, ApiError, type Traitement } from "../api";
 import { currentSession } from "../session";
 import { Btn, Card, Kicker, Pill, Title } from "@sada/ui";
-import { BusyBtn } from "../BusyBtn";
 import { useAppDispatch, useAppSelector } from "../store";
-import { actionId, selectPending, selectRetour, selectView, type Commande } from "../store/liveSlice";
-import { fetchDashboard, sendCommand } from "../store/liveThunks";
+import { selectView } from "../store/liveSlice";
+import { fetchDashboard } from "../store/liveThunks";
 import { dateFr, horloge, mmss } from "../format";
-import { useConfirm } from "../confirmContext";
 
 /** Length of a run, when it has both ends: minutes:seconds. */
 function duree(it: Traitement): string {
@@ -29,20 +27,16 @@ function sansChemin(texte: string, mot: string): string {
 }
 
 /** Dashboard: same order and same blocks as the template back-office.
- *  Live card, then the three counters, then the latest khutbas and the latest commands. */
+ *  Live card (read only: the live is driven from the Régie), then the counters, then the latest
+ *  khutbas and the latest commands. */
 export default function Dashboard() {
   const { t, i18n } = useTranslation();
-  const confirm = useConfirm();
   const dispatch = useAppDispatch();
   /** Counters, latest khutbas and command log; the live part lives in the store (store/liveSlice.ts). */
   const [d, setD] = useState<any>(null);
   const [erreur, setErreur] = useState(false);
+  // The live state, read only: fetchDashboard hands it to the live slice, the Régie sends the commands.
   const vue = useAppSelector(selectView);
-  const pending = useAppSelector(selectPending);
-  const retour = useAppSelector(selectRetour);
-  const [choixScene, setChoixScene] = useState("");
-  const [nom, setNom] = useState("");
-  const [mention, setMention] = useState("");
   /** null = panel hidden (no route yet on this back end). */
   const [traitements, setTraitements] = useState<Traitement[] | null>(null);
   const [relanceEnCours, setRelanceEnCours] = useState<string | null>(null);
@@ -84,21 +78,6 @@ export default function Dashboard() {
     return () => { vivant = false; window.clearTimeout(minuteur); };
   }, [tourTraitements]);
 
-  /** Label of a command or choice: the translation is the only source. The server sends stable
-   *  keys and values, never interface text. */
-  const variante = (c: Commande): "leaf" | "light" | "danger" =>
-    c.destructive ? "danger" : c.key === "start" ? "leaf" : "light";
-
-  /** Sends a command to the live: the card shows its effect at once, the server's answer confirms it
-   *  (or the card falls back to the confirmed state). Only the clicked button waits. */
-  async function envoyer(c: Commande, corps: Record<string, string> = {}) {
-    if (c.destructive && !(await confirm({ message: t(`dashboard.confirm.${c.key}`), action: t(`dashboard.cmd.${c.key}`) }))) return;
-    if (await dispatch(sendCommand(c.key, corps))) {
-      dispatch(fetchDashboard()).then(setD).catch(() => {});   // command log up to date
-    }
-  }
-  const enCours = (key: string, valeur?: string) => Boolean(pending[actionId(key, valeur)]);
-
   /** Asks the server to run one processing again (failed or finished run). */
   async function relancer(it: Traitement) {
     const cle = `${it.run}:${it.session}`;
@@ -129,11 +108,9 @@ export default function Dashboard() {
 
   const peutPublier = currentSession()?.user.permissions.includes("publish") ?? false;
   const peutAssigner = currentSession()?.user.permissions.includes("assign") ?? false;
+  // Same right as the Régie's route and the top bar's entry.
+  const peutRegie = currentSession()?.user.permissions.includes("live") ?? false;
   const v = vue.live;
-  const commandes = vue.commands;
-  const texteRetour = retour && (retour.texte ?? (retour.cle ? t(retour.cle) : ""));
-  const scene = commandes.find((c) => c.key === "scene");
-  const janaza = commandes.find((c) => c.key === "janaza");
   const horsService = v.ok === false;
   const etat = horsService
     ? t("dashboard.unreachable")
@@ -165,51 +142,28 @@ export default function Dashboard() {
           </p>
         )}
 
-        {/* Live commands: the list comes from the server (live_commands), with keys, values and a
-            danger flag only. Commands with choices (extend, scene) expand; the janaza has its
-            collapsible form; the tarawih commands live in the Régie, next to tonight's reciters. */}
-        <div className="mt-4 flex flex-wrap items-center gap-2.5">
-          {commandes.filter((c) => !["janaza", "scene", "tarawih", "next_reciter"].includes(c.key)).map((c) =>
-            c.choices.length > 0 ? (
-              c.choices.map((valeur: string) => (
-                <BusyBtn key={`${c.key}-${valeur}`} variante={variante(c)} busy={enCours(c.key, valeur)}
-                     onClick={() => envoyer(c, { valeur })}>{t(`dashboard.choice.${valeur}`)}</BusyBtn>
-              ))
-            ) : (
-              <BusyBtn key={c.key} variante={variante(c)} busy={enCours(c.key)} onClick={() => envoyer(c)}>{t(`dashboard.cmd.${c.key}`)}</BusyBtn>
+        {!horsService && (
+          <dl className="m-0 mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[0.92rem]">
+            {[
+              [t("dashboard.sceneOnAir"), v.scene ? t(`dashboard.choice.${v.scene}`, { defaultValue: v.scene }) : "—"],
+              [t("regie.next"), v.next_session ?? "—"],
+              [t("regie.mode"), v.override ? t("regie.manual") : t("regie.auto")],
+            ].map(([k, val]) => (
+              <div key={k} className="flex items-baseline gap-1.5">
+                <dt className="text-night-muted">{k}</dt>
+                <dd className="m-0 font-semibold text-white">{val}</dd>
+              </div>
             ))}
-        </div>
-        {scene && (
-          <div className="mt-3 flex flex-wrap items-center gap-2.5">
-            <label className="text-[0.92rem] text-night-muted" htmlFor="scene-live">{t(`dashboard.cmd.${scene.key}`)}</label>
-            <select id="scene-live" value={choixScene} onChange={(e) => setChoixScene(e.target.value)}
-                    className="rounded-md border border-white/25 bg-white/10 px-2.5 py-1.5 text-[0.9rem] text-white max-md:min-h-11 pointer-coarse:min-h-11">
-              <option value="" className="text-ink">{t("dashboard.sceneChoose")}</option>
-              {scene.choices.map((valeur: string) => <option key={valeur} value={valeur} className="text-ink">{t(`dashboard.choice.${valeur}`)}</option>)}
-            </select>
-            <BusyBtn variante="light" disabled={!choixScene} busy={enCours(scene.key, choixScene)} className="min-h-9 px-3 py-1.5 text-[0.9rem] max-md:min-h-11 pointer-coarse:min-h-11"
-                 onClick={() => envoyer(scene, { valeur: choixScene })}>{t("dashboard.sceneApply")}</BusyBtn>
-          </div>
+          </dl>
         )}
-        {retour && texteRetour && (
-          <p role="status" className={`m-0 mt-3 text-[0.92rem] ${retour.ok ? "text-leaf" : "text-[#ff9b94]"}`}>{texteRetour}</p>
-        )}
-        {janaza && (
-          <details className="group mt-3 rounded-[10px] border border-white/18 bg-white/5 px-3 py-2.5 [&>summary::-webkit-details-marker]:hidden">
-            <summary className="cursor-pointer list-none text-[0.95rem] font-semibold text-white before:mr-1.5 before:font-normal before:text-leaf before:content-['+'] group-open:before:content-['−']">
-              {t("dashboard.janaza")}
-            </summary>
-            <div className="mt-2.5 grid max-w-[420px] gap-2">
-              <input className="rounded-md border border-white/25 bg-white/10 px-2.5 py-1.5 text-[0.9rem] text-white placeholder:text-night-muted max-md:min-h-11 pointer-coarse:min-h-11"
-                     placeholder={t("dashboard.janazaName")} value={nom} maxLength={80} onChange={(e) => setNom(e.target.value)} />
-              <input className="rounded-md border border-white/25 bg-white/10 px-2.5 py-1.5 text-[0.9rem] text-white placeholder:text-night-muted max-md:min-h-11 pointer-coarse:min-h-11"
-                     placeholder={t("dashboard.janazaInfo")} value={mention} maxLength={60} onChange={(e) => setMention(e.target.value)} />
-              <BusyBtn variante="leaf" busy={enCours(janaza.key)} className="min-h-9 w-fit px-3 py-1.5 text-[0.9rem] max-md:min-h-11 pointer-coarse:min-h-11"
-                   onClick={() => envoyer(janaza, { name: nom.trim(), info: mention.trim() })}>
-                {t("dashboard.janazaSend")}
-              </BusyBtn>
-            </div>
-          </details>
+
+        {/* The live is driven from the Régie only: this card reads, the button leads there. */}
+        {peutRegie && (
+          <Link to="/regie"
+                className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-[9px] border border-leaf bg-leaf px-4 py-2.5 font-semibold text-night no-underline hover:bg-leaf-2">
+            {t("dashboard.openRegie")}
+            <span aria-hidden="true">→</span>
+          </Link>
         )}
       </section>
 
