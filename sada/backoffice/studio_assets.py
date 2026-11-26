@@ -343,9 +343,14 @@ def _iso(mosque: dict, t: dt.datetime) -> str:
     return t.replace(tzinfo=db.timezone(mosque)).isoformat(timespec="seconds")
 
 
+def known_screen(ecran: str) -> bool:
+    """A scene id or one of the template's screens (`dars_fin` is a screen, not a scene)."""
+    return ecran in gabarit.CONNUS or known_scene(ecran)
+
+
 def screen_doc(conn, mosque: dict, ecran: str, setup: bool = False) -> tuple[str, dict] | None:
     """(ETag, body) of `GET /studio/live/screen/{ecran}`; None for an unknown screen."""
-    if not known_scene(ecran):
+    if not known_screen(ecran):
         return None
     png = f"/api/v1/studio/live/scene/{ecran}.png" + ("?setup=1" if setup else "")
     page = _template_page(mosque, ecran)

@@ -59,6 +59,8 @@ def test_unknown_scene_is_not_found(env, engine):
     assert d.get("/api/v1/studio/live/scene/nope.png").status_code == 404
     assert d.get("/api/v1/studio/live/scene/custom:nope.png").status_code == 404
     assert d.get("/api/v1/studio/live/screen/nope").status_code == 404
+    # a template screen that is not a scene (the end of a class) is served too
+    assert d.get("/api/v1/studio/live/screen/dars_fin").status_code == 200
 
 
 def test_assets_are_refused_without_a_device_credential(env, engine):

@@ -290,7 +290,7 @@ async def live_screen_doc(screen: str, request: Request, a: DeviceDep, setup: in
     `source: "gabarit"` carries the document (fonts inlined, nothing active), the values the engine would put in it
     and the intermission countdown's target; `source: "engine"` (no template for this screen) points at the PNG.
     """
-    if not studio_assets.known_scene(screen):
+    if not studio_assets.known_screen(screen):
         return _not_found(screen)
     made = await run_in_threadpool(studio_assets.screen_doc, a.conn, a.mosque, screen, bool(setup))
     if made is None:
