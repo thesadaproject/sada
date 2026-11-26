@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
@@ -7,6 +7,7 @@ import { dateTime, nombre } from "../format";
 import { Btn, Card, Field, Kicker, inputClass } from "@sada/ui";
 import { BusyBtn } from "../BusyBtn";
 import { usePolling } from "../usePolling";
+import { useFenced } from "../fenced";
 
 /** Studio devices: the mosque's PC that streams on its own. Pairing (the code shown on the device),
  *  the list with its state, renaming, key rotation, revocation, the day's incidents and the schedule
@@ -42,50 +43,33 @@ function depuis(ts: number | null, t: TFunction): string {
 export default function Devices() {
   const { t, i18n } = useTranslation();
   const confirm = useConfirm();
-  const [d, setD] = useState<Donnees | null>(null);
   const [erreur, setErreur] = useState(false);
   const [msg, setMsg] = useState<Message>(null);
   const [code, setCode] = useState("");
   const [nom, setNom] = useState("");
-  /** Actions in flight, by key (`revoke:3`, `subscribed`…): only their own control waits. */
-  const [occupe, setOccupe] = useState<Record<string, boolean>>({});
   const [renomme, setRenomme] = useState<{ id: number; nom: string } | null>(null);
   const [courriel, setCourriel] = useState<string | null>(null);
-  // Write fence: bumped when an action starts and when it settles. A read that left before is
-  // dropped, so a late poll cannot bring back a revoked device or untick a box.
-  const fence = useRef(0);
+  // Server list + one optimistic layer per action in flight (fenced.ts): a late poll cannot bring
+  // back a revoked device, and a failed action never takes back another one still in flight.
+  const { data: d, enCours, reload, run } = useFenced<Donnees>(api.studioDevices);
 
-  const charger = useCallback(async () => {
-    const depart = fence.current;
-    try {
-      const r: Donnees = await api.studioDevices();
-      if (fence.current === depart) { setD(r); setErreur(false); }
-    } catch {
-      if (fence.current === depart) setErreur(true);
-    }
-  }, []);
+  const charger = useCallback(
+    () => reload().then((r) => { if (r) setErreur(false); }, () => setErreur(true)), [reload]);
   usePolling(charger, 15_000);
 
+  /** Runs one action (`cle` = its own wait): applied at once, reverted alone if the server refuses. */
   async function agir(cle: string, f: () => Promise<{ message?: string }>,
                       { apres, optimiste }: { apres?: () => void; optimiste?: (x: Donnees) => Donnees } = {}) {
-    if (occupe[cle]) return;
-    const avant = d;
-    fence.current += 1;
-    setOccupe((o) => ({ ...o, [cle]: true })); setMsg(null);
-    if (optimiste) setD((x) => (x ? optimiste(x) : x));
-    try {
-      const r = await f();
-      fence.current += 1;
-      setMsg({ ok: true, texte: r.message ?? t("devices.saved") });
+    setMsg(null);
+    const res = await run(cle, f, { apply: optimiste });
+    if (res.ok) {
+      setMsg({ ok: true, texte: res.r.message ?? t("devices.saved") });
       apres?.();
-    } catch (e: any) {
-      fence.current += 1;
-      if (optimiste) setD(avant);
-      setMsg({ ok: false, texte: e?.message ?? t("common.error") });
-    } finally {
-      setOccupe((o) => { const n = { ...o }; delete n[cle]; return n; });
+    } else if (!res.skipped) {
+      setMsg({ ok: false, texte: (res.error as any)?.message ?? t("common.error") });
     }
     await charger();
+    return res.ok;
   }
   const majAppareil = (id: number, champs: Partial<Appareil>) => (x: Donnees): Donnees =>
     ({ ...x, devices: x.devices.map((a) => (a.id === id ? { ...a, ...champs } : a)) });
@@ -107,7 +91,7 @@ export default function Devices() {
           <span className="font-semibold">{t("devices.liveRunning", { source: d.publisher.text })}</span>
           <span className="text-muted">{t("devices.liveRunningHint")}</span>
           {d.can_takeover && (
-            <BusyBtn variante="dangerGhost" className="ms-auto" busy={!!occupe.takeover}
+            <BusyBtn variante="dangerGhost" className="ms-auto" busy={!!enCours("takeover")}
                  onClick={async () => {
                    if (await confirm({ message: t("devices.takeoverConfirm", { source: d.publisher!.text }), action: t("devices.takeover") }))
                      agir("takeover", () => api.studioTakeover(), { optimiste: (x) => ({ ...x, publisher: null }) });
@@ -147,7 +131,7 @@ export default function Devices() {
           <Field label={t("devices.name")}>
             <input className={inputClass} value={nom} maxLength={60} placeholder={t("devices.namePlaceholder")} onChange={(e) => setNom(e.target.value)} />
           </Field>
-          <BusyBtn type="submit" busy={!!occupe.pair} disabled={code.replace(/[\s-]/g, "").length < 8}>{t("devices.pair")}</BusyBtn>
+          <BusyBtn type="submit" busy={!!enCours("pair")} disabled={code.replace(/[\s-]/g, "").length < 8}>{t("devices.pair")}</BusyBtn>
         </form>
       </Card>
 
@@ -162,9 +146,11 @@ export default function Devices() {
                 {renomme?.id === a.id ? (
                   <form className="flex gap-2" onSubmit={(e) => {
                     e.preventDefault();
-                    const nouveau = renomme.nom.trim();
-                    agir(`rename:${a.id}`, () => api.studioRename(a.id, renomme.nom), { optimiste: majAppareil(a.id, { name: nouveau }) });
+                    const tape = renomme.nom;
                     setRenomme(null);
+                    // Refused: the form opens again with what was typed, the message says why.
+                    void agir(`rename:${a.id}`, () => api.studioRename(a.id, tape), { optimiste: majAppareil(a.id, { name: tape.trim() }) })
+                      .then((ok) => { if (!ok) setRenomme((r) => r ?? { id: a.id, nom: tape }); });
                   }}>
                     <input className={`${inputClass} !py-1.5`} value={renomme.nom} maxLength={60} autoFocus
                            aria-label={t("devices.name")} onChange={(e) => setRenomme({ id: a.id, nom: e.target.value })} />
@@ -196,16 +182,16 @@ export default function Devices() {
               <p className="m-0 text-[0.82rem] text-muted">{t("devices.createdBy", { who: a.created_by_name || "—", when: a.created_at.slice(0, 10) })}
                 {a.rotation_pending && ` · ${t("devices.rotationPending")}`}</p>
               <div className="flex flex-wrap gap-2">
-                <BusyBtn variante="ghost" className="min-h-9 px-3 py-1 text-[0.88rem]" busy={!!occupe[`rename:${a.id}`]} onClick={() => setRenomme({ id: a.id, nom: a.name })}>{t("devices.rename")}</BusyBtn>
-                <BusyBtn variante="ghost" className="min-h-9 px-3 py-1 text-[0.88rem]" busy={!!occupe[`rotate:${a.id}`]} disabled={a.rotation_pending && !occupe[`rotate:${a.id}`]}
+                <BusyBtn variante="ghost" className="min-h-9 px-3 py-1 text-[0.88rem]" busy={!!enCours(`rename:${a.id}`)} onClick={() => setRenomme({ id: a.id, nom: a.name })}>{t("devices.rename")}</BusyBtn>
+                <BusyBtn variante="ghost" className="min-h-9 px-3 py-1 text-[0.88rem]" busy={!!enCours(`rotate:${a.id}`)} disabled={a.rotation_pending && !enCours(`rotate:${a.id}`)}
                      onClick={async () => {
                        if (await confirm({ message: t("devices.rotateConfirm", { name: a.name }), action: t("devices.rotate"), danger: false }))
                          agir(`rotate:${a.id}`, () => api.studioRotate(a.id), { optimiste: majAppareil(a.id, { rotation_pending: true }) });
                      }}>{t("devices.rotate")}</BusyBtn>
-                <BusyBtn variante="dangerGhost" className="min-h-9 px-3 py-1 text-[0.88rem]" busy={!!occupe[`revoke:${a.id}`]}
+                <BusyBtn variante="dangerGhost" className="min-h-9 px-3 py-1 text-[0.88rem]" busy={!!enCours(`revoke:${a.id}`)}
                      onClick={async () => {
                        if (await confirm({ message: t("devices.revokeConfirm", { name: a.name }), action: t("devices.revoke") }))
-                         agir(`revoke:${a.id}`, () => api.studioRevoke(a.id));
+                         agir(`revoke:${a.id}`, () => api.studioRevoke(a.id), { optimiste: majAppareil(a.id, { revoked: true }) });
                      }}>{t("devices.revoke")}</BusyBtn>
               </div>
             </li>
@@ -250,10 +236,10 @@ export default function Devices() {
             <input type="email" className={inputClass} value={courriel ?? d.mail.email} maxLength={200}
                    onChange={(e) => setCourriel(e.target.value)} />
           </Field>
-          <BusyBtn type="submit" busy={!!occupe.email} disabled={courriel === null && !occupe.email}>{t("common.save")}</BusyBtn>
+          <BusyBtn type="submit" busy={!!enCours("email")} disabled={courriel === null && !enCours("email")}>{t("common.save")}</BusyBtn>
         </form>
         <label className="mt-3 flex items-center gap-2 text-[0.92rem]">
-          <input type="checkbox" checked={d.mail.subscribed} aria-busy={!!occupe.subscribed || undefined}
+          <input type="checkbox" checked={d.mail.subscribed} aria-busy={!!enCours("subscribed") || undefined}
                  onChange={(e) => {
                    const subscribed = e.target.checked;
                    agir("subscribed", () => api.studioAlertPrefs({ subscribed }), { optimiste: (x) => ({ ...x, mail: { ...x.mail, subscribed } }) });
