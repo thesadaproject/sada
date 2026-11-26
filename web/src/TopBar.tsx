@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { api, type Session } from "./api";
+import type { Session } from "./api";
+import { useEnDirect } from "./onAir";
 import { LANGUAGES, setLanguage } from "./i18n";
 import { Bulle, Deroulant, itemMenuActif, itemMenuBase, itemMenuRepos } from "@sada/ui";
 
@@ -57,17 +58,8 @@ export default function TopBar({ session, onLogout, onSwitchMosque }: {
   }, [menuOuvert]);
 
   // « On air » only while the mosque broadcasts: a light flag, read again every 20 s.
-  const [enDirect, setEnDirect] = useState(false);
-  useEffect(() => {
-    let actif = true;
-    const lire = () => {
-      if (document.visibilityState === "hidden") return;
-      api.liveIndicator().then((r) => actif && setEnDirect(!!r?.on)).catch(() => {});
-    };
-    lire();
-    const id = window.setInterval(lire, 20_000);
-    return () => { actif = false; window.clearInterval(id); };
-  }, [mosque.id]);
+  // Derived from the live slice while it is fresh, read again at once after a start/stop (onAir.ts).
+  const enDirect = useEnDirect(mosque.id);
 
   // Search: « / » (outside a field) or Ctrl/Cmd+K puts the cursor in the field; on a phone, where
   // the field is hidden, they open the search page.

@@ -60,9 +60,15 @@ export type LiveState = {
   retour: Retour | null;
   /** Bumped when the mosque changes: answers of the previous mosque are dropped. */
   epoch: number;
+  /** Bumped when a command that starts or ends the broadcast succeeds: the top bar reads its
+   *  « on air » flag again at once instead of waiting for its next round. */
+  transportSeq: number;
 };
 
-export const initialState: LiveState = { server: null, rev: null, seq: 0, readAt: 0, pending: {}, retour: null, epoch: 0 };
+/** Commands after which the on-air flag may have changed. */
+export const TRANSPORT = new Set(["start", "stop", "cancel"]);
+
+export const initialState: LiveState = { server: null, rev: null, seq: 0, readAt: 0, pending: {}, retour: null, epoch: 0, transportSeq: 0 };
 
 const EMPTY: Snapshot = {
   live: {}, commands: [], monitors: {}, publisher: null,
@@ -155,6 +161,7 @@ const slice = createSlice({
       if (data && (data.live || data.audio) && !olderRev(state, revOf(data))) merge(state, data, at);
       else if (p && state.server) state.server = applyPatch(state.server, p.patch);
       state.retour = a.payload.retour;
+      if (TRANSPORT.has(id.split(":")[0])) state.transportSeq += 1;
     },
     commandFailed(state, a: PayloadAction<{ id: string; retour: Retour }>) {
       state.seq += 1;
@@ -166,7 +173,7 @@ const slice = createSlice({
     },
     /** Another mosque (or none) is open: forget everything, keep the fences moving forward. */
     liveReset(state) {
-      return { ...initialState, seq: state.seq + 1, epoch: state.epoch + 1 };
+      return { ...initialState, seq: state.seq + 1, epoch: state.epoch + 1, transportSeq: state.transportSeq };
     },
   },
 });
@@ -191,6 +198,7 @@ export const selectConfirmed = selectServer;
 export const selectPending = selectPendingMap;
 export const selectReadAt = (s: WithLive) => s.live.readAt;
 export const selectRetour = (s: WithLive) => s.live.retour;
+export const selectTransportSeq = (s: WithLive) => s.live.transportSeq;
 
 /** The patch an action applies at once, from the state shown when it is sent. Commands without a
  *  visible consequence (extend, skip) have an empty patch: only their button shows the wait. */
