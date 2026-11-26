@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.0-alpha.23](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.22...sada-v0.1.0-alpha.23) (2026-11-26)
+
+
+### Features
+
+* **stream:** 720p at 30 images per second at least, 60 opt-in ([#110](https://github.com/thesadaproject/sada/issues/110)) ([a4d1e08](https://github.com/thesadaproject/sada/commit/a4d1e08acb9bead482cf20d4a85881d85b836ef5))
+* **web:** a dashboard built around today: live state, countdown, the day's programme ([#114](https://github.com/thesadaproject/sada/issues/114)) ([7c9fc0c](https://github.com/thesadaproject/sada/commit/7c9fc0c17dbe01b0c5c6fa30cef397fc1effc22b))
+
+
+### Performance Improvements
+
+* **habillage:** render at the source size and copy the middle, start at the first words ([#111](https://github.com/thesadaproject/sada/issues/111)) ([7f96e07](https://github.com/thesadaproject/sada/commit/7f96e07bce6986099bff06f06812666ff0337b26))
+
 ## [0.1.0-alpha.22](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.21...sada-v0.1.0-alpha.22) (2026-11-26)
 
 
