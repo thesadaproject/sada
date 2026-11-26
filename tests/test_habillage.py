@@ -608,3 +608,9 @@ def test_migration_8_sur_une_base_en_version_6(tmp_path):
         assert applied_versions(conn)[-1] == migrations.LATEST
     finally:
         conn.close()
+
+
+def test_a_failed_ffmpeg_reports_its_error(tmp_path):
+    """A render that fails must say why: the i18n function is still callable after the cleanup loops."""
+    with pytest.raises(RuntimeError, match="ffmpeg render failed"):
+        h._executer([([shutil.which("false") or "/usr/bin/false"], 1.0, 1.0)], str(tmp_path))

@@ -854,7 +854,7 @@ def _executer(taches: list[tuple[list[str], float, float]], cwd: str, avance=Non
                 break
             time.sleep(0.5)
     finally:
-        for pr, *_ in procs:
+        for pr, *_rest in procs:  # not `_`: the i18n function is used below, outside this block
             if pr.poll() is None:
                 pr.kill()
             pr.wait()
