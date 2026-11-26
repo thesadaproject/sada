@@ -18,6 +18,8 @@ export type Health = { online: boolean; kbps?: number | null; readers?: number }
 export type Live = {
   ok?: boolean; state?: string; scene?: string | null; clock?: string | null;
   session?: { n?: number | null; total?: number; planned?: string | null; started?: string | null } | null;
+  /** Today's programme, in order (status: pending | live | done | skipped | janaza). */
+  day?: { planned: string; status: string; kind: string; title: string; speaker: string; started?: string | null; ended?: string | null }[];
   has_sessions?: boolean; next_session?: string | null; stream_on?: boolean; override?: boolean; paused?: boolean;
   last_reason?: string; error?: string | null; janaza_name?: string | null; janaza_info?: string | null;
   mic?: boolean; mic_muted?: boolean; audio_level_db?: number | null;
