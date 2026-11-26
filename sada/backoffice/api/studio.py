@@ -30,6 +30,7 @@ from .. import (
     orm,
     setup_session,
     stream_quality,
+    studio_assets,
     studio_devices,
     studio_incidents,
     studio_plan,
@@ -245,6 +246,57 @@ async def live_command(request: Request, a: DeviceDep):
     else:
         fresh = await run_in_threadpool(after_command, a.mosque, out, setup)  # may be blocking HTTP to the engine
     return JSONResponse(fresh, headers={"Cache-Control": "no-store"})
+
+
+def _etag(request: Request, etag: str) -> Response | None:
+    """304 when the caller already holds this version (the body is then not sent again)."""
+    if studio_assets.matches(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers={"ETag": etag})
+    return None
+
+
+def _not_found(scene: str) -> JSONResponse:
+    return JSONResponse(
+        {"error": _("unknown screen: {screen}", screen=scene)}, status_code=404, headers={"Cache-Control": "no-store"}
+    )
+
+
+@router.get("/studio/live/scene/{scene}.png")
+async def live_scene_png(scene: str, request: Request, a: DeviceDep, setup: int = 0, scale: int = 1):
+    """A scene as the engine draws it: the studio composes the picture itself (`compositing: "studio"`).
+
+    Banner scenes come out transparent (laid over the camera), full screens opaque. `?setup=1`: the rehearsal's.
+    """
+    if not studio_assets.known_scene(scene):
+        return _not_found(scene)
+    made = await run_in_threadpool(studio_assets.scene_png, a.conn, a.mosque, scene, bool(setup))
+    if made is None:
+        return _not_found(scene)
+    etag, png = made
+    return _etag(request, etag) or Response(png, media_type="image/png", headers={"ETag": etag})
+
+
+@router.get("/studio/live/logo.png")
+async def live_logo_png(request: Request, a: DeviceDep, scale: int = 1):
+    """The logo medallion of the overlay, exactly as `render_overlays` lays it (`?scale=2` for a sharper picture)."""
+    etag, png = await run_in_threadpool(studio_assets.logo_png, a.mosque, scale)
+    return _etag(request, etag) or Response(png, media_type="image/png", headers={"ETag": etag})
+
+
+@router.get("/studio/live/screen/{screen}")
+async def live_screen_doc(screen: str, request: Request, a: DeviceDep, setup: int = 0):
+    """The mosque's template for one screen, as HTML the studio renders itself (it is a Chromium).
+
+    `source: "gabarit"` carries the document (fonts inlined, nothing active), the values the engine would put in it
+    and the intermission countdown's target; `source: "engine"` (no template for this screen) points at the PNG.
+    """
+    if not studio_assets.known_scene(screen):
+        return _not_found(screen)
+    made = await run_in_threadpool(studio_assets.screen_doc, a.conn, a.mosque, screen, bool(setup))
+    if made is None:
+        return _not_found(screen)
+    etag, body = made
+    return _etag(request, etag) or JSONResponse(body, headers={"ETag": etag, "Cache-Control": "no-store"})
 
 
 @router.patch("/studio/live/overlays/{kind}")

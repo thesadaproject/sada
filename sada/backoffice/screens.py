@@ -252,11 +252,12 @@ def overlays_layer(mosque: dict, overlays: dict | None) -> bytes:
     return out.getvalue()
 
 
-def preview(mosque: dict, payload, screen: str, overlay: bool = False, conn=None) -> bytes:
+def preview(mosque: dict, payload, screen: str, overlay: bool = False, conn=None, moment=None) -> bytes:
     """PNG (1280×720) of the screen as it will look, drawn by the engine's own renderer.
 
     `overlay`: for the banner scenes (camera behind), the banner alone on a transparent background,
-    so the control room can lay it over the live feed.
+    so the control room can lay it over the live feed. `moment`: the instant to draw (default: the
+    mosque's real one, `moment_reel`).
     """
     try:
         clean = base.check(payload or {})
@@ -270,7 +271,7 @@ def preview(mosque: dict, payload, screen: str, overlay: bool = False, conn=None
         logo=str(logo) if logo and (mosque.get("logo_path") or "").strip() else "",
         screen_texts=clean,
     )
-    moment = moment_reel(mosque, conn)
+    moment = moment if moment is not None else moment_reel(mosque, conn)
     renderer = scenes.SceneRenderer(cfg)
     spec = scenes.SCENES[screen]
     if spec.full:

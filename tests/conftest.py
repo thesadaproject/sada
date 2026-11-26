@@ -31,7 +31,7 @@ os.environ.setdefault("SADA_SEMANTIC_SEARCH", "0")
 # no background studio checks in tests: they call studio_incidents.tick themselves
 os.environ.setdefault("SADA_STUDIO_WATCH_S", "0")
 
-from sada.backoffice import auth, db, importer, migrations, models, orm  # noqa: E402
+from sada.backoffice import auth, db, importer, live, migrations, models, orm  # noqa: E402
 from sada.backoffice.app import create_app  # noqa: E402
 
 PW = "motdepasse-solide"
@@ -408,3 +408,39 @@ def _no_public_bundle(monkeypatch, tmp_path_factory):
     """The tests do not depend on a built React bundle: without it the public pages fall back to the
     server-rendered ones. `test_prayer_public_react.py` points `SADA_PUBLIC_DIST` at a bundle of its own."""
     monkeypatch.setenv("SADA_PUBLIC_DIST", str(tmp_path_factory.getbasetemp() / "no-public-bundle"))
+
+
+@pytest.fixture
+def engine(monkeypatch):
+    """Fake orchestrator: records what the back office sends, answers like the real one."""
+    seen: list[tuple] = []
+    st = {"ok": True, "state": "IDLE", "scene": "slate", "transition": "fade"}
+
+    def status_cached(mosque, ttl=0, forcer=False):
+        seen.append(("status", forcer))
+        return dict(st)
+
+    def command(mosque, cmd, arg=None, valeur=None, transition=None):
+        seen.append(("command", cmd, valeur if valeur is not None else arg, transition))
+        st["scene"] = valeur if valeur is not None else arg
+        return {"ok": True}
+
+    def set_mute(mosque, muted):
+        seen.append(("mute", muted))
+        st["mic_muted"] = muted
+        return {"mic_muted": muted}
+
+    def set_transition(mosque, mode):
+        seen.append(("transition", mode))
+        return {"ok": True}
+
+    def set_overlay(mosque, kind, data):
+        seen.append(("overlay", kind, data))
+        return {"overlays": {kind: data}}
+
+    monkeypatch.setattr(live, "status_cached", status_cached)
+    monkeypatch.setattr(live, "command", command)
+    monkeypatch.setattr(live, "set_mute", set_mute)
+    monkeypatch.setattr(live, "set_transition", set_transition)
+    monkeypatch.setattr(live, "set_overlay", set_overlay)
+    return seen

@@ -3,46 +3,9 @@ engine (scene, overlays, microphone, transition) with its own credential, no web
 
 from __future__ import annotations
 
-import pytest
 from conftest import client, one
 
 from sada.backoffice import live, models
-
-
-@pytest.fixture
-def engine(monkeypatch):
-    """Fake orchestrator: records what the back office sends, answers like the real one."""
-    seen: list[tuple] = []
-    st = {"ok": True, "state": "IDLE", "scene": "slate", "transition": "fade"}
-
-    def status_cached(mosque, ttl=0, forcer=False):
-        seen.append(("status", forcer))
-        return dict(st)
-
-    def command(mosque, cmd, arg=None, valeur=None, transition=None):
-        seen.append(("command", cmd, valeur if valeur is not None else arg, transition))
-        st["scene"] = valeur if valeur is not None else arg
-        return {"ok": True}
-
-    def set_mute(mosque, muted):
-        seen.append(("mute", muted))
-        st["mic_muted"] = muted
-        return {"mic_muted": muted}
-
-    def set_transition(mosque, mode):
-        seen.append(("transition", mode))
-        return {"ok": True}
-
-    def set_overlay(mosque, kind, data):
-        seen.append(("overlay", kind, data))
-        return {"overlays": {kind: data}}
-
-    monkeypatch.setattr(live, "status_cached", status_cached)
-    monkeypatch.setattr(live, "command", command)
-    monkeypatch.setattr(live, "set_mute", set_mute)
-    monkeypatch.setattr(live, "set_transition", set_transition)
-    monkeypatch.setattr(live, "set_overlay", set_overlay)
-    return seen
 
 
 def pair(env, name="Studio essai", user="responsable"):

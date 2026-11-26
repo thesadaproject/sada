@@ -14,6 +14,7 @@ Deux règles tenues ici :
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 import threading
 import time
@@ -123,6 +124,13 @@ class AntenneGabarit:
         planned = getattr(moment, "planned", None) if moment is not None else None
         valeurs["heure"] = f"{planned:%H} h {planned:%M}" if planned else ""
         valeurs["cours"] = getattr(nxt, "title", "") or ""
+        valeurs["decompte"] = ""
+        if ecran == "entracte" and moment is not None:
+            cible = countdown_target(moment)
+            if cible is not None:
+                from .scenes import _countdown
+
+                valeurs["decompte"] = _countdown(int((cible - moment.now).total_seconds()))
         valeurs["titre"] = getattr(self.cfg, "title", "") or ""
         slot = self.ARABE.get(ecran, "")
         valeurs["arabe"] = self._variables.get(slot, "") if slot else ""
@@ -208,6 +216,15 @@ class AntenneGabarit:
             except Exception:  # noqa: BLE001 — on ferme, coûte que coûte
                 pass
             self._rendu = None
+
+
+def countdown_target(moment) -> dt.datetime | None:
+    """What the intermission counts down to, as the engine's drawing does (scenes._entracte): the next class when it
+    is not a khutba, else the planned session; None when neither is known."""
+    nxt = getattr(moment, "next_event", None)
+    if nxt is not None and getattr(nxt, "kind", "") != "khutba":
+        return nxt.starts
+    return getattr(moment, "planned", None)
 
 
 def depuis_backoffice(cfg, backoffice_url: str, api_port: int, log_fn=None):
