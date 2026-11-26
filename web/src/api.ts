@@ -129,6 +129,8 @@ export type Habillage = {
   subtitles_state: Record<string, TrackState>;
   translation: TranslationJob;
   has_source: boolean; has_logo: boolean; can_edit: boolean; mosque: string;
+  /** seconds of silence cut before the first words (0: nothing cut) */
+  silence_cut_s?: number;
   colors: { green: string; gold: string };
 };
 

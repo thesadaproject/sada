@@ -195,7 +195,8 @@ def test_api_srt_lecture_seule_autorisee(env):
 
 
 def test_decoupage_et_carton_dans_une_vraie_session(env):
-    """Le carton se lit dans les options du rendu, la coupe dans la position de la session."""
+    """Les temps de la séance partent de son début, où qu'elle soit dans l'enregistrement : la vidéo
+    habillée les décale du carton, la vidéo d'origine (celle de la séance) pas du tout."""
     from sada.backoffice import habillage as bo
 
     habille(env, intro_s=5)
@@ -203,7 +204,19 @@ def test_decoupage_et_carton_dans_une_vraie_session(env):
     rec.write_bytes(b"x")
     k = one(env["conn"], models.Khutba, id=env["kid"])
     k.update(video_path=None, recording=str(rec), start_pos=100.0, end_pos=120.0)
-    assert bo.alignements(env["conn"], k) == {"habille": -95.0, "brut": -100.0}
+    assert bo.alignements(env["conn"], k) == {"habille": 5.0, "brut": 0.0}
+
+
+def test_silence_coupe_au_rendu_recale_les_sous_titres(env):
+    """La vidéo habillée commence à la première parole : ses sous-titres avancent d'autant."""
+    from sada.backoffice import habillage as bo
+
+    habille(env, intro_s=5)
+    k = one(env["conn"], models.Khutba, id=env["kid"])
+    f = bo.fichier_options_rendues(k)
+    f.write_text(json.dumps({**json.loads(f.read_text()), "_rendu": {"coupe": 41.0}}), encoding="utf-8")
+    assert bo.alignements(env["conn"], k)["habille"] == -36.0
+    assert bo.version_habillee(env["conn"], k)["offset_s"] == -36.0
 
 
 # ------------------------------------------------------------------ WebVTT (lu par le lecteur)

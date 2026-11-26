@@ -153,8 +153,16 @@ def test_titre_arabe_en_naskh():
 
 def test_video_verticale_garde_ses_proportions():
     assert h.taille_sortie(1080, 1920) == (1080, 1920)
-    assert h.taille_sortie(1280, 720) == (1920, 1080)
-    assert h.taille_sortie(640, 480) == (1440, 1080)
+    assert h.taille_sortie(720, 1280) == (720, 1280)
+    assert h.taille_sortie(640, 480) == (960, 720)
+
+
+def test_sortie_a_la_taille_de_la_source_entre_720_et_1080():
+    assert h.taille_sortie(1280, 720) == (1280, 720)  # un direct 720p n'est pas agrandi
+    assert h.taille_sortie(1920, 1080) == (1920, 1080)
+    assert h.taille_sortie(3840, 2160) == (1920, 1080)
+    assert h.taille_sortie(640, 360) == (1280, 720)
+    assert h.taille_sortie(1366, 768) == (1366, 768)
 
 
 # ------------------------------------------------------------------ mise en page et graphe ffmpeg
@@ -279,7 +287,7 @@ def test_vrai_rendu_court(video, logo, tmp_path):
         o, str(video), str(tmp_path / "out.mp4"), MOSQUEE, {"green": "#1E5A44"}, str(logo), log=lambda *a: None
     )
     c = h.sonder(out)
-    assert (c.w, c.h) == (1920, 1080) and c.audio
+    assert (c.w, c.h) == (1280, 720) and c.audio  # source 640x360 : petit côté ramené à 720
     assert abs(c.duree - 10.0) < 0.3  # 2 s + 6 s + 2 s
     assert not list(tmp_path.glob("*.part*"))
     assert video.stat().st_size > 0  # l'original est intact
@@ -614,3 +622,55 @@ def test_a_failed_ffmpeg_reports_its_error(tmp_path):
     """A render that fails must say why: the i18n function is still callable after the cleanup loops."""
     with pytest.raises(RuntimeError, match="ffmpeg render failed"):
         h._executer([([shutil.which("false") or "/usr/bin/false"], 1.0, 1.0)], str(tmp_path))
+
+
+# ------------------------------------------------------------------ silence du début
+
+
+def _seance(tmp_path, segments, duree=600.0, **k):
+    (tmp_path / "transcript.json").write_text(
+        json.dumps({"duration": duree, "segments": segments}, ensure_ascii=False), encoding="utf-8"
+    )
+    return {"output_dir": str(tmp_path), **k}
+
+
+def test_silence_du_debut_coupe_jusqu_a_la_premiere_parole(tmp_path):
+    from sada.backoffice import habillage as bo
+
+    k = _seance(tmp_path, [{"start": 42.5, "end": 50, "text": "Bismillah"}, {"start": 51, "end": 60, "text": "…"}])
+    assert bo.silence_initial(k) == 41.5  # une seconde de marge avant la parole
+
+
+@pytest.mark.parametrize(
+    "segments",
+    [
+        [],  # pas de parole transcrite
+        [{"start": 1.5, "end": 4, "text": "Bismillah"}],  # parole presque tout de suite : rien à couper
+        [{"start": 30, "end": 32, "text": "   "}, {"start": 1.0, "end": 3, "text": "Al hamdu lillah"}],
+        [{"start": 595, "end": 599, "text": "Amine"}],  # il ne resterait presque rien
+    ],
+)
+def test_silence_du_debut_rien_a_couper(tmp_path, segments):
+    from sada.backoffice import habillage as bo
+
+    assert bo.silence_initial(_seance(tmp_path, segments)) == 0.0
+
+
+def test_silence_du_debut_sans_transcription(tmp_path):
+    from sada.backoffice import habillage as bo
+
+    assert bo.silence_initial({"output_dir": str(tmp_path)}) == 0.0
+    assert bo.silence_initial({}) == 0.0
+
+
+def test_la_source_commence_a_la_premiere_parole(tmp_path):
+    from sada.backoffice import habillage as bo
+
+    rec = tmp_path / "live.mkv"
+    rec.write_bytes(b"x")
+    seg = [{"start": 20.0, "end": 25, "text": "Bismillah"}]
+    k = _seance(tmp_path, seg, video_path=None, recording=str(rec), start_pos=100.0, end_pos=700.0)
+    assert bo.source(k) == (str(rec), 119.0, 700.0)  # dans l'enregistrement complet
+    vid = tmp_path / "khutba.mp4"
+    vid.write_bytes(b"x")
+    assert bo.source({**k, "video_path": str(vid)}) == (str(vid), 19.0, None)  # dans la vidéo de la séance

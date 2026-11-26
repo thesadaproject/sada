@@ -172,13 +172,23 @@ class Cadre:
         return min(self.w, self.h) / 1080
 
 
+PETIT_COTE = (720, 1080)  # bornes du petit côté de la sortie
+
+
 def taille_sortie(w: int, h: int) -> tuple[int, int]:
-    """Petit côté ramené à 1080, proportions de la source gardées, dimensions paires."""
+    """Taille de la source gardée, petit côté ramené entre 720 et 1080, proportions gardées, dimensions paires.
+
+    Agrandir un direct 720p en 1080p n'ajoute aucun détail et coûte 2,25 fois plus de pixels à encoder ;
+    surtout, une sortie à la taille de la source permet le rendu par segments (milieu copié tel quel)."""
     if w <= 0 or h <= 0:
         return 1920, 1080
+    lo, hi = PETIT_COTE
+    cote = max(lo, min(hi, min(w, h)))
+    if cote == min(w, h) and w % 2 == 0 and h % 2 == 0:
+        return w, h
     if w >= h:
-        return max(2, round(1080 * w / h / 2) * 2), 1080
-    return 1080, max(2, round(1080 * h / w / 2) * 2)
+        return max(2, round(cote * w / h / 2) * 2), cote
+    return cote, max(2, round(cote * h / w / 2) * 2)
 
 
 def _ffprobe() -> str | None:

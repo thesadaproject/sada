@@ -7,6 +7,7 @@ import { usePolling } from "../usePolling";
 import { useFenced } from "../fenced";
 import { previewMonotone } from "../habillageEtat";
 import { BusyBtn } from "../BusyBtn";
+import { mmss } from "../format";
 import { idOnglet, idPanneau } from "@sada/ui";
 
 /** Branding of an imported video (dars, lecture, khutba): the mosque's identity over the picture.
@@ -103,6 +104,9 @@ export default function Habillage() {
 
       {!etat.has_source && <Bandeau ko>{t("habillage.noSource")}</Bandeau>}
       {lecture && etat.has_source && <Bandeau>{t("habillage.readOnly")}</Bandeau>}
+      {etat.has_source && (etat.silence_cut_s ?? 0) > 0 && (
+        <p className="m-0 text-[0.92rem] text-muted">{t("habillage.silenceCut", { duree: mmss(etat.silence_cut_s) })}</p>
+      )}
 
       <div className="grid items-start gap-4 min-[1000px]:grid-cols-[minmax(0,1fr)_minmax(400px,1.05fr)]">
         {/* Left: the single form, one tab per element. */}
