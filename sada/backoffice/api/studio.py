@@ -30,6 +30,7 @@ from .. import (
     orm,
     setup_session,
     stream_quality,
+    studio_assets,
     studio_devices,
     studio_incidents,
     studio_plan,
@@ -208,9 +209,10 @@ def live_status(a: DeviceDep, setup: int = 0):
 async def live_command(request: Request, a: DeviceDep):
     """A command from the console: `scene` takes `arg` as the scene name, other commands relay theirs.
 
-    The answer is the fresh engine state (forced read), so the screen never shows a stale scene.
+    The answer is the engine state right after the command, with its `rev` (the one the engine answered with,
+    else a forced read), so the screen never shows a stale scene.
     """
-    from .regie import _setup_failure, _setup_kwargs, apply_scene, live_flat
+    from .regie import _setup_failure, _setup_kwargs, after_command, apply_scene
 
     body = await _json(request)
     setup = body.get("setup") is True  # sent from the setup view: acts on the rehearsal, never on the stream
@@ -239,14 +241,68 @@ async def live_command(request: Request, a: DeviceDep):
     if isinstance(out, JSONResponse):
         return out
     a.audit("studio.live.commande", commande=cmd, valeur=arg or "", setup=setup)
-    fresh = await run_in_threadpool(live_flat, a.mosque, True, setup)  # blocking HTTP to the engine
+    if cmd == "scene" and isinstance(out.get("status"), dict):
+        fresh = out["status"]  # apply_scene already holds the state after the command
+    else:
+        fresh = await run_in_threadpool(after_command, a.mosque, out, setup)  # may be blocking HTTP to the engine
     return JSONResponse(fresh, headers={"Cache-Control": "no-store"})
+
+
+def _etag(request: Request, etag: str) -> Response | None:
+    """304 when the caller already holds this version (the body is then not sent again)."""
+    if studio_assets.matches(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers={"ETag": etag})
+    return None
+
+
+def _not_found(scene: str) -> JSONResponse:
+    return JSONResponse(
+        {"error": _("unknown screen: {screen}", screen=scene)}, status_code=404, headers={"Cache-Control": "no-store"}
+    )
+
+
+@router.get("/studio/live/scene/{scene}.png")
+async def live_scene_png(scene: str, request: Request, a: DeviceDep, setup: int = 0, scale: int = 1):
+    """A scene as the engine draws it: the studio composes the picture itself (`compositing: "studio"`).
+
+    Banner scenes come out transparent (laid over the camera), full screens opaque. `?setup=1`: the rehearsal's.
+    """
+    if not studio_assets.known_scene(scene):
+        return _not_found(scene)
+    made = await run_in_threadpool(studio_assets.scene_png, a.conn, a.mosque, scene, bool(setup))
+    if made is None:
+        return _not_found(scene)
+    etag, png = made
+    return _etag(request, etag) or Response(png, media_type="image/png", headers={"ETag": etag})
+
+
+@router.get("/studio/live/logo.png")
+async def live_logo_png(request: Request, a: DeviceDep, scale: int = 1):
+    """The logo medallion of the overlay, exactly as `render_overlays` lays it (`?scale=2` for a sharper picture)."""
+    etag, png = await run_in_threadpool(studio_assets.logo_png, a.mosque, scale)
+    return _etag(request, etag) or Response(png, media_type="image/png", headers={"ETag": etag})
+
+
+@router.get("/studio/live/screen/{screen}")
+async def live_screen_doc(screen: str, request: Request, a: DeviceDep, setup: int = 0):
+    """The mosque's template for one screen, as HTML the studio renders itself (it is a Chromium).
+
+    `source: "gabarit"` carries the document (fonts inlined, nothing active), the values the engine would put in it
+    and the intermission countdown's target; `source: "engine"` (no template for this screen) points at the PNG.
+    """
+    if not studio_assets.known_screen(screen):
+        return _not_found(screen)
+    made = await run_in_threadpool(studio_assets.screen_doc, a.conn, a.mosque, screen, bool(setup))
+    if made is None:
+        return _not_found(screen)
+    etag, body = made
+    return _etag(request, etag) or JSONResponse(body, headers={"ETag": etag, "Cache-Control": "no-store"})
 
 
 @router.patch("/studio/live/overlays/{kind}")
 async def live_overlay(kind: str, request: Request, a: DeviceDep):
     """Updates one overlay layer (qr, banner, logo); the patch is merged onto the current state."""
-    from .regie import _setup_failure, _setup_kwargs, live_flat
+    from .regie import _setup_failure, _setup_kwargs, _with_state, live_flat
 
     kind = str(kind or "").strip().lower()
     if kind not in OVERLAY_KINDS:
@@ -264,7 +320,8 @@ async def live_overlay(kind: str, request: Request, a: DeviceDep):
     except live.OrchestratorError as e:
         return _setup_failure(e)
     a.audit("studio.live.incrustation", incrustation=kind, visible=bool(merged.get("visible")), setup=setup)
-    return {"ok": True, "overlays": r.get("overlays") or {kind: merged}}
+    out = {"ok": True, "overlays": r.get("overlays") or {kind: merged}}
+    return await run_in_threadpool(_with_state, out, a.mosque, r, setup)
 
 
 # ------------------------------------------------------------------ setup mode (device)

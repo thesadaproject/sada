@@ -117,6 +117,10 @@ class FakeEncoder:
         self.shown: list = []
         self.overlay = None
         self.started = self.stopped = 0
+        self.restarts = 0
+
+    def current_recording(self):
+        return None
 
     def prepare(self, bg):
         pass
@@ -161,8 +165,9 @@ def make(monkeypatch, preview="rtmp://receiver:1935/live/x-prog"):
     monkeypatch.setattr(orch, "Encoder", FakeEncoder)
     o = object.__new__(orch.Orchestrator)
     o.cfg = Config(preview_url=preview, rtmp_urls=["rtmp://youtube.example/live/KEY"])
-    o.clock = SimpleNamespace(now=lambda: dt.datetime(2026, 11, 20, 12, 0, 0))
+    o.clock = SimpleNamespace(now=lambda: dt.datetime(2026, 11, 20, 12, 0, 0), speed=1.0)
     o.run_dir = None
+    o.run_id = "test-run"  # commands answer with the whole status (see Orchestrator._fresh)
     o.renderer = FakeRenderer()
     o.gabarit = None
     o.lock = threading.RLock()
@@ -174,7 +179,7 @@ def make(monkeypatch, preview="rtmp://receiver:1935/live/x-prog"):
     o.notifier = SimpleNamespace(enabled=False, notify_state=lambda *a: None)
     o.telemetry = SimpleNamespace(state_changed=lambda *a: None)
     o.uploader = SimpleNamespace(envoyer=lambda f: None)
-    o.vad = SimpleNamespace(runs=lambda: (0.0, 0.0), last_db=lambda: None)
+    o.vad = SimpleNamespace(runs=lambda: (0.0, 0.0), last_db=lambda: None, connected=False)
     o.presence = o.faces = None
     o.program, o.instances = [], []
     o.times = ["13:00"]

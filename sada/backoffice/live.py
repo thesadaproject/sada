@@ -121,7 +121,35 @@ def status_cached(mosque: dict, ttl: float = STATUS_TTL, forcer: bool = False) -
             return entree[1]
     resultat = _lire(mosque)  # first call (or forced read): we wait
     with _verrou:
+        old = _caches.get(cle)
+        if _older(resultat, old[1] if old else None):
+            return old[1]  # a command answered meanwhile with a newer state: that one is the truth
         _caches[cle] = (time.monotonic(), resultat)
+    return resultat
+
+
+def _older(new: dict, old: dict | None) -> bool:
+    """`new` carries an older revision than the snapshot kept (both reachable): it must not replace it."""
+    if not old or not new.get("ok") or not old.get("ok"):
+        return False
+    a, b = new.get("rev"), old.get("rev")
+    return isinstance(a, int) and isinstance(b, int) and a < b
+
+
+def remember(mosque: dict, answer: dict | None) -> dict | None:
+    """The status a command answered with (`status`, see the orchestrator's commands), summarized and kept as the
+    snapshot: the next reads serve the consequence of the command, not the state before it. None when the
+    orchestrator did not send one (older engine): the caller then reads the status itself."""
+    raw = answer.get("status") if isinstance(answer, dict) else None
+    if not isinstance(raw, dict):
+        return None
+    resultat = {"ok": True, **summarize(raw)}
+    cle = _cle(mosque)
+    with _verrou:
+        old = _caches.get(cle)
+        # a poll that went out before the command may come back after it: the newest revision stays
+        if not _older(resultat, old[1] if old else None):
+            _caches[cle] = (time.monotonic(), resultat)
     return resultat
 
 
@@ -129,7 +157,9 @@ def _rafraichir(mosque: dict, cle: str) -> None:
     try:
         resultat = _lire(mosque)
         with _verrou:
-            _caches[cle] = (time.monotonic(), resultat)
+            old = _caches.get(cle)
+            if not _older(resultat, old[1] if old else None):
+                _caches[cle] = (time.monotonic(), resultat)
     finally:
         with _verrou:
             _en_cours.discard(cle)
@@ -200,11 +230,17 @@ def set_mute(mosque: dict, muted: bool, setup: bool = False) -> dict:
     return _call(mosque, "POST", "mute", json_body={"muted": bool(muted), **({"setup": True} if setup else {})})
 
 
-def set_setup(mosque: dict, on: bool, ttl: float | None = None, timeout: float = 4.0) -> dict:
-    """Takes, renews or releases the setup lease on the mosque's orchestrator (a short wait: it may be asleep)."""
+def set_setup(
+    mosque: dict, on: bool, ttl: float | None = None, timeout: float = 4.0, compositing: str | None = None
+) -> dict:
+    """Takes, renews or releases the setup lease on the mosque's orchestrator (a short wait: it may be asleep).
+
+    `compositing`: "studio" when the lease is a Sada Studio device's (it composes the rehearsal picture itself)."""
     body: dict[str, object] = {"on": bool(on)}
     if ttl is not None:
         body["ttl"] = ttl
+    if compositing is not None:
+        body["compositing"] = compositing
     return _call(mosque, "POST", "setup", json_body=body, timeout=timeout)
 
 
@@ -268,4 +304,9 @@ def summarize(st: dict) -> dict:
         "mic_muted": bool(st.get("mic_muted", False)),
         "audio_level_db": st.get("audio_level_db"),
         "setup": st.get("setup") if isinstance(st.get("setup"), dict) else None,
+        # revision of this state (grows at every change); None from an engine that predates it
+        "rev": st.get("rev") if isinstance(st.get("rev"), int) else None,
+        # "studio": a Sada Studio device composes the picture itself, the engine only relays its stream
+        "compositing": "studio" if st.get("compositing") == "studio" else "server",
+        "playing_event": st.get("playing_event") if isinstance(st.get("playing_event"), dict) else None,
     }

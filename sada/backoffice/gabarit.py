@@ -77,6 +77,8 @@ VARIABLES = (
     "serie",
     "seance",
     "logo",
+    # intermission countdown, in the engine's format (scenes._countdown); empty on the other screens
+    "decompte",
 )
 
 

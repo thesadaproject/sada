@@ -34,6 +34,8 @@ COMMANDS = ("start", "pause", "resume", "auto", "extend", "skip", "scene", "jana
 SCENES = ("avant", "khutba", "priere", "entracte", "termine", "dars", "dars_fin", "tarawih", "bogus")
 CUSTOM_SCENES = (*SCENES, "custom:attente")
 NEW_STATUS_KEYS = ("overlays", "transition", "mic_muted")  # added to Machine.status() after the old golden
+# added after both goldens: `rev` is a revision drawn from the wall clock, `playing_event` a derived view
+LATER_STATUS_KEYS = ("rev", "playing_event")
 PLANS = {
     "khutba2": [("12:30", {}), ("13:30", {})],
     "dars": [("12:30", {"kind": "dars", "title": "T"}), ("13:30", {"kind": "conference"})],
@@ -126,7 +128,7 @@ def run_scenario(plan: str, seed: int, steps: int = 700, custom: bool = False) -
                 answer,
             ]
         )
-    status = m.status()
+    status = {k: v for k, v in m.status().items() if k not in LATER_STATUS_KEYS}
     if not custom:
         status = {k: v for k, v in status.items() if k not in NEW_STATUS_KEYS}
     final = {"status": status, "timing": m.timing().__dict__, "logs": logs, "trace": trace}

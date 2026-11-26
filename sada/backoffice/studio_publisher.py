@@ -62,7 +62,21 @@ def current(conn, mosque: dict) -> dict | None:
 
     The relay is the judge of whether a stream exists; when its API does not answer nothing is claimed
     (the relay itself still refuses a second publisher)."""
+    return _holder(conn, mosque, live_watch.publisher_info(path_of(mosque)))
+
+
+def editor(conn, mosque: dict) -> tuple[bool, str | None]:
+    """(known, source) of whoever feeds the mosque's live: `source` is the holder's ("device" for a Sada Studio,
+    "obs", "regie", "unknown") or None when nobody publishes. `known` is False when the relay's API did not
+    answer: the caller then keeps what it believed, a live is never re-composed on a silence."""
     info = live_watch.publisher_info(path_of(mosque))
+    if info is None:
+        return False, None
+    holder = _holder(conn, mosque, info)
+    return True, holder["source"] if holder else None
+
+
+def _holder(conn, mosque: dict, info: dict | None) -> dict | None:
     if not info or not info["ready"]:
         return None
     claim = orm.first(conn, StudioClaim, mosque_id=mosque["id"])

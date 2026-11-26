@@ -18,7 +18,7 @@ import pytest
 from conftest import client as make_client
 from conftest import one
 from PIL import Image
-from test_regie_studio import dev, engine, pair  # noqa: F401  (engine: fixture)
+from test_regie_studio import dev, pair
 from test_setup_mode import cfg, make, open_setup  # noqa: F401
 from test_studio_setup import _fresh_limits, orch  # noqa: F401  (fixtures)
 

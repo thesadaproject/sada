@@ -24,6 +24,13 @@ TTL_DEFAULT_S = 90.0
 TTL_MAX_S = 300.0
 #: Scene shown when a setup opens: what the audience sees first.
 FIRST_SCENE = "avant"
+#: Who composes the picture of a stage (see Stage.compositing).
+COMPOSITING = ("server", "studio")
+
+
+def compositing_of(value: Any) -> str:
+    """A compositing mode from untrusted input: anything but "studio" is the server's own composition."""
+    return "studio" if value == "studio" else "server"
 
 
 class SetupInactive(ValueError):
@@ -78,3 +85,6 @@ class Stage:
     shown_key: Any = None
     overlay_key: Any = None
     rehearsal: bool = field(default=False)
+    # Who draws the picture: "server" (this encoder lays scenes, overlays and the mute over the camera) or
+    # "studio" (the Sada Studio device composes everything itself: the encoder only relays its stream).
+    compositing: str = "server"

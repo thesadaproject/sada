@@ -30,17 +30,30 @@ log = logging.getLogger("sada")
 
 POLL_S = 5.0
 TYPES = ("khutba", "dars", "conference")
+PUBLISHERS = ("device", "obs", "regie", "unknown")
 
 
 @dataclass(frozen=True)
 class Announcement:
-    """What the back office says about the studio live: {live, source, type, title, slot_id}."""
+    """What the back office says about the studio live: {live, source, type, title, slot_id, publisher}."""
 
     live: bool = False
     source: str | None = None  # "manual" | "schedule"
     type: str | None = None
     title: str = ""
     slot_id: str | None = None
+    # who holds the mosque's relay path right now: "device" (a Sada Studio, which composes its own picture),
+    # "obs", "regie", "unknown", or None when nobody publishes (or the back office is too old to say)
+    publisher: str | None = None
+    publisher_known: bool = False  # False: the back office (or its relay) did not say; keep what was believed
+
+    @property
+    def compositing(self) -> str | None:
+        """`studio` when the stream on the relay is a Sada Studio device's (it is composed already), `server`
+        otherwise, None when unknown (the caller keeps its current mode)."""
+        if not self.publisher_known:
+            return None
+        return "studio" if self.publisher == "device" else "server"
 
     @classmethod
     def parse(cls, data: dict) -> Announcement:
@@ -51,6 +64,8 @@ class Announcement:
             type=kind if kind in TYPES else None,
             title=" ".join(str(data.get("title") or "").split())[:200],
             slot_id=data.get("slot_id"),
+            publisher=data.get("publisher") if data.get("publisher") in PUBLISHERS else None,
+            publisher_known="publisher" in data,
         )
 
 

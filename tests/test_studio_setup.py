@@ -26,7 +26,7 @@ def orch(monkeypatch):
     """Fake orchestrator: `answers` drives what `set_setup` returns (None = does not answer)."""
     state = {"answers": None, "calls": [], "status": {"ok": True, "state": "IDLE", "scene": None, "transition": "fade"}}
 
-    def set_setup(mosque, on, ttl=None, timeout=4.0):
+    def set_setup(mosque, on, ttl=None, timeout=4.0, compositing=None):
         state["calls"].append(("setup", mosque["slug"], on, ttl))
         if state["answers"] is None:
             raise live.OrchestratorError("orchestrator unreachable")

@@ -47,6 +47,8 @@ from .scenes import SCENES, Moment, SceneRenderer, render_custom_scene
 from .state import Machine, SessionParams, Signals
 from .vad import VadMonitor
 
+#: Scene key the encoder shows while a Sada Studio composes the picture itself: nothing over its stream.
+PASSTHROUGH_SCENE = "studio:passthrough"
 MAX_CUSTOM_IMAGES = 24  # custom scene images kept in memory (a mosque holds at most 12, see custom_scenes.MAX_SCENES)
 
 log = logging.getLogger("sada")
@@ -95,6 +97,9 @@ def wait_for_backoffice(url: str, limit_s: float, probe=None, sleep=time.sleep, 
 
 
 class Orchestrator:
+    #: Who composes the rehearsal stage: said by whoever takes the setup lease (see set_setup).
+    _setup_compositing = "server"
+
     def __init__(self, cfg: Config):
         self.cfg = cfg
         start = parse_hhmm(cfg.sim_start, dt.date.today()) if cfg.sim_start else None
@@ -484,8 +489,50 @@ class Orchestrator:
             self._envoyer_rediffusions()
         self._save_sessions()
 
+    def _set_compositing(self, stage: setup_mode.Stage | None, mode) -> None:
+        """Who composes this stage's picture (see Stage.compositing). A change redraws the stage at the next pass
+        and is a mutation of the state (new `rev`): the studio reads it to start or stop composing."""
+        mode = setup_mode.compositing_of(mode)
+        if stage is None or stage.compositing == mode:
+            return
+        stage.compositing = mode
+        stage.shown_key = stage.overlay_key = None
+        stage.machine.touch()
+        log.info(
+            _(
+                "Compositing ({stage}): {mode}",
+                stage="setup" if stage.rehearsal else "live",
+                mode=_("by the Sada Studio, the stream is relayed as is") if mode == "studio" else _("by the server"),
+            )
+        )
+
+    def _follow_editor(self, ann) -> None:
+        """The back office says who feeds the relay: a Sada Studio device composes its own picture."""
+        mode = getattr(ann, "compositing", None) if ann is not None else None
+        if mode is not None:
+            self._set_compositing(self.live_stage, mode)
+
+    def _blank(self) -> Image.Image:
+        return Image.new("RGBA", (int(self.cfg.width), int(self.cfg.height)), (0, 0, 0, 0))
+
+    def _show_passthrough(self, stage: setup_mode.Stage) -> None:
+        """The Sada Studio composes the scenes, the overlays and the mute itself: the encoder lays nothing over its
+        stream (no slate, no banner, no overlay) and never cuts its sound. The machine keeps running as usual."""
+        m, enc = stage.machine, stage.encoder
+        if m.scene is not None and stage.shown_key != PASSTHROUGH_SCENE:
+            stage.shown_key = PASSTHROUGH_SCENE
+            enc.show(PASSTHROUGH_SCENE, False, self._blank(), transition=m.transition)
+        if m.scene is not None and not enc.mic_on:
+            enc.mic(True)
+        if stage.overlay_key != PASSTHROUGH_SCENE:
+            stage.overlay_key = PASSTHROUGH_SCENE
+            enc.set_overlay(self._blank())
+
     def _show(self, stage: setup_mode.Stage):
         """Aligns one stage's encoder on its machine: displayed scene, overlays, mic (not the stream start/stop)."""
+        if stage.compositing == "studio":
+            self._show_passthrough(stage)
+            return
         m, enc = stage.machine, stage.encoder
         if m.scene is not None:
             now = self.clock.now()
@@ -635,13 +682,19 @@ class Orchestrator:
                 m.set_transition(transition)
             msg = m.command(cmd, self.signals(), arg)
             self._sync_stage(st)
-            return {"message": msg, "state": m.state.value, "transition": m.transition}
+            return {"message": msg, "state": m.state.value, "transition": m.transition, **self._fresh(st)}
+
+    def _fresh(self, st: setup_mode.Stage) -> dict:
+        """What a command answers besides its own fields: the stage's revision and the whole status after it, so
+        the caller shows the consequence without asking again (and can order it against its polls by `rev`)."""
+        return {"rev": st.machine.rev, "compositing": st.compositing, "status": self.status()}
 
     def set_transition(self, mode: str, setup: bool = False) -> dict:
         with self.lock:
-            m = self._stage_for(setup).machine
+            st = self._stage_for(setup)
+            m = st.machine
             mode = m.set_transition(mode)
-            return {"transition": mode, "state": m.state.value}
+            return {"transition": mode, "state": m.state.value, **self._fresh(st)}
 
     def _custom_image(self, scene_id: str) -> Image.Image | None:
         img = self._custom_scenes.get(scene_id)
@@ -686,14 +739,20 @@ class Orchestrator:
                 m.set_transition(transition)
             msg = m.command("scene", self.signals(), scene_id)
             self._sync_stage(st)
-            return {"message": msg, "state": m.state.value, "scene": scene_id, "transition": m.transition}
+            return {
+                "message": msg,
+                "state": m.state.value,
+                "scene": scene_id,
+                "transition": m.transition,
+                **self._fresh(st),
+            }
 
     def set_overlay(self, kind: str, data: dict, setup: bool = False) -> dict:
         with self.lock:
             st = self._stage_for(setup)
             overlays = st.machine.set_overlay(kind, data)
             self._sync_stage(st)
-            return {"overlays": overlays, "state": st.machine.state.value}
+            return {"overlays": overlays, "state": st.machine.state.value, **self._fresh(st)}
 
     def set_mute(self, muted: bool, setup: bool = False) -> dict:
         with self.lock:
@@ -704,15 +763,19 @@ class Orchestrator:
                 "mic_muted": st.machine.mic_muted,
                 "mic": st.encoder.mic_on,
                 "state": st.machine.state.value,
+                **self._fresh(st),
             }
 
-    def set_setup(self, on: bool, ttl=None) -> dict:
+    def set_setup(self, on: bool, ttl=None, compositing: str | None = None) -> dict:
         """Takes, renews or releases the setup lease. Opening wakes nothing by itself (the process is already
         running when this is called); it prepares the rehearsal stage, which starts once a scene is shown.
 
         Stopping an encoder waits for ffmpeg (seconds): that happens outside `self.lock`, so the engine's loop and
         the other commands are not held. `_setup_gate` serialises lease changes, so a new stage is never built (same
-        ports, same folder) while the previous encoder is still going down."""
+        ports, same folder) while the previous encoder is still going down.
+
+        `compositing`: "studio" when the lease is a Sada Studio device's, which composes the picture itself (the
+        rehearsal then only relays); None keeps what the previous call said."""
         with self._setup_gate:
             if not on:
                 with self.lock:
@@ -725,6 +788,9 @@ class Orchestrator:
             if not self.cfg.preview_url:
                 raise ValueError(_("setup mode needs the monitoring copy (SADA_PREVIEW_URL)"))
             with self.lock:
+                if compositing is not None:
+                    self._setup_compositing = setup_mode.compositing_of(compositing)
+                    self._set_compositing(self.rehearsal, self._setup_compositing)
                 fresh = self.setup.open(setup_mode.clamp_ttl(ttl))
                 rebuild = fresh or self.rehearsal is None
                 old = self._detach_rehearsal() if rebuild else None
@@ -751,7 +817,7 @@ class Orchestrator:
         machine.custom_known = self._custom_scenes.__contains__
         machine.idx = min(self.machine.idx, len(machine.sessions))
         machine.transition = self.machine.transition
-        return setup_mode.Stage(machine, enc, rehearsal=True)
+        return setup_mode.Stage(machine, enc, rehearsal=True, compositing=self._setup_compositing)
 
     def _install_rehearsal(self, stage: setup_mode.Stage) -> None:
         """Makes the stage current (under `self.lock`) and aligns it; nothing slow happens here."""
@@ -824,7 +890,12 @@ class Orchestrator:
                     "transition": m.transition,
                     "overlays": {k: dict(v) for k, v in m.overlays.items()},
                     "mic_muted": m.mic_muted,
+                    "janaza_name": m.janaza_name,
+                    "janaza_info": m.janaza_info,
+                    "playing_event": m.playing.event() if m.playing is not None else None,
                     "encoder_alive": st.encoder.alive(),
+                    "rev": m.observe(),
+                    "compositing": st.compositing,
                 }
             )
         return out
@@ -849,6 +920,7 @@ class Orchestrator:
                         "pos_s": round(pos, 1),
                     },
                     "setup": self.setup_status(),
+                    "compositing": self.live_stage.compositing,
                     "mic": self.encoder.mic_on,
                     "mic_muted": self.machine.mic_muted,
                     "audio_level_db": getattr(self.vad, "last_db", lambda: None)(),
@@ -906,8 +978,10 @@ class Orchestrator:
                 self._roll_day(sig)
                 self._retry_plan(sig)
                 self._retry_live_config()
-                if note := self.studio.step(self.machine, sig, self.studio_poll.take()):
+                ann = self.studio_poll.take()
+                if note := self.studio.step(self.machine, sig, ann):
                     log.info(note)
+                self._follow_editor(ann)
                 self._sync()
                 self._sync_setup()
             if time.monotonic() - last_status > 30:
