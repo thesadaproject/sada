@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.0-alpha.20](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.19...sada-v0.1.0-alpha.20) (2026-11-26)
+
+
+### Features
+
+* **stream:** broadcast quality per mosque (720p/1080p, bit rate, frame rate) ([#98](https://github.com/thesadaproject/sada/issues/98)) ([19165c2](https://github.com/thesadaproject/sada/commit/19165c24fdd78c6a57a45b2c2f4428dc90112d63))
+* **tools:** migrate a mosque's screens, back office files and screen_texts to production ([#97](https://github.com/thesadaproject/sada/issues/97)) ([c4e35db](https://github.com/thesadaproject/sada/commit/c4e35dbf72d215298cb2083df84035cca5042936))
+
 ## [0.1.0-alpha.19](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.18...sada-v0.1.0-alpha.19) (2026-11-26)
 
 
