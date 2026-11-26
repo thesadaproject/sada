@@ -202,5 +202,9 @@
   "Setup mode: started": "وضع الضبط: بدأ",
   "setup mode is not active": "وضع الضبط غير مفعّل",
   "setup mode needs the monitoring copy (SADA_PREVIEW_URL)": "وضع الضبط يحتاج إلى نسخة المراقبة (SADA_PREVIEW_URL)",
-  "muted must be a boolean": "يجب أن تكون قيمة « muted » منطقية (true/false)"
+  "muted must be a boolean": "يجب أن تكون قيمة « muted » منطقية (true/false)",
+  "Live: back-office broadcast quality unreachable ({error}) — local setting kept": "البث: جودة البث في لوحة الإدارة غير قابلة للوصول ({error}) — تم الاحتفاظ بالإعداد المحلي",
+  "Live: broadcast quality out of range — local setting kept": "البث: جودة البث خارج الحدود — تم الاحتفاظ بالإعداد المحلي",
+  "Live: quality {width}x{height} at {fps} fps, {kbps} kbit/s": "البث: الجودة {width}x{height} بمعدل {fps} إطارًا في الثانية، {kbps} كيلوبت/ث",
+  "Broadcast quality reached after the start: applied at the next restart": "تم الحصول على جودة البث بعد البدء: ستُطبَّق عند إعادة التشغيل القادمة"
 }

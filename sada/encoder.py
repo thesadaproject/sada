@@ -42,6 +42,13 @@ _X264_PRESETS = (
 )
 
 
+def bufsize(video_bitrate: str) -> str:
+    """Rate-control buffer: 5000k as it always was, or twice the bit rate when that is more (1080p)."""
+    digits = "".join(ch for ch in video_bitrate if ch.isdigit())
+    kbps = int(digits) if digits and video_bitrate.strip().lower().endswith("k") else 0
+    return f"{max(5000, 2 * kbps)}k"
+
+
 def x264_preset() -> str:
     """Live x264 preset, overridable via SADA_X264_PRESET (default ultrafast: CPU-bound server)."""
     value = os.environ.get("SADA_X264_PRESET", "").strip().lower()
@@ -281,7 +288,7 @@ class Encoder:
             "-maxrate",
             c.video_bitrate,
             "-bufsize",
-            "5000k",
+            bufsize(c.video_bitrate),
             "-g",
             str(c.fps * 2),
             "-pix_fmt",

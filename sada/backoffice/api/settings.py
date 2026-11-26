@@ -28,6 +28,7 @@ from .. import (
     orm,
     prayer_times,
     publish,
+    stream_quality,
     tarawih,
     tenant_config,
     variables_ecran,
@@ -118,6 +119,7 @@ def settings(ctx: CtxDep):
         "imams": auth.imams(ctx.conn, ctx.mosque["id"]),
         "connectors": publish.connector_rows(ctx.conn, ctx.mosque),
         "targets": destinations.rows(ctx.conn, ctx.mosque),
+        "quality": stream_quality.view(ctx.conn, ctx.mosque["id"]),
         "input": live_input.view(ctx.conn, ctx.mosque, _host(ctx)),
         "screens": screens_mod.view(ctx.conn, ctx.mosque),
         # Lignes arabes du gabarit : saisies par la mosquée, jamais fournies par le code.
@@ -222,6 +224,30 @@ async def live_save(ctx: CtxDep):
     except destinations.InvalidTarget as e:
         raise Invalid(str(e)) from e
     return _ok(_("Live destinations saved. They are picked up at the next live start."), targets=rows)
+
+
+@router.put("/settings/quality")
+async def quality_save(ctx: CtxDep):
+    """Broadcast quality: resolution, video bit rate, frame rate. Applied at the next start of the engine."""
+    f = await ctx.raw_body()
+    ctx.require("admin")
+    try:
+        view = stream_quality.save(ctx.conn, ctx.mosque["id"], f)
+    except stream_quality.InvalidQuality as e:
+        raise Invalid(str(e)) from e
+    db.audit(
+        ctx.conn,
+        ctx.mosque["id"],
+        ctx.user["id"],
+        "diffusion.qualite",
+        "mosque",
+        ctx.mosque["id"],
+        ip=ctx.ip,
+        height=view["height"],
+        video_kbps=view["video_kbps"],
+        fps=view["fps"],
+    )
+    return _ok(_("Broadcast quality saved. The engine applies it at its next start."), quality=view)
 
 
 @router.put("/settings/input")

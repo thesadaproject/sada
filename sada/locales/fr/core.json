@@ -202,5 +202,9 @@
   "Setup mode: started": "Mode réglage : démarré",
   "setup mode is not active": "le mode réglage n'est pas actif",
   "setup mode needs the monitoring copy (SADA_PREVIEW_URL)": "le mode réglage nécessite la copie de contrôle (SADA_PREVIEW_URL)",
-  "muted must be a boolean": "« muted » doit être un booléen"
+  "muted must be a boolean": "« muted » doit être un booléen",
+  "Live: back-office broadcast quality unreachable ({error}) — local setting kept": "Direct : qualité de diffusion du back-office injoignable ({error}) — configuration locale conservée",
+  "Live: broadcast quality out of range — local setting kept": "Direct : qualité de diffusion hors limites — configuration locale conservée",
+  "Live: quality {width}x{height} at {fps} fps, {kbps} kbit/s": "Direct : qualité {width}x{height} à {fps} i/s, {kbps} kbit/s",
+  "Broadcast quality reached after the start: applied at the next restart": "Qualité de diffusion obtenue après le démarrage : appliquée au prochain redémarrage"
 }

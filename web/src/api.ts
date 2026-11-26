@@ -372,6 +372,8 @@ export const api = {
   saveNotifications: (body: Record<string, string>) => ecrire<any>("PUT", "/settings/notifications", body),
   destinations: (targets: Array<{ id?: number; label: string; url: string; enabled: boolean }>) =>
     ecrire<any>("PUT", "/settings/live", { targets }),
+  /** Broadcast quality of the mosque: height (720|1080), video_kbps ("" = recommended), fps (25|30). */
+  saveQuality: (q: { height: string; video_kbps: string; fps: string }) => ecrire<any>("PUT", "/settings/quality", q),
   /** Video input: a camera address, or "a computer pushes its picture" (the relay's address is built server-side). */
   saveInput: (mode: string, url: string) => ecrire<any>("PUT", "/settings/input", { mode, url }),
   /** Replays bucket (S3 / R2): the secret comes back masked, sending the mask keeps it. */

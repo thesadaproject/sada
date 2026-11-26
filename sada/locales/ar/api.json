@@ -166,5 +166,10 @@
   "QR code URL must start with https://": "يجب أن يبدأ رابط رمز QR بـ https://",
   "invalid corner: {corner}": "زاوية غير صالحة: {corner}",
   "banner title is required": "عنوان الشريط مطلوب",
-  "Overlay {kind}: {state}": "طبقة العرض {kind}: {state}"
+  "Overlay {kind}: {state}": "طبقة العرض {kind}: {state}",
+  "The broadcast quality must be made of whole numbers.": "يجب أن تكون جودة البث أعدادًا صحيحة.",
+  "The resolution must be 720p or 1080p.": "يجب أن تكون الدقة 720p أو 1080p.",
+  "The frame rate must be automatic, 25 or 30 images per second.": "يجب أن يكون معدل الإطارات تلقائيًا أو 25 أو 30 إطارًا في الثانية.",
+  "The video bit rate must be between {lo} and {hi} kbit/s.": "يجب أن يكون معدل بث الفيديو بين {lo} و{hi} كيلوبت/ث.",
+  "Broadcast quality saved. The engine applies it at its next start.": "تم حفظ جودة البث. يطبّقها المحرك عند تشغيله القادم."
 }
