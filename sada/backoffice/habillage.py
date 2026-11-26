@@ -61,14 +61,42 @@ MOIS = (
 # ------------------------------------------------------------------ source et fichiers
 
 
+MARGE_PAROLE = 1.0  # s gardées avant la première parole
+COUPE_MIN = 2.0  # silence plus court au début : rien n'est coupé
+
+
+def silence_initial(k: dict) -> float:
+    """Secondes coupées au début de la séance : ce qui précède la première parole de la transcription
+    (Whisper avec détection de voix, hallucinations déjà écartées), moins une seconde de marge.
+
+    Le direct démarre sur la présence au minbar, souvent avant la première parole : la vidéo habillée
+    commence, elle, quand l'imam parle. 0 sans transcription."""
+    from ..pipeline.output import SessionOutput
+
+    if not k.get("output_dir"):
+        return 0.0
+    tr = SessionOutput(k["output_dir"]).read(SessionOutput(k["output_dir"]).transcript, {})
+    debuts = [float(x["start"]) for x in tr.get("segments") or [] if str(x.get("text") or "").strip()]
+    if not debuts:
+        return 0.0
+    coupe = min(debuts) - MARGE_PAROLE
+    duree = float(tr.get("duration") or 0)
+    if coupe < COUPE_MIN or (duree and duree - coupe < 10.0):
+        return 0.0
+    return round(coupe, 2)
+
+
 def source(k: dict) -> tuple[str, float, float | None] | None:
     """(fichier, début, fin) de la vidéo à habiller : la vidéo de la session si elle a été extraite,
-    sinon l'enregistrement complet coupé aux bornes de la session. None : rien à habiller."""
+    sinon l'enregistrement complet coupé aux bornes de la session ; le silence d'avant la première
+    parole est retiré du début. None : rien à habiller."""
+    coupe = silence_initial(k)
     if k.get("video_path") and Path(k["video_path"]).exists():
-        return k["video_path"], 0.0, None
+        return k["video_path"], coupe, None
     rec = k.get("recording")
     if rec and Path(rec).exists():
-        return rec, float(k.get("start_pos") or 0.0), (float(k["end_pos"]) if k.get("end_pos") else None)
+        debut = float(k.get("start_pos") or 0.0)
+        return rec, debut + coupe, (float(k["end_pos"]) if k.get("end_pos") else None)
     return None
 
 
@@ -180,22 +208,43 @@ def ligne(conn, kid: int) -> dict | None:
     return orm.first(conn, Habillage, khutba_id=kid)
 
 
-def decalage_carton(conn, k: dict) -> float:
-    """Durée du carton d'ouverture de la vidéo habillée en place (0 s sans rendu, ou sans carton)."""
+def _rendues(conn, k: dict) -> dict:
     h = ligne(conn, k["id"])
     rendues = fichier_options_rendues(k)
     try:
         brut = rendues.read_text(encoding="utf-8") if rendues.exists() else ((h or {}).get("options") or "{}")
-        return rendu.chrono(rendu.normaliser(json.loads(brut), rendu.DEFAUTS), 0.0).i
-    except (ValueError, TypeError, OSError):
+        d = json.loads(brut)
+        return d if isinstance(d, dict) else {}
+    except (ValueError, OSError):
+        return {}
+
+
+def decalage_carton(conn, k: dict) -> float:
+    """Durée du carton d'ouverture de la vidéo habillée en place (0 s sans rendu, ou sans carton)."""
+    try:
+        return rendu.chrono(rendu.normaliser(_rendues(conn, k), rendu.DEFAUTS), 0.0).i
+    except (ValueError, TypeError):
         return 0.0
 
 
+def coupe_rendue(conn, k: dict) -> float:
+    """Silence coupé au début de la vidéo habillée en place (celui du rendu, pas celui d'aujourd'hui)."""
+    try:
+        return float((_rendues(conn, k).get("_rendu") or {}).get("coupe") or 0.0)
+    except (TypeError, ValueError, AttributeError):
+        return 0.0
+
+
+def decalage_habille(conn, k: dict) -> float:
+    """Temps de la séance -> temps de la vidéo habillée : + carton d'ouverture, - silence coupé."""
+    return decalage_carton(conn, k) - coupe_rendue(conn, k)
+
+
 def version_habillee(conn, k: dict) -> dict | None:
-    """La vidéo habillée prête, celle qu'on affiche : son décalage d'intro recale la transcription."""
+    """La vidéo habillée prête, celle qu'on affiche : son décalage (carton, coupe) recale la transcription."""
     if not (ligne(conn, k["id"]) and fichier_video(k).exists()):
         return None
-    return {"offset_s": decalage_carton(conn, k), "v": int(fichier_video(k).stat().st_mtime)}
+    return {"offset_s": decalage_habille(conn, k), "v": int(fichier_video(k).stat().st_mtime)}
 
 
 def etat(conn, k: dict, m: dict) -> dict:
@@ -235,6 +284,7 @@ def etat(conn, k: dict, m: dict) -> dict:
         "preview_ready": apercu.exists(),
         "preview_v": int(apercu.stat().st_mtime) if apercu.exists() else 0,
         "has_source": source(k) is not None,
+        "silence_cut_s": silence_initial(k),
         "has_logo": logo is not None,
         "mosque": m.get("name") or "",
         "colors": {
@@ -287,10 +337,9 @@ def langues_disponibles(conn, k: dict) -> list[str]:
 
 
 def alignements(conn, k: dict) -> dict[str, float]:
-    """Décalage des temps de la session : vidéo habillée (carton + coupe), vidéo d'origine (coupe seule)."""
-    src = source(k)
-    debut = float(src[1]) if src else 0.0
-    return {"habille": decalage_carton(conn, k) - debut, "brut": -debut}
+    """Décalage des temps de la séance (0 = son début) vers ceux de chaque vidéo : habillée (carton
+    d'ouverture, silence coupé), d'origine (la vidéo de la séance, qui commence avec elle : aucun)."""
+    return {"habille": decalage_habille(conn, k), "brut": 0.0}
 
 
 def sous_titres_srt(conn, k: dict, langue: str, brut: bool = False, passages: dict | None = None) -> tuple[str, bytes]:
@@ -383,6 +432,7 @@ def empreinte(k: dict, m: dict) -> dict | None:
         "source": _fichier_empreinte(src[0]),
         "debut": src[1],
         "fin": src[2],
+        "coupe": silence_initial(k),
         "mosquee": m.get("name") or "",
         "brand": brand,
         "logo": _fichier_empreinte(logo),
