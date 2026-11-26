@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
 import { useConfirm } from "../confirmContext";
 import { dateTime, nombre } from "../format";
 import { Btn, Card, Field, Kicker, inputClass } from "@sada/ui";
+import { BusyBtn } from "../BusyBtn";
+import { usePolling } from "../usePolling";
 
 /** Studio devices: the mosque's PC that streams on its own. Pairing (the code shown on the device),
  *  the list with its state, renaming, key rotation, revocation, the day's incidents and the schedule
@@ -45,30 +47,48 @@ export default function Devices() {
   const [msg, setMsg] = useState<Message>(null);
   const [code, setCode] = useState("");
   const [nom, setNom] = useState("");
-  const [occupe, setOccupe] = useState(false);
+  /** Actions in flight, by key (`revoke:3`, `subscribed`…): only their own control waits. */
+  const [occupe, setOccupe] = useState<Record<string, boolean>>({});
   const [renomme, setRenomme] = useState<{ id: number; nom: string } | null>(null);
   const [courriel, setCourriel] = useState<string | null>(null);
+  // Write fence: bumped when an action starts and when it settles. A read that left before is
+  // dropped, so a late poll cannot bring back a revoked device or untick a box.
+  const fence = useRef(0);
 
-  const charger = useCallback(() => api.studioDevices().then((r: Donnees) => { setD(r); setErreur(false); }).catch(() => setErreur(true)), []);
-  useEffect(() => {
-    charger();
-    const id = window.setInterval(() => { if (document.visibilityState !== "hidden") charger(); }, 15_000);
-    return () => window.clearInterval(id);
-  }, [charger]);
+  const charger = useCallback(async () => {
+    const depart = fence.current;
+    try {
+      const r: Donnees = await api.studioDevices();
+      if (fence.current === depart) { setD(r); setErreur(false); }
+    } catch {
+      if (fence.current === depart) setErreur(true);
+    }
+  }, []);
+  usePolling(charger, 15_000);
 
-  async function agir(f: () => Promise<{ message?: string }>, apres?: () => void) {
-    setOccupe(true); setMsg(null);
+  async function agir(cle: string, f: () => Promise<{ message?: string }>,
+                      { apres, optimiste }: { apres?: () => void; optimiste?: (x: Donnees) => Donnees } = {}) {
+    if (occupe[cle]) return;
+    const avant = d;
+    fence.current += 1;
+    setOccupe((o) => ({ ...o, [cle]: true })); setMsg(null);
+    if (optimiste) setD((x) => (x ? optimiste(x) : x));
     try {
       const r = await f();
+      fence.current += 1;
       setMsg({ ok: true, texte: r.message ?? t("devices.saved") });
       apres?.();
-      await charger();
     } catch (e: any) {
+      fence.current += 1;
+      if (optimiste) setD(avant);
       setMsg({ ok: false, texte: e?.message ?? t("common.error") });
     } finally {
-      setOccupe(false);
+      setOccupe((o) => { const n = { ...o }; delete n[cle]; return n; });
     }
+    await charger();
   }
+  const majAppareil = (id: number, champs: Partial<Appareil>) => (x: Donnees): Donnees =>
+    ({ ...x, devices: x.devices.map((a) => (a.id === id ? { ...a, ...champs } : a)) });
 
   if (erreur && !d) return <p className="text-muted">{t("common.error")}</p>;
   if (!d) return <p className="text-muted">{t("common.loading")}</p>;
@@ -87,13 +107,13 @@ export default function Devices() {
           <span className="font-semibold">{t("devices.liveRunning", { source: d.publisher.text })}</span>
           <span className="text-muted">{t("devices.liveRunningHint")}</span>
           {d.can_takeover && (
-            <Btn variante="dangerGhost" className="ms-auto" disabled={occupe}
+            <BusyBtn variante="dangerGhost" className="ms-auto" busy={!!occupe.takeover}
                  onClick={async () => {
                    if (await confirm({ message: t("devices.takeoverConfirm", { source: d.publisher!.text }), action: t("devices.takeover") }))
-                     agir(() => api.studioTakeover());
+                     agir("takeover", () => api.studioTakeover(), { optimiste: (x) => ({ ...x, publisher: null }) });
                  }}>
               {t("devices.takeover")}
-            </Btn>
+            </BusyBtn>
           )}
         </div>
       )}
@@ -119,7 +139,7 @@ export default function Devices() {
         <Kicker>{t("devices.pairTitle")}</Kicker>
         <p className="mt-0 text-[0.92rem] text-muted">{t("devices.pairHelp", { mosque: d.mosque.name })}</p>
         <form className="grid gap-3 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_auto] sm:items-end"
-              onSubmit={(e) => { e.preventDefault(); agir(() => api.studioPair(code, nom), () => { setCode(""); setNom(""); }); }}>
+              onSubmit={(e) => { e.preventDefault(); agir("pair", () => api.studioPair(code, nom), { apres: () => { setCode(""); setNom(""); } }); }}>
           <Field label={t("devices.code")}>
             <input className={`${inputClass} font-mono uppercase tracking-[0.15em]`} value={code} maxLength={9}
                    autoComplete="off" spellCheck={false} placeholder="ABCD-2345" onChange={(e) => setCode(e.target.value)} />
@@ -127,7 +147,7 @@ export default function Devices() {
           <Field label={t("devices.name")}>
             <input className={inputClass} value={nom} maxLength={60} placeholder={t("devices.namePlaceholder")} onChange={(e) => setNom(e.target.value)} />
           </Field>
-          <Btn type="submit" disabled={occupe || code.replace(/[\s-]/g, "").length < 8}>{t("devices.pair")}</Btn>
+          <BusyBtn type="submit" busy={!!occupe.pair} disabled={code.replace(/[\s-]/g, "").length < 8}>{t("devices.pair")}</BusyBtn>
         </form>
       </Card>
 
@@ -140,10 +160,15 @@ export default function Devices() {
               <div className="flex flex-wrap items-center gap-2">
                 <span aria-hidden className={`inline-block size-2.5 rounded-full ${a.online ? "bg-green" : "bg-dot-off"}`} />
                 {renomme?.id === a.id ? (
-                  <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); agir(() => api.studioRename(a.id, renomme.nom), () => setRenomme(null)); }}>
+                  <form className="flex gap-2" onSubmit={(e) => {
+                    e.preventDefault();
+                    const nouveau = renomme.nom.trim();
+                    agir(`rename:${a.id}`, () => api.studioRename(a.id, renomme.nom), { optimiste: majAppareil(a.id, { name: nouveau }) });
+                    setRenomme(null);
+                  }}>
                     <input className={`${inputClass} !py-1.5`} value={renomme.nom} maxLength={60} autoFocus
                            aria-label={t("devices.name")} onChange={(e) => setRenomme({ id: a.id, nom: e.target.value })} />
-                    <Btn type="submit" disabled={occupe || !renomme.nom.trim()}>{t("common.save")}</Btn>
+                    <Btn type="submit" disabled={!renomme.nom.trim()}>{t("common.save")}</Btn>
                     <Btn variante="ghost" onClick={() => setRenomme(null)}>{t("devices.cancel")}</Btn>
                   </form>
                 ) : (
@@ -171,17 +196,17 @@ export default function Devices() {
               <p className="m-0 text-[0.82rem] text-muted">{t("devices.createdBy", { who: a.created_by_name || "—", when: a.created_at.slice(0, 10) })}
                 {a.rotation_pending && ` · ${t("devices.rotationPending")}`}</p>
               <div className="flex flex-wrap gap-2">
-                <Btn variante="ghost" className="min-h-9 px-3 py-1 text-[0.88rem]" disabled={occupe} onClick={() => setRenomme({ id: a.id, nom: a.name })}>{t("devices.rename")}</Btn>
-                <Btn variante="ghost" className="min-h-9 px-3 py-1 text-[0.88rem]" disabled={occupe || a.rotation_pending}
+                <BusyBtn variante="ghost" className="min-h-9 px-3 py-1 text-[0.88rem]" busy={!!occupe[`rename:${a.id}`]} onClick={() => setRenomme({ id: a.id, nom: a.name })}>{t("devices.rename")}</BusyBtn>
+                <BusyBtn variante="ghost" className="min-h-9 px-3 py-1 text-[0.88rem]" busy={!!occupe[`rotate:${a.id}`]} disabled={a.rotation_pending && !occupe[`rotate:${a.id}`]}
                      onClick={async () => {
                        if (await confirm({ message: t("devices.rotateConfirm", { name: a.name }), action: t("devices.rotate"), danger: false }))
-                         agir(() => api.studioRotate(a.id));
-                     }}>{t("devices.rotate")}</Btn>
-                <Btn variante="dangerGhost" className="min-h-9 px-3 py-1 text-[0.88rem]" disabled={occupe}
+                         agir(`rotate:${a.id}`, () => api.studioRotate(a.id), { optimiste: majAppareil(a.id, { rotation_pending: true }) });
+                     }}>{t("devices.rotate")}</BusyBtn>
+                <BusyBtn variante="dangerGhost" className="min-h-9 px-3 py-1 text-[0.88rem]" busy={!!occupe[`revoke:${a.id}`]}
                      onClick={async () => {
                        if (await confirm({ message: t("devices.revokeConfirm", { name: a.name }), action: t("devices.revoke") }))
-                         agir(() => api.studioRevoke(a.id));
-                     }}>{t("devices.revoke")}</Btn>
+                         agir(`revoke:${a.id}`, () => api.studioRevoke(a.id));
+                     }}>{t("devices.revoke")}</BusyBtn>
               </div>
             </li>
           ))}
@@ -215,16 +240,24 @@ export default function Devices() {
         <Kicker>{t("devices.alerts")}</Kicker>
         {!d.mail.configured && <p className="mt-0 text-[0.88rem] text-muted">{t("devices.mailOff")}</p>}
         <form className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"
-              onSubmit={(e) => { e.preventDefault(); agir(() => api.studioAlertPrefs({ email: courriel ?? d.mail.email }), () => setCourriel(null)); }}>
+              onSubmit={(e) => {
+                e.preventDefault();
+                const email = courriel ?? d.mail.email;
+                agir("email", () => api.studioAlertPrefs({ email }), { optimiste: (x) => ({ ...x, mail: { ...x.mail, email } }) });
+                setCourriel(null);
+              }}>
           <Field label={t("devices.myEmail")} aide={t("devices.myEmailHelp")}>
             <input type="email" className={inputClass} value={courriel ?? d.mail.email} maxLength={200}
                    onChange={(e) => setCourriel(e.target.value)} />
           </Field>
-          <Btn type="submit" disabled={occupe || courriel === null}>{t("common.save")}</Btn>
+          <BusyBtn type="submit" busy={!!occupe.email} disabled={courriel === null && !occupe.email}>{t("common.save")}</BusyBtn>
         </form>
         <label className="mt-3 flex items-center gap-2 text-[0.92rem]">
-          <input type="checkbox" checked={d.mail.subscribed} disabled={occupe}
-                 onChange={(e) => agir(() => api.studioAlertPrefs({ subscribed: e.target.checked }))} />
+          <input type="checkbox" checked={d.mail.subscribed} aria-busy={!!occupe.subscribed || undefined}
+                 onChange={(e) => {
+                   const subscribed = e.target.checked;
+                   agir("subscribed", () => api.studioAlertPrefs({ subscribed }), { optimiste: (x) => ({ ...x, mail: { ...x.mail, subscribed } }) });
+                 }} />
           {t("devices.subscribed")}
         </label>
       </Card>
