@@ -9,15 +9,10 @@ from pathlib import Path
 
 import pytest
 from conftest import (  # noqa: E402
-    applied_versions,
     audit_rows,
-    columns,
-    delete,
     insert,
-    legacy_metadata,
     one,
     set_khutba,
-    table_names,
 )
 
 from sada.backoffice import models  # noqa: E402
@@ -582,32 +577,6 @@ def test_erreur_sans_chemin():
     from sada.backoffice.habillage import sans_chemin
 
     assert sans_chemin("/home/x/data/output/run/source/dars.mp4: Invalid data") == "dars.mp4: Invalid data"
-
-
-@pytest.mark.skipif(bool(__import__("os").environ.get("SADA_DATABASE_URL")), reason="SQLite file format")
-def test_migration_8_sur_une_base_en_version_6(tmp_path):
-    from sada.backoffice import db, migrations
-
-    path = tmp_path / "bo.db"
-    db.init(path)
-    # Base rembobinée en version 7 : table `habillages` absente, mosquée sans ses réglages.
-    old = legacy_metadata(without={"mosques": {"habillage_defaults"}}, skip=("habillages",))
-    conn = db.connect(path)
-    try:
-        models.habillages.drop(conn.connection())
-        models.mosques.drop(conn.connection())
-        old.create_all(conn.connection())
-        delete(conn, migrations.schema_migrations, version=8)
-    finally:
-        conn.close()
-    db.init(path)
-    conn = db.connect(path)
-    try:
-        assert "habillages" in table_names(conn)
-        assert "habillage_defaults" in columns(conn, "mosques")
-        assert applied_versions(conn)[-1] == migrations.LATEST
-    finally:
-        conn.close()
 
 
 def test_a_failed_ffmpeg_reports_its_error(tmp_path):

@@ -13,7 +13,6 @@ une copie isolée (`env`) : base neuve remplie depuis la référence (identifian
 
 from __future__ import annotations
 
-import copy
 import json
 import os
 import shutil
@@ -31,7 +30,7 @@ os.environ.setdefault("SADA_SEMANTIC_SEARCH", "0")
 # no background studio checks in tests: they call studio_incidents.tick themselves
 os.environ.setdefault("SADA_STUDIO_WATCH_S", "0")
 
-from sada.backoffice import auth, db, importer, live, migrations, models, orm  # noqa: E402
+from sada.backoffice import auth, db, importer, live, models, orm  # noqa: E402
 from sada.backoffice.app import create_app  # noqa: E402
 
 PW = "motdepasse-solide"
@@ -206,42 +205,6 @@ def index_names(conn) -> set[str]:
     return {i["name"] for t in insp.get_table_names() for i in insp.get_indexes(t)}
 
 
-def applied_versions(conn) -> list[int]:
-    """Versions enregistrées dans `schema_migrations`, dans l'ordre."""
-    return list(conn.scalars(sa.select(migrations.schema_migrations.c.version).order_by("version")))
-
-
-def create_schema(path, md: sa.MetaData) -> None:
-    """Crée les tables de `md` dans une base neuve — celle d'avant les migrations."""
-    md.create_all(orm.engine(path, db.DEFAULT_DB))
-
-
-def legacy_metadata(without: dict[str, set[str]] | None = None, skip: tuple[str, ...] = ()) -> sa.MetaData:
-    """Schéma d'avant migration : les tables des modèles, privées des colonnes (`without`) et des
-    tables (`skip`) qu'une migration a ajoutées après coup.
-
-    Une base construite ainsi est celle que l'ancien code laissait derrière lui : `db.init` doit
-    l'adopter, puis rattraper ce qui lui manque sans perdre les données.
-    """
-    md = sa.MetaData()
-    for table in models.TABLES:
-        if table.name in skip:
-            continue
-        cols = [
-            sa.Column(
-                c.name,
-                copy.copy(c.type),
-                primary_key=c.primary_key,
-                nullable=not c.primary_key,
-                server_default=None if c.server_default is None else c.server_default.arg,
-            )
-            for c in table.columns
-            if c.name not in (without or {}).get(table.name, ())
-        ]
-        sa.Table(table.name, md, *cols)
-    return md
-
-
 # ------------------------------------------------------------------ environnement
 
 
@@ -319,8 +282,6 @@ def _clone(src, dst, old_root: Path, new_root: Path) -> dict[str, dict[int, int]
     remap: dict[str, dict[int, int]] = {}
     old = str(old_root)
     for table in models.metadata.sorted_tables:
-        if table.name == migrations.schema_migrations.name:
-            continue
         refs = {c.name: next(iter(c.foreign_keys)).column.table.name for c in table.columns if c.foreign_keys}
         keys = [c.name for c in table.primary_key.columns]
         auto = len(keys) == 1 and isinstance(table.c[keys[0]].type, sa.Integer)

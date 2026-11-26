@@ -1,7 +1,7 @@
-"""SQLite database of the back-office.
+"""Database of the back-office.
 
 The schema is described by SQLAlchemy 2.0 models (`models.py`, metadata + Core) and applied by
-versioned migrations (`migrations.py`). Every query goes through SQLAlchemy (`orm.py`): SQLite file
+Alembic migrations (`migrations.py`, scripts in `schema/versions/`). Every query goes through SQLAlchemy (`orm.py`): SQLite file
 by default, PostgreSQL when `SADA_DATABASE_URL` is set.
 
 Every business table carries `mosque_id`: that is the partitioning key (tenant). Queries from the
@@ -38,10 +38,8 @@ MOSQUE_SETTINGS = (
 )
 MASK = "••••••"  # value shown in place of a stored secret; sent back as is = unchanged
 
-# schéma SQLAlchemy (source de vérité) et migrations versionnées, réexportés pour introspection
+# schéma SQLAlchemy (source de vérité), réexporté pour introspection
 metadata = models.metadata
-MIGRATIONS = migrations.MIGRATIONS
-LATEST_VERSION = migrations.LATEST
 
 
 def now_iso() -> str:

@@ -1,9 +1,9 @@
 """Modèles SQLAlchemy 2.0 (Core) de la base du back-office.
 
-Les tables sont décrites ici, une seule source de vérité pour le schéma. La
-couche de migrations (`migrations.py`) s'appuie sur ce `metadata` pour créer le
-schéma initial ; les requêtes de l'application restent en SQL texte via
-`db.one` / `db.all_` (la surface publique de `db.py` est inchangée).
+Les tables sont décrites ici, une seule source de vérité pour le schéma. Tout changement passe
+par une migration Alembic (`schema/versions/`), générée depuis ce `metadata` :
+`python -m sada.backoffice.migrations revision "message"`. Un test reconstruit la base par les
+migrations et la compare à ces modèles : un changement oublié fait échouer la CI.
 
 Toute table métier porte `mosque_id` : c'est la clé de cloisonnement (locataire).
 """
@@ -520,8 +520,9 @@ def create_vector_table(conn) -> bool:
     return True
 
 
-@sa.event.listens_for(transcript_segments, "after_create")
-def _search_extras(target, conn, **kw) -> None:
+def create_search_extras(conn) -> None:
+    """Full-text and vector side of the search index, outside the tables (idempotent): FTS5 table and its
+    triggers on SQLite; GIN index, `unaccent` and `segment_vectors` on PostgreSQL."""
     if conn.dialect.name == "sqlite":
         for ddl in _SQLITE_SEARCH_DDL:
             conn.exec_driver_sql(ddl)
@@ -531,6 +532,11 @@ def _search_extras(target, conn, **kw) -> None:
         )
         pg_extension(conn, "unaccent", create=True)
         create_vector_table(conn)
+
+
+@sa.event.listens_for(transcript_segments, "after_create")
+def _search_extras(target, conn, **kw) -> None:
+    create_search_extras(conn)
 
 
 # --- Studio devices (migration 22): the PC of a mosque that streams on its own ----------------------

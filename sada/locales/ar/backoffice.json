@@ -227,5 +227,7 @@
   "bad offer": "عرض غير صالح",
   "relay unavailable": "المرحّل غير متاح",
   "image dimensions too large": "أبعاد الصورة كبيرة جدًا",
-  "setup mode is held by another device": "وضع الإعداد بيد جهاز آخر"
+  "setup mode is held by another device": "وضع الإعداد بيد جهاز آخر",
+  "database {path} has tables but no schema version: refusing to touch it": "قاعدة البيانات {path} تحتوي على جداول دون إصدار للمخطط: لن يتم المساس بها",
+  "database {path} is at version {version} of the former migrations: update it with 0.1.0-alpha.22 first": "قاعدة البيانات {path} في الإصدار {version} من الترحيلات السابقة: حدّثها أولًا باستخدام 0.1.0-alpha.22"
 }
