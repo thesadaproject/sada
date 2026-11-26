@@ -391,8 +391,7 @@ def test_the_background_stays_in_memory_unless_a_template_needs_it_re_read(tmp_p
     replaces the background on each screen change (`show_image`), the file is re-read."""
     args = cmd_of(enc_mod.Encoder(cfg(), tmp_path))
     fond = args.index(str(tmp_path / "scene_fond.png"))
-    fps = str(cfg().fps)
-    assert args[fond - 8 : fond] == ["-re", "-f", "image2", "-loop", "1", "-framerate", fps, "-i"]
+    assert args[fond - 7 : fond] == ["-f", "image2", "-loop", "1", "-framerate", "1", "-i"]
     graph = args[args.index("-filter_complex") + 1]
     assert "[1:v]format=rgba,loop=loop=-1:size=1," in graph
 
