@@ -30,7 +30,15 @@ from . import transitions as tr
 from .i18n import _
 
 _X264_PRESETS = (
-    "ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow",
+    "ultrafast",
+    "superfast",
+    "veryfast",
+    "faster",
+    "fast",
+    "medium",
+    "slow",
+    "slower",
+    "veryslow",
 )
 
 
@@ -38,6 +46,7 @@ def x264_preset() -> str:
     """Live x264 preset, overridable via SADA_X264_PRESET (default ultrafast: CPU-bound server)."""
     value = os.environ.get("SADA_X264_PRESET", "").strip().lower()
     return value if value in _X264_PRESETS else "ultrafast"
+
 
 PREVIEW_UDP = "udp://127.0.0.1:23456"
 LAYER_READ_FPS = 5  # re-read rate of the PNG layers (see ffmpeg_cmd)
