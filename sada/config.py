@@ -62,7 +62,7 @@ class Config(MachineParams):
     state_dir: str = str(paths.STATE)
     width: int = 1280
     height: int = 720
-    fps: int = 25
+    fps: int = 30
     video_bitrate: str = "2500k"
     # Clean recording (camera without overlay) for clips: live_*_clean.mkv, in the same ffmpeg.
     record_clean: bool = True

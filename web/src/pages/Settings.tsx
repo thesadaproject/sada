@@ -66,7 +66,7 @@ function depuisServeur(d: any): Record<string, string> {
   f.tw_confirm = tw.mode === "video" ? "1" : "0";
   f.q_height = String(d.quality?.height ?? 720);
   f.q_kbps = d.quality?.video_kbps ? String(d.quality.video_kbps) : "";
-  f.q_fps = String(d.quality?.fps ?? 0);
+  f.q_fps = String(d.quality?.fps ?? 30);
   return f;
 }
 
@@ -415,7 +415,7 @@ export default function Settings() {
           </Field>
           <Field label={t("settings.qualityFps")}>
             <select className={`${inputClass} max-w-[12rem]`} value={f.q_fps} onChange={maj("q_fps")}>
-              {(d.quality?.fps_choices ?? [0, 25, 30]).map((v: number) => <option key={v} value={String(v)}>{v === 0 ? t("settings.qualityFpsAuto") : v}</option>)}
+              {(d.quality?.fps_choices ?? [30, 60]).map((v: number) => <option key={v} value={String(v)}>{v}</option>)}
             </select>
           </Field>
         </div>}

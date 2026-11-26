@@ -610,7 +610,7 @@ stream_quality = sa.Table(
     sa.Column("mosque_id", sa.Integer, sa.ForeignKey("mosques.id"), nullable=False, unique=True),
     sa.Column("height", sa.Integer, nullable=False, server_default=_d("720")),
     sa.Column("video_kbps", sa.Integer, nullable=False, server_default=_d("0")),  # 0 = default of the resolution
-    sa.Column("fps", sa.Integer, nullable=False, server_default=_d("0")),  # 0 = the engine's own rate (SADA_FPS)
+    sa.Column("fps", sa.Integer, nullable=False, server_default=_d("0")),  # 0 or below 30 (saved before the floor): 30
 )
 
 # Lives started or stopped by hand from a device (origin `manual`), and scheduled slots stopped by hand
