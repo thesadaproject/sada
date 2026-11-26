@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.19](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.18...sada-v0.1.0-alpha.19) (2026-11-26)
+
+
+### Performance Improvements
+
+* **encoder:** re-read PNG layers at 5 i/s instead of 25 ([#92](https://github.com/thesadaproject/sada/issues/92)) ([f62e4d1](https://github.com/thesadaproject/sada/commit/f62e4d1c4dee54f1b10c9038686a2889cee68859))
+
 ## [0.1.0-alpha.18](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.17...sada-v0.1.0-alpha.18) (2026-11-25)
 
 
