@@ -271,4 +271,11 @@ def studio_live(request: Request, conn: ConnDep, port: int = 0):
     mid = _caller(request, conn, port)
     if isinstance(mid, JSONResponse):
         return mid
-    return {"mosque_id": mid, **studio_service.current_announcement(conn, orm.first(conn, Mosque, id=mid))}
+    mosque = orm.first(conn, Mosque, id=mid)
+    out = {"mosque_id": mid, **studio_service.current_announcement(conn, mosque)}
+    # who feeds the relay path: a Sada Studio device composes its own picture, the orchestrator then only relays
+    # it. Absent when the relay does not answer, so the orchestrator keeps what it had.
+    known, source = studio_publisher.editor(conn, mosque)
+    if known:
+        out["publisher"] = source
+    return out

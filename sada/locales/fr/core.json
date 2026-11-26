@@ -206,5 +206,8 @@
   "Live: back-office broadcast quality unreachable ({error}) — local setting kept": "Direct : qualité de diffusion du back-office injoignable ({error}) — configuration locale conservée",
   "Live: broadcast quality out of range — local setting kept": "Direct : qualité de diffusion hors limites — configuration locale conservée",
   "Live: quality {width}x{height} at {fps} fps, {kbps} kbit/s": "Direct : qualité {width}x{height} à {fps} i/s, {kbps} kbit/s",
-  "Broadcast quality reached after the start: applied at the next restart": "Qualité de diffusion obtenue après le démarrage : appliquée au prochain redémarrage"
+  "Broadcast quality reached after the start: applied at the next restart": "Qualité de diffusion obtenue après le démarrage : appliquée au prochain redémarrage",
+  "Compositing ({stage}): {mode}": "Composition ({stage}) : {mode}",
+  "by the Sada Studio, the stream is relayed as is": "par le Sada Studio, le flux est relayé tel quel",
+  "by the server": "par le serveur"
 }

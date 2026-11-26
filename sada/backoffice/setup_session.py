@@ -180,7 +180,8 @@ def enter(conn, mosque: dict, device: dict | None, now: float | None = None) -> 
     if _wake_due(mosque["slug"], now, fresh):
         notify_platform(mosque["slug"], "wake")
     try:
-        reply = live.set_setup(mosque, True, TTL_S)
+        # a paired device is a Sada Studio: it composes the rehearsal picture itself, the orchestrator only relays
+        reply = live.set_setup(mosque, True, TTL_S, compositing="studio" if device is not None else "server")
     except live.OrchestratorError:
         reply = None
     path = live_watch.path_of(conn, mosque, "program")

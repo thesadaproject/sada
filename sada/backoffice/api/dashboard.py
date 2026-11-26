@@ -92,7 +92,9 @@ async def live_command(cmd: str, ctx: CtxDep):
         }
         db.audit(ctx.conn, ctx.mosque["id"], ctx.user["id"], "live.commande", ip=ctx.ip, **details)
         # After a command, we want the real state: fresh read, no cache.
-        return _ok(r.get("message", "ok"), state=r.get("state"), live=live_status(ctx, forcer=True))
+        # the orchestrator answers with the state after the command (and its `rev`): no second request then
+        etat = live.remember(ctx.mosque, r) or live_status(ctx, forcer=True)
+        return _ok(r.get("message", "ok"), state=r.get("state"), live=etat, rev=etat.get("rev"))
     except live.OrchestratorError as e:
         details = {k: v for k, v in {"commande": cmd, "valeur": valeur, "erreur": str(e)}.items() if v}
         db.audit(ctx.conn, ctx.mosque["id"], ctx.user["id"], "live.echec", ip=ctx.ip, **details)

@@ -17,7 +17,7 @@ from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
-from ... import transitions
+from ... import scenes, transitions
 from ...i18n import _
 from ...state import PICKABLE_SCENES
 from .. import (
@@ -56,13 +56,25 @@ TRANSITION_SETTING_KEY = "regie_transition"
 
 def _builtin_scenes() -> list[dict]:
     return [
-        {"id": sc, "kind": "camera" if sc in ("khutba", "dars") else "slate", "custom": False, "label": sc}
+        {
+            "id": sc,
+            "kind": "camera" if sc in ("khutba", "dars") else "slate",
+            "custom": False,
+            "label": sc,
+            # how the scene sits over the camera (camera | banner | full), and whether the mic is open on it:
+            # what a client composing the picture itself (the Sada Studio) needs
+            "scene_kind": scenes.scene_kind(sc),
+            "mic": scenes.scene_mic(sc),
+        }
         for sc in PICKABLE_SCENES
     ]
 
 
 def _all_scenes(conn, mosque: dict) -> list[dict]:
-    return _builtin_scenes() + custom_scenes.list_scenes(conn, mosque)
+    custom = [
+        {**c, "scene_kind": scenes.scene_kind(c["id"]), "mic": False} for c in custom_scenes.list_scenes(conn, mosque)
+    ]
+    return _builtin_scenes() + custom
 
 
 def _setup_kwargs(setup: bool) -> dict:
@@ -84,21 +96,25 @@ def live_flat(mosque: dict, forcer: bool = False, setup: bool = False) -> dict:
     the previous snapshot. `setup`: the caller is in setup mode; while its rehearsal runs (and no real live is
     on air) scene, overlays, transition and mute are the rehearsal stage's, as they are what the view shows.
     """
-    st = live.status_cached(mosque, ttl=STATUS_TTL, forcer=forcer)
+    return flat(live.status_cached(mosque, ttl=STATUS_TTL, forcer=forcer), setup)
+
+
+# What the setup block of the status overrides in the flat state while a rehearsal runs.
+_SETUP_KEYS = ("state", "scene", "override", "transition", "overlays", "mic_muted", "rev", "compositing")
+
+
+def flat(st: dict, setup: bool = False) -> dict:
+    """A summarized status (live.summarize) in the flat shape of `live_flat`."""
     block = st.get("setup")
     if setup and isinstance(block, dict) and block.get("active") and not block.get("live"):
-        st = {
-            **st,
-            **{
-                k: block[k] for k in ("state", "scene", "override", "transition", "overlays", "mic_muted") if k in block
-            },
-        }
+        st = {**st, **{k: block[k] for k in _SETUP_KEYS if k in block}}
     ok = bool(st.get("ok"))
     return {
         "ok": ok,
         "reachable": ok,
         "state": st.get("state"),
         "scene": st.get("scene"),
+        "scene_kind": scenes.scene_kind(st.get("scene")),
         "override": bool(st.get("override")),
         "transition": st.get("transition"),
         "overlays": st.get("overlays"),
@@ -106,7 +122,24 @@ def live_flat(mosque: dict, forcer: bool = False, setup: bool = False) -> dict:
         "mic_muted": bool(st.get("mic_muted", False)),
         "audio_level_db": st.get("audio_level_db"),
         "message": st.get("error") or st.get("last_reason") or "",
+        "rev": st.get("rev") if isinstance(st.get("rev"), int) else None,
+        "compositing": "studio" if st.get("compositing") == "studio" else "server",
     }
+
+
+def after_command(mosque: dict, answer, setup: bool = False) -> dict:
+    """The state right after a command, flat: the one the orchestrator answered with (no second request), else a
+    fresh read (older engine). Also becomes the status snapshot, so the next polls do not go back in time."""
+    summary = live.remember(mosque, answer if isinstance(answer, dict) else None)
+    if summary is None:
+        return live_flat(mosque, forcer=True, setup=setup)
+    return flat(summary, setup)
+
+
+def _with_state(out: dict, mosque: dict, answer, setup: bool) -> dict:
+    """A command's own answer plus the whole state after it (`status`, flat) and its revision (`rev`)."""
+    state = after_command(mosque, answer, setup)
+    return {**out, "rev": state["rev"], "compositing": state["compositing"], "status": state}
 
 
 def regie_data(conn, mosque: dict, setup: bool = False) -> dict:
@@ -155,7 +188,8 @@ async def apply_scene(conn, mosque: dict, scene_id, tr_mode, setup: bool = False
             )
         except live.OrchestratorError as e:
             return _setup_failure(e)
-        return {"ok": True, "scene": scene_id, "transition": tr_mode or _saved_transition(mosque), "result": r}
+        out = {"ok": True, "scene": scene_id, "transition": tr_mode or _saved_transition(mosque), "result": r}
+        return await run_in_threadpool(_with_state, out, mosque, r, setup)
     try:
         r = await run_in_threadpool(
             live.command, mosque, "scene", valeur=scene_id, transition=tr_mode, **_setup_kwargs(setup)
@@ -164,7 +198,8 @@ async def apply_scene(conn, mosque: dict, scene_id, tr_mode, setup: bool = False
         return JSONResponse({"error": str(e)}, status_code=400)
     except live.OrchestratorError as e:
         return _setup_failure(e)
-    return {"ok": True, "scene": scene_id, "transition": tr_mode or _saved_transition(mosque), "result": r}
+    out = {"ok": True, "scene": scene_id, "transition": tr_mode or _saved_transition(mosque), "result": r}
+    return await run_in_threadpool(_with_state, out, mosque, r, setup)
 
 
 async def apply_mute(mosque: dict, muted, setup: bool = False) -> dict | JSONResponse:
@@ -174,7 +209,8 @@ async def apply_mute(mosque: dict, muted, setup: bool = False) -> dict | JSONRes
         r = await run_in_threadpool(live.set_mute, mosque, muted, **_setup_kwargs(setup))
     except live.OrchestratorError as e:
         return _setup_failure(e)
-    return {"ok": True, "muted": muted, "mic_muted": muted, "result": r}
+    out = {"ok": True, "muted": muted, "mic_muted": muted, "result": r}
+    return await run_in_threadpool(_with_state, out, mosque, r, setup)
 
 
 async def apply_transition(mosque: dict, mode, setup: bool = False) -> dict | JSONResponse:
@@ -183,14 +219,17 @@ async def apply_transition(mosque: dict, mode, setup: bool = False) -> dict | JS
         return JSONResponse({"error": _("unknown transition: {mode}", mode=mode)}, status_code=400)
     if not setup:  # the rehearsal's transition is not the mosque's setting
         await run_in_threadpool(custom_scenes.set_transition, mosque, mode)
-    synced = True
+    synced, r = True, None
     try:
-        await run_in_threadpool(live.set_transition, mosque, mode, **_setup_kwargs(setup))
+        r = await run_in_threadpool(live.set_transition, mosque, mode, **_setup_kwargs(setup))
     except live.SetupLapsed as e:
         return _setup_failure(e)
     except live.OrchestratorError:
         synced = False
-    return {"ok": True, "transition": mode, "synced": synced}
+    out = {"ok": True, "transition": mode, "synced": synced}
+    if not synced:
+        return out  # the engine did not answer: no state to report beyond the saved setting
+    return await run_in_threadpool(_with_state, out, mosque, r, setup)
 
 
 def _saved_transition(mosque: dict) -> str:
@@ -212,6 +251,9 @@ def regie(ctx: CtxDep):
     return {
         "publisher": holder and {k: holder[k] for k in ("source", "label", "since", "text")},
         "live": live_st,
+        # revision of the live state and who composes the picture (also inside `live`)
+        "rev": live_st.get("rev"),
+        "compositing": live_st.get("compositing") or "server",
         "transition": tr_mode,
         "scenes": _all_scenes(ctx.conn, mosque),
         "overlays": live_st.get("overlays"),

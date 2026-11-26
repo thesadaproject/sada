@@ -753,6 +753,29 @@ SCENES = {
 }
 
 
+#: How a scene sits over the camera, for a client that composes it itself (the Sada Studio): "camera" (the camera
+#: alone), "banner" (the camera with the scene's banner over it), "full" (a full screen: the camera is masked).
+SCENE_KINDS = ("camera", "banner", "full")
+
+
+def scene_kind(scene: str | None) -> str | None:
+    """`SCENE_KINDS` value of a scene id (custom slates are full screens); None for no scene or an unknown one."""
+    if not scene:
+        return None
+    if scene.startswith("custom:"):
+        return "full"
+    spec = SCENES.get(scene)
+    if spec is None:
+        return None
+    return "full" if spec.full else "banner"
+
+
+def scene_mic(scene: str | None) -> bool:
+    """The live microphone is open on this scene (the engine cuts it on the others, custom slates included)."""
+    spec = SCENES.get(scene or "")
+    return bool(spec and spec.mic)
+
+
 def render_custom_scene(image: Image.Image, cfg) -> Image.Image:
     """Fit a custom slate image onto the full-screen canvas with dark letterboxing."""
     w, h = int(cfg.width), int(cfg.height)

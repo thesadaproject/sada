@@ -3,7 +3,8 @@
 GET  /status
 POST /<command>?name=...|min=...    Machine.COMMANDS commands (e.g. /extend?min=5, /scene?name=priere,
                                     /janaza?name=...[&info=...]: name and note of the deceased, only with the family's consent)
-POST /setup {"on": bool, "ttl": seconds}   takes, renews or releases the setup lease (see setup_mode.py)
+POST /setup {"on": bool, "ttl": seconds[, "compositing": "studio"|"server"]}   takes, renews or releases the setup
+                                    lease (see setup_mode.py); "studio": the lease holder composes the picture itself
 
 Any command, overlay, mute or transition may carry `setup` (`?setup=1`, or `"setup": true` in the body): it then
 acts on the setup rehearsal stage instead of the live, and is refused once the setup lease lapsed.
@@ -142,7 +143,8 @@ def make_server(orch, host: str, port: int, token: str = "") -> ThreadingHTTPSer
                 if body is None or not isinstance(body.get("on"), bool):
                     return self._send(400, {"error": _("invalid body")})
                 try:
-                    res = orch.set_setup(body["on"], body.get("ttl"))
+                    extra = {"compositing": body["compositing"]} if isinstance(body.get("compositing"), str) else {}
+                    res = orch.set_setup(body["on"], body.get("ttl"), **extra)
                 except SetupInactive as e:
                     return self._send(409, {"error": str(e), "code": "setup_off"})
                 except ValueError as e:

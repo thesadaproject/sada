@@ -19,6 +19,9 @@ session (the planned session if it is waiting, otherwise a manual session); the 
 from __future__ import annotations
 
 import datetime as dt
+import json
+import threading
+import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field, replace
 from enum import Enum
@@ -79,6 +82,29 @@ OVERLAY_URL_MAX = 512
 OVERLAY_LABEL_MAX = 60
 OVERLAY_TITLE_MAX = 120
 OVERLAY_SUBTITLE_MAX = 160
+
+
+class _RevClock:
+    """Process-wide monotonic revision of the live state (`Machine.rev`).
+
+    One sequence for every machine of the process (the live one and the rehearsal one), so a client that
+    switches between the two never sees the number go back. It starts from the wall clock in milliseconds:
+    an orchestrator restarted later hands out larger numbers than the one it replaces, so a client that kept
+    the last `rev` it saw does not ignore the new process. A clock set back never makes it decrease.
+    """
+
+    def __init__(self, clock: Callable[[], float] = time.time):
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._last = 0
+
+    def next(self) -> int:
+        with self._lock:
+            self._last = max(self._last + 1, int(self._clock() * 1000))
+            return self._last
+
+
+REV_CLOCK = _RevClock()
 
 
 def default_overlays() -> dict[str, dict]:
@@ -360,6 +386,10 @@ class Machine:
         # by default: a custom scene without an image would show a stale picture.
         self.custom_known: Callable[[str], bool] = lambda scene: False
         self.mic_muted: bool = False
+        # Revision of what `status()` shows: grows at every change (command, overlay, mute, automatic switch...).
+        self.rev_clock: _RevClock = REV_CLOCK
+        self.rev: int = self.rev_clock.next()
+        self._seen: str | None = self._fingerprint()
 
     # ------------------------------------------------------------------ helpers
     def _rec_of(self, start: dt.datetime, meta: dict, index: int) -> SessionRec:
@@ -396,7 +426,27 @@ class Machine:
         if not isinstance(muted, bool):
             raise ValueError(_("muted must be a boolean"))
         self.mic_muted = muted
+        self.touch()
         return self.mic_muted
+
+    # ------------------------------------------------------------------ revision
+    def _fingerprint(self) -> str:
+        return json.dumps(self._status_body(), sort_keys=True, default=str)
+
+    def touch(self) -> int:
+        """A mutation happened (a command, even one that changed nothing visible): a new revision."""
+        self.rev = self.rev_clock.next()
+        self._seen = self._fingerprint()
+        return self.rev
+
+    def observe(self) -> int:
+        """New revision if the visible state changed since the last one (automatic switches, changes made from
+        outside the commands, e.g. the studio link renaming the session on air)."""
+        fp = self._fingerprint()
+        if fp != self._seen:
+            self.rev = self.rev_clock.next()
+            self._seen = fp
+        return self.rev
 
     @property
     def stream_on(self) -> bool:
@@ -631,7 +681,12 @@ class Machine:
         cmd = cmd.lower()
         self.log(_("Manual command: {cmd} {arg}", cmd=cmd, arg=arg if arg is not None else ""))
         fn = self.COMMANDS.get(cmd)
-        return fn(self, sig, arg) if fn else _("unknown command: {cmd}", cmd=cmd)
+        if fn is None:
+            return _("unknown command: {cmd}", cmd=cmd)
+        try:
+            return fn(self, sig, arg)
+        finally:
+            self.touch()  # even a refused or idle command: its answer carries a revision newer than any poll before it
 
     def _start(self, sig, arg):
         self.override = True
@@ -731,6 +786,7 @@ class Machine:
         if m not in TRANSITIONS:
             raise ValueError(_("unknown transition: {mode}", mode=mode))
         self.transition = m
+        self.touch()
         return m
 
     def _transition(self, sig, arg):
@@ -860,6 +916,7 @@ class Machine:
         if self.override and self.state not in self._TICK_IN_OVERRIDE:
             return
         handler(self, sig)
+        self.observe()  # an automatic switch is a mutation like any other
 
     def _tick_ended(self, sig: Signals) -> None:
         if sig.t - self.entered_t >= self.p.khutba.ended_hold_s:
@@ -1085,13 +1142,20 @@ class Machine:
         """Update one overlay independently of the active scene and automatic mode."""
         updated = normalize_overlay(kind, data, self.overlays.get(kind))
         self.overlays[kind] = updated
+        self.touch()
         state = "on" if updated.get("visible") else "off"
         self.log(_("Overlay {kind}: {state}", kind=kind, state=state))
         return {k: dict(v) for k, v in self.overlays.items()}
 
     # ------------------------------------------------------------------- statut
     def status(self) -> dict:
+        """What the screens show, with its revision (`rev`): grows at every change of the rest."""
+        self.observe()
+        return {**self._status_body(), "rev": self.rev}
+
+    def _status_body(self) -> dict:
         s = self.session
+        playing = self.playing
         return {
             "state": self.state.value,
             "scene": self.scene,
@@ -1104,6 +1168,8 @@ class Machine:
             "janaza_info": self.janaza_info,
             "kind": self.kind,
             "event": self.rec.event() if self.rec else None,
+            # event of the session on air (else of the next one): what the dars / tarawih slates show
+            "playing_event": playing.event() if playing is not None else None,
             "sessions": self.sessions_dicts(),
             "overlays": {k: dict(v) for k, v in self.overlays.items()},
             "transition": self.transition,

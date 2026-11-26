@@ -208,9 +208,10 @@ def live_status(a: DeviceDep, setup: int = 0):
 async def live_command(request: Request, a: DeviceDep):
     """A command from the console: `scene` takes `arg` as the scene name, other commands relay theirs.
 
-    The answer is the fresh engine state (forced read), so the screen never shows a stale scene.
+    The answer is the engine state right after the command, with its `rev` (the one the engine answered with,
+    else a forced read), so the screen never shows a stale scene.
     """
-    from .regie import _setup_failure, _setup_kwargs, apply_scene, live_flat
+    from .regie import _setup_failure, _setup_kwargs, after_command, apply_scene
 
     body = await _json(request)
     setup = body.get("setup") is True  # sent from the setup view: acts on the rehearsal, never on the stream
@@ -239,14 +240,17 @@ async def live_command(request: Request, a: DeviceDep):
     if isinstance(out, JSONResponse):
         return out
     a.audit("studio.live.commande", commande=cmd, valeur=arg or "", setup=setup)
-    fresh = await run_in_threadpool(live_flat, a.mosque, True, setup)  # blocking HTTP to the engine
+    if cmd == "scene" and isinstance(out.get("status"), dict):
+        fresh = out["status"]  # apply_scene already holds the state after the command
+    else:
+        fresh = await run_in_threadpool(after_command, a.mosque, out, setup)  # may be blocking HTTP to the engine
     return JSONResponse(fresh, headers={"Cache-Control": "no-store"})
 
 
 @router.patch("/studio/live/overlays/{kind}")
 async def live_overlay(kind: str, request: Request, a: DeviceDep):
     """Updates one overlay layer (qr, banner, logo); the patch is merged onto the current state."""
-    from .regie import _setup_failure, _setup_kwargs, live_flat
+    from .regie import _setup_failure, _setup_kwargs, _with_state, live_flat
 
     kind = str(kind or "").strip().lower()
     if kind not in OVERLAY_KINDS:
@@ -264,7 +268,8 @@ async def live_overlay(kind: str, request: Request, a: DeviceDep):
     except live.OrchestratorError as e:
         return _setup_failure(e)
     a.audit("studio.live.incrustation", incrustation=kind, visible=bool(merged.get("visible")), setup=setup)
-    return {"ok": True, "overlays": r.get("overlays") or {kind: merged}}
+    out = {"ok": True, "overlays": r.get("overlays") or {kind: merged}}
+    return await run_in_threadpool(_with_state, out, a.mosque, r, setup)
 
 
 # ------------------------------------------------------------------ setup mode (device)

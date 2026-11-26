@@ -132,7 +132,10 @@ def test_device_updates_an_overlay(env, engine):
     r = dev(env).patch("/api/v1/studio/live/overlays/qr", json={"visible": True, "url": "https://sada.example/qr"})
     assert r.status_code == 200, r.text
     assert r.json()["ok"] is True and r.json()["overlays"]["qr"]["visible"] is True
-    assert engine[-1][0] == "overlay" and engine[-1][1] == "qr"
+    sent = [s for s in engine if s[0] == "overlay"]
+    assert sent[-1][1] == "qr"
+    # an engine that answers without its status: the state after the command is a forced read
+    assert engine[-1] == ("status", True) and "status" in r.json()
 
 
 def test_device_overlay_kind_and_payload_are_validated(env, engine):
