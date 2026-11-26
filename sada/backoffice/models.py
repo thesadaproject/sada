@@ -602,6 +602,17 @@ studio_settings = sa.Table(
     sa.Column("preflight_min", sa.Integer, nullable=False, server_default=_d("30")),
 )
 
+# Broadcast quality of a mosque (resolution, video bit rate, frame rate); 720p defaults while no row exists.
+stream_quality = sa.Table(
+    "stream_quality",
+    metadata,
+    sa.Column("id", sa.Integer, primary_key=True),
+    sa.Column("mosque_id", sa.Integer, sa.ForeignKey("mosques.id"), nullable=False, unique=True),
+    sa.Column("height", sa.Integer, nullable=False, server_default=_d("720")),
+    sa.Column("video_kbps", sa.Integer, nullable=False, server_default=_d("0")),  # 0 = default of the resolution
+    sa.Column("fps", sa.Integer, nullable=False, server_default=_d("0")),  # 0 = the engine's own rate (SADA_FPS)
+)
+
 # Lives started or stopped by hand from a device (origin `manual`), and scheduled slots stopped by hand
 # (origin `slot_stop`, `slot_key` names the occurrence): the server's memory of what the order must not repeat.
 studio_runs = sa.Table(
@@ -702,6 +713,7 @@ TABLES = (
     devices,
     device_pairings,
     studio_settings,
+    stream_quality,
     studio_runs,
     studio_claims,
     studio_incidents,
@@ -820,6 +832,10 @@ class DevicePairing(Base):
 
 class StudioSettings(Base):
     __table__ = studio_settings
+
+
+class StreamQuality(Base):
+    __table__ = stream_quality
 
 
 class StudioRun(Base):

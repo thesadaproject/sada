@@ -64,6 +64,9 @@ function depuisServeur(d: any): Record<string, string> {
   f.tw_reciters = JSON.stringify(tw.reciters ?? []);
   f.tw_nights = JSON.stringify(tw.nights ?? {});
   f.tw_confirm = tw.mode === "video" ? "1" : "0";
+  f.q_height = String(d.quality?.height ?? 720);
+  f.q_kbps = d.quality?.video_kbps ? String(d.quality.video_kbps) : "";
+  f.q_fps = String(d.quality?.fps ?? 0);
   return f;
 }
 
@@ -180,6 +183,9 @@ export default function Settings() {
           max_min: f.tw_max, confirm_video: f.tw_confirm, after_isha: f.tw_after_isha === "1",
           isha_min: f.tw_isha, silence_end_min: f.tw_silence,
           reciters: JSON.parse(f.tw_reciters || "[]"), nights: JSON.parse(f.tw_nights || "{}") });
+      }
+      if (["q_height", "q_kbps", "q_fps"].some((k) => f[k] !== avant[k])) {
+        await api.saveQuality({ height: f.q_height, video_kbps: f.q_kbps, fps: f.q_fps });
       }
       if (JSON.stringify(cibles) !== ciblesInitiales) await api.destinations(cibles);
       if (entreeModifiee) await api.saveInput(entree.mode, entree.url);
@@ -303,7 +309,8 @@ export default function Settings() {
       <div className="grid max-w-[720px] gap-3.5">
         {/* Two sub-tabs: the connection to the live program, then where the stream goes. */}
         <Tabs items={[{ cle: "connexion", label: t("settings.liveConnection") },
-                       { cle: "destinations", label: t("settings.destTitle") }]}
+                       { cle: "destinations", label: t("settings.destTitle") },
+                       { cle: "qualite", label: t("settings.qualityTitle") }]}
           base="reglages-live" label={t("settings.tabs.live")}
           valeur={sousOnglet} onChange={(c) => { setSousOnglet(c); setMsg(null); }} />
         {sousOnglet === "connexion" && <div className="grid max-w-[520px] gap-3.5"
@@ -390,6 +397,27 @@ export default function Settings() {
             onClick={() => { setCibles((x) => [...x, { label: "", url: "", enabled: true }]); setMsg(null); }}>
             {t("settings.destAdd")}
           </Btn>
+        </div>}
+        {sousOnglet === "qualite" && <div className="grid max-w-[520px] gap-3.5"
+          role="tabpanel" id={idPanneau("reglages-live", "qualite")} aria-labelledby={idOnglet("reglages-live", "qualite")}>
+          <p className="m-0 max-w-[80ch] text-[0.9rem] text-muted">{t("settings.qualityHint")}</p>
+          <Field label={t("settings.qualityResolution")}>
+            <select className={`${inputClass} max-w-[12rem]`} value={f.q_height} onChange={maj("q_height")}>
+              {(d.quality?.heights ?? [720, 1080]).map((h: number) => <option key={h} value={String(h)}>{h}p</option>)}
+            </select>
+          </Field>
+          <Field label={t("settings.qualityKbps")}
+            aide={t("settings.qualityKbpsHelp", { n: d.quality?.default_kbps?.[f.q_height] ?? 2500,
+              min: d.quality?.kbps_range?.[0] ?? 1000, max: d.quality?.kbps_range?.[1] ?? 12000 })}>
+            <input className={`${inputClass} max-w-[9rem]`} type="number" inputMode="numeric"
+              min={d.quality?.kbps_range?.[0] ?? 1000} max={d.quality?.kbps_range?.[1] ?? 12000} step={100}
+              placeholder={t("settings.qualityKbpsAuto")} value={f.q_kbps} onChange={maj("q_kbps")} />
+          </Field>
+          <Field label={t("settings.qualityFps")}>
+            <select className={`${inputClass} max-w-[12rem]`} value={f.q_fps} onChange={maj("q_fps")}>
+              {(d.quality?.fps_choices ?? [0, 25, 30]).map((v: number) => <option key={v} value={String(v)}>{v === 0 ? t("settings.qualityFpsAuto") : v}</option>)}
+            </select>
+          </Field>
         </div>}
       </div>
     ),

@@ -27,6 +27,7 @@ from .. import (
     prayer_times,
     setup_session,
     storage,
+    stream_quality,
     studio_publisher,
     studio_service,
     tarawih,
@@ -99,6 +100,15 @@ def live_targets(request: Request, conn: ConnDep, port: int = 0):
     if isinstance(mid, JSONResponse):
         return mid
     return {"mosque_id": mid, "urls": destinations.effective(conn, mid)}
+
+
+@router.get("/internal/stream-quality")
+def stream_quality_target(request: Request, conn: ConnDep, port: int = 0):
+    """Resolution, frame rate and video bit rate the encoder of this mosque must use."""
+    mid = _caller(request, conn, port)
+    if isinstance(mid, JSONResponse):
+        return mid
+    return {"mosque_id": mid, **stream_quality.effective(conn, mid)}
 
 
 @router.get("/internal/storage")

@@ -30,6 +30,7 @@ from . import (
     screens,
     setup_mode,
     source,
+    stream_quality,
     studio_link,
     telemetry,
     upload,
@@ -299,6 +300,7 @@ class Orchestrator:
             "camera_url": source.from_backoffice(cfg.backoffice_url, cfg.api_port, log=log.info),
             "screen_texts": screens.from_backoffice(cfg.backoffice_url, cfg.api_port, log=log.info),
             "storage": upload.from_backoffice(cfg.backoffice_url, cfg.api_port, log=log.info),
+            "quality": stream_quality.from_backoffice(cfg.backoffice_url, cfg.api_port, log=log.info),
         }
 
     def _apply_live_config(self, live: dict | None):
@@ -312,6 +314,13 @@ class Orchestrator:
             for monitor in (getattr(self, "vad", None), getattr(self, "presence", None), getattr(self, "faces", None)):
                 if monitor is not None:
                     monitor.url = cfg.camera_url  # picked up when the monitor's ffmpeg is launched again
+        if live.get("quality"):
+            if hasattr(self, "encoder"):
+                # the renderer and the encoder were built at the previous size: applied at the next start
+                log.warning(_("Broadcast quality reached after the start: applied at the next restart"))
+            else:
+                for k, v in live["quality"].items():
+                    setattr(cfg, k, v)
         if live.get("screen_texts"):
             cfg.screen_texts = live["screen_texts"]
         if hasattr(self, "uploader"):

@@ -29,6 +29,7 @@ from .. import (
     live_watch,
     orm,
     setup_session,
+    stream_quality,
     studio_devices,
     studio_incidents,
     studio_plan,
@@ -121,6 +122,7 @@ async def heartbeat(request: Request, a: DeviceDep):
             "start_margin_s": cfg["start_margin_s"],
             "token_path": "/api/v1/live/studio/token",
             "whip_path": "/api/v1/live/studio/whip",
+            "stream": stream_quality.for_studio(a.conn, a.mosque["id"]),
         },
         "slots": [s.as_dict(now) for s in out.slots[:5]],
     }
