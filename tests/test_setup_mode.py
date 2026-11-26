@@ -434,3 +434,16 @@ def test_a_template_screen_before_the_start_only_seeds_the_graph(tmp_path, monke
     monkeypatch.setattr(threading.Thread, "start", lambda self: pytest.fail("nothing to drive before ffmpeg runs"))
     e.show_image("priere", True, img, "k")
     assert e.levels["fond"] == 1.0
+
+
+def test_a_setup_opened_while_a_live_ends_publishes_the_rehearsal_once_the_live_is_over(monkeypatch, tmp_path):
+    o = make(monkeypatch)
+    o.machine.command("scene", o.signals(), "khutba")  # a live is on air (its end screen) when the setup opens
+    o._sync()
+    open_setup(o, tmp_path)
+    assert o.rehearsal.machine.scene is None and o.rehearsal.encoder.wanted is False
+    o.machine.command("stop", o.signals())
+    o.machine.state = o.machine.state.STOPPED
+    o._sync()
+    o._sync_setup()
+    assert o.rehearsal.machine.scene == setup_mode.FIRST_SCENE and o.rehearsal.encoder.wanted is True

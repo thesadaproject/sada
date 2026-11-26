@@ -784,6 +784,10 @@ class Orchestrator:
         if self.machine.stream_on:
             self._stop_rehearsal()  # a real live is on air: the monitoring copy is its own
             return
+        if st.machine.scene is None:
+            # The stage was opened while a live was still on air (its end screen): no scene was set then, and
+            # nothing else would ever set one, so the monitoring copy would never be published.
+            st.machine.command("scene", self.signals(), setup_mode.FIRST_SCENE)
         self._show(st)
         if st.machine.stream_on and not st.encoder.wanted:
             st.encoder.start()
