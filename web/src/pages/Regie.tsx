@@ -5,7 +5,7 @@ import { Btn } from "@sada/ui";
 import { BusyBtn } from "../BusyBtn";
 import { currentSession } from "../session";
 import { useConfirm } from "../confirmContext";
-import { nombre } from "../format";
+import { heureDuJour, nombre } from "../format";
 import { usePolling, useNow } from "../usePolling";
 import { useAppDispatch, useAppSelector } from "../store";
 import {
@@ -158,11 +158,12 @@ function LiveFacts({ live, lu }: { live: Live; lu: number }) {
   const horlogeS = secondes(live.clock);
   const maintenant = horlogeS != null ? horlogeS + (now - lu) / 1000 : null;
   const debut = secondes(live.session?.started);
-  const duree = live.stream_on && maintenant != null && debut != null ? hms(maintenant - debut) : "—";
+  // a live started before midnight and still on after it: the difference wraps around the day
+  const duree = live.stream_on && maintenant != null && debut != null ? hms((((maintenant - debut) % 86400) + 86400) % 86400) : "—";
   return (
     <dl className="m-0 flex min-w-0 flex-wrap gap-x-5 gap-y-1 text-[0.9rem]">
       {[
-        [t("regie.clock"), maintenant != null ? hms(maintenant % 86400) : "—"],
+        [t("regie.clock"), maintenant != null ? heureDuJour(maintenant) : "—"],
         [t("regie.onAirFor"), duree],
         [t("regie.next"), live.next_session ?? "—"],
         [t("regie.mode"), live.override ? t("regie.manual") : t("regie.auto")],
