@@ -46,6 +46,26 @@ describe("Dashboard", () => {
     expect(api.liveCommande).not.toHaveBeenCalled();
   });
 
+  it("lays out today's programme: finished with its real times, live, next with its countdown", async () => {
+    api.dashboard.mockResolvedValue({
+      ...payload,
+      live: {
+        ok: true, state: "KHUTBA", scene: "khutba", stream_on: true, clock: "13:40:00", next_session: "20:45",
+        day: [
+          { planned: "12:30", status: "done", kind: "khutba", title: "", speaker: "", started: "12:31:10", ended: "13:02:44" },
+          { planned: "13:30", status: "live", kind: "khutba", title: "", speaker: "", started: "13:31:04", ended: null },
+          { planned: "20:45", status: "pending", kind: "dars", title: "Tafsir", speaker: "", started: null, ended: null },
+        ],
+      },
+    });
+    await monter(["live"]);
+    expect(screen.getByText("12:31 – 13:02")).toBeTruthy();
+    expect(screen.getAllByText("dashboard.onAirSince").length).toBeGreaterThan(0);
+    expect(screen.getByText("dashboard.inDelay")).toBeTruthy();
+    expect(screen.getByText("12:30")).toBeTruthy();
+    expect(screen.getByText("dashboard.kind.dars")).toBeTruthy();
+  });
+
   it("leads to the Régie for those who hold the live right only", async () => {
     await monter(["live"]);
     expect(screen.getByRole("link", { name: /dashboard\.openRegie/ }).getAttribute("href")).toBe("/regie");

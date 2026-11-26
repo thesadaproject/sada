@@ -322,6 +322,10 @@ def test_tableau_de_bord_et_commandes_live(env, orch):
     assert d["live"]["clock"] == "13:42:10" and d["live"]["state"] == "KHUTBA"
     assert "state_label" not in d["live"] and "sessions" not in d["live"]  # keys, not screen text
     assert d["live"]["session"] == {"n": 1, "total": 2, "planned": "13:30", "started": "13:31"}
+    assert [(x["planned"], x["status"], x["kind"], x["started"]) for x in d["live"]["day"]] == [
+        ("13:30", "live", "khutba", "13:31"),
+        ("14:30", "pending", "khutba", None),
+    ]
     assert [c["key"] for c in d["live_commands"]] == [
         "start",
         "pause",

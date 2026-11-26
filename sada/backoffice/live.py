@@ -267,6 +267,32 @@ def on_air(st: dict) -> bool:
     return bool(st.get("ok")) and (st.get("state") in ON_AIR_STATES or bool(st.get("stream_on")))
 
 
+SESSION_STATUSES = frozenset({"pending", "live", "done", "skipped", "janaza"})
+
+
+def _day(sessions: list) -> list[dict]:
+    """Today's programme, one entry per session in order: keys and times only (the front end words it)."""
+    out = []
+    for s in sessions:
+        if not isinstance(s, dict):
+            continue
+        status = s.get("status") if s.get("status") in SESSION_STATUSES else "pending"
+        planned = str(s.get("planned") or "")
+        out.append(
+            {
+                # "studio@…": a live started by hand from Sada Studio, outside the schedule
+                "planned": "" if planned.startswith("studio@") else planned,
+                "status": status,
+                "kind": str(s.get("kind") or "khutba"),
+                "title": str(s.get("title") or ""),
+                "speaker": str(s.get("speaker") or ""),
+                "started": s.get("start_clock"),
+                "ended": s.get("end_clock"),
+            }
+        )
+    return out
+
+
 def summarize(st: dict) -> dict:
     """Raw orchestrator status -> protocol data: keys and values, no interface text.
 
@@ -286,6 +312,7 @@ def summarize(st: dict) -> dict:
         "scene": st.get("scene"),
         "clock": st.get("clock"),
         "session": session,
+        "day": _day(sessions),
         "has_sessions": bool(planned),
         "next_session": st.get("next_session"),
         "stream_on": bool(st.get("stream_on")),

@@ -127,6 +127,12 @@ const fr = {
     janazaSend: "Déclarer la janaza", more5: "+5 min", stop: "Arrêter", cancelDay: "Annuler aujourd'hui",
     sceneOnAir: "Scène", openRegie: "Ouvrir la régie",
     sessionN: "Session {{n}}/{{total}}", noSession: "Aucune session à venir",
+    today: "Aujourd'hui", programme: "Programme du jour", noSessionToday: "Aucune session prévue aujourd'hui.",
+    onAirSince: "À l'antenne depuis {{h}}", nextAt: "Prochaine session à", inDelay: "dans {{d}}",
+    seeAll: "Tout voir", recentEmpty: "Les séances apparaissent ici après chaque direct, transcrites et prêtes à découper.",
+    hint: { pending: "à relire avant publication", ready: "validés, en attente de diffusion", sermons: "transcrites et cherchables", dars: "à revoir et à partager" },
+    kind: { khutba: "Khutba", dars: "Dars", conference: "Conférence", tarawih: "Tarawih", janaza: "Janaza" },
+    dayStatus: { pending: "à venir", live: "en direct", done: "terminée", skipped: "sautée", janaza: "janaza" },
     // Labels of the live commands, chosen by their key (the server only sends keys).
     // Engine states, chosen by their value: the server only sends the value.
     state: {
@@ -936,6 +942,12 @@ const en: typeof fr = {
     janazaSend: "Declare the janaza", more5: "+5 min", stop: "Stop", cancelDay: "Cancel today",
     sceneOnAir: "Scene", openRegie: "Open the control room",
     sessionN: "Session {{n}}/{{total}}", noSession: "No upcoming session",
+    today: "Today", programme: "Today's programme", noSessionToday: "No session planned today.",
+    onAirSince: "On air since {{h}}", nextAt: "Next session at", inDelay: "in {{d}}",
+    seeAll: "See all", recentEmpty: "Sessions show up here after each live, transcribed and ready to cut.",
+    hint: { pending: "to review before publishing", ready: "approved, waiting to go out", sermons: "transcribed and searchable", dars: "to watch again and share" },
+    kind: { khutba: "Khutba", dars: "Lesson", conference: "Lecture", tarawih: "Tarawih", janaza: "Janaza" },
+    dayStatus: { pending: "upcoming", live: "on air", done: "finished", skipped: "skipped", janaza: "janaza" },
     state: {
       IDLE: "Idle", ARMED: "Armed (window open)", BEFORE: "Starting shortly",
       KHUTBA: "Khutba on air", PRAYER: "Prayer in progress", INTERMISSION: "Intermission",
