@@ -12,6 +12,10 @@ make test    # every test must pass
 - One pull request, one topic. Describe the problem and the fix in a few lines.
 - Add tests for any change in behaviour.
 - For a large change, open an issue first so we can discuss it.
+- A change to the database models (`sada/backoffice/models.py`) ships with its migration, generated from
+  them: `uv run python -m sada.backoffice.migrations revision "what changes"` writes
+  `sada/backoffice/schema/versions/NNNN_….py`; read it, adjust it if needed, commit it. A test rebuilds a
+  database through the migrations and compares it to the models: a forgotten migration fails the CI.
 
 ## Contributor License Agreement
 

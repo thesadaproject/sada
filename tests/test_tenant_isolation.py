@@ -1,7 +1,7 @@
 """Tenant isolation: an account from another mosque cannot reach any resource by its id."""
 
 import pytest
-from conftest import PW, client, delete, one, rows
+from conftest import PW, client, one, rows
 
 from sada.backoffice import auth, db, models
 
@@ -125,20 +125,6 @@ def test_platform_permission_cannot_be_granted_by_a_form(env):
     uid = env["ids"]["responsable"]
     r = owner.ecrire(f"/users/{uid}", {"permissions": '["admin", "platform"]'}, methode="PATCH")
     assert r.status_code in (400, 422)
-
-
-def test_migration_keeps_a_single_mosque_admin_in_charge(tmp_path):
-    from sada.backoffice import migrations, orm
-
-    path = tmp_path / "old.db"
-    db.init(path)
-    conn = db.connect(path)
-    mid = db.create_mosque(conn, "seule", "Seule")
-    uid = auth.create_user(conn, mid, "chef", PW, "admin")
-    delete(conn, migrations.schema_migrations, version=11)
-    with orm.engine(path, db.DEFAULT_DB).begin() as raw:
-        migrations._users_plateforme(raw)
-    assert one(conn, models.User, id=uid)["platform_admin"] == 1
 
 
 def test_first_cli_admin_is_platform_admin(tmp_path, monkeypatch):

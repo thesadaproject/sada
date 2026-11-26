@@ -32,6 +32,7 @@ dependencies = [
   "opentelemetry-sdk>=1.45.2",
   "opentelemetry-exporter-otlp-proto-http>=1.45.2",
   "opentelemetry-instrumentation-fastapi>=0.66b2",
+  "alembic>=1.16",
 ]
 [dependency-groups]
 dev = ["pytest", "pypdf"]
@@ -39,7 +40,7 @@ dev = ["pytest", "pypdf"]
 [tool.setuptools]
 packages = ["sada", "sada.pipeline", "sada.backoffice"]
 [tool.setuptools.package-data]
-"sada.backoffice" = ["templates/*.html", "static/*", "static/fonts/*"]
+"sada.backoffice" = ["templates/*.html", "static/*", "static/fonts/*", "schema/*.py", "schema/*.mako", "schema/versions/*.py"]
 "sada" = ["models/*.onnx", "locales/*/*.json"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]

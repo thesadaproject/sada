@@ -227,5 +227,7 @@
   "bad offer": "offre invalide",
   "relay unavailable": "relais indisponible",
   "image dimensions too large": "dimensions de l'image trop grandes",
-  "setup mode is held by another device": "le mode réglage est tenu par un autre appareil"
+  "setup mode is held by another device": "le mode réglage est tenu par un autre appareil",
+  "database {path} has tables but no schema version: refusing to touch it": "la base {path} contient des tables mais aucune version de schéma : elle n'est pas touchée",
+  "database {path} is at version {version} of the former migrations: update it with 0.1.0-alpha.22 first": "la base {path} est en version {version} des anciennes migrations : mettez-la d'abord à jour avec la 0.1.0-alpha.22"
 }
