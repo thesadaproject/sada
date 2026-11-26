@@ -51,6 +51,13 @@ export function hms(secondes?: number | null): string {
   return `${h > 0 ? `${h}:` : ""}${String(m).padStart(h > 0 ? 2 : 1, "0")}:${String(r).padStart(2, "0")}`;
 }
 
+/** Time of day from seconds since midnight: always HH:MM:SS (00:49:38, never the duration "49:38"). */
+export function heureDuJour(secondes: number): string {
+  const v = ((Math.floor(secondes) % 86400) + 86400) % 86400;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(Math.floor(v / 3600))}:${p(Math.floor((v % 3600) / 60))}:${p(v % 60)}`;
+}
+
 /** Live clock: null when out of service, otherwise the orchestrator's time. */
 export function horloge(valeur?: string | null): string {
   return valeur || "--:--:--";
