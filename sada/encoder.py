@@ -30,6 +30,7 @@ from . import transitions as tr
 from .i18n import _
 
 PREVIEW_UDP = "udp://127.0.0.1:23456"
+LAYER_READ_FPS = 5  # re-read rate of the PNG layers (see ffmpeg_cmd)
 
 
 def _zmq_esc(port: int) -> str:
@@ -166,7 +167,7 @@ class Encoder:
         L = {k: f"{v:g}" for k, v in self.levels.items()}
         # background: one image repeated in memory, unless a template may replace it during the run
         fond_in = (
-            f"[1:v]format=rgba,fps={c.fps},colorchannelmixer@fond=aa={L['fond']}[fond];"
+            f"[1:v]format=rgba,colorchannelmixer@fond=aa={L['fond']},fps={c.fps}[fond];"
             if self.reload_background
             else f"[1:v]format=rgba,loop=loop=-1:size=1,colorchannelmixer@fond=aa={L['fond']}[fond];"
         )
@@ -178,8 +179,8 @@ class Encoder:
             + ",".join(f"zmq@z{i}=bind_address={_zmq_esc(p)}" for i, p in enumerate(self.zmq_vports))
             + "[camz];"
             + fond_in
-            + f"[2:v]format=rgba,fps={c.fps},colorchannelmixer@ca=aa={L['a_a']}[ca];"
-            f"[3:v]format=rgba,fps={c.fps},colorchannelmixer@cb=aa={L['a_b']}[cb];"
+            + f"[2:v]format=rgba,colorchannelmixer@ca=aa={L['a_a']},fps={c.fps}[ca];"
+            f"[3:v]format=rgba,colorchannelmixer@cb=aa={L['a_b']},fps={c.fps}[cb];"
             f"[4:v]format=rgba,fps={c.fps}[ov];"
             f"[camz][fond]overlay@fond=format=auto:shortest=0:repeatlast=1[v0];"
             f"[v0][ca]overlay@ca=x={L['x_a']}:y={L['y_a']}:format=auto:shortest=0:repeatlast=1[v1];"
@@ -189,9 +190,11 @@ class Encoder:
             f"volume@mic=volume={self.vol:g}:eval=frame,azmq=bind_address={_zmq_esc(self.zmq_aport)}"
             + ("[a]" if not clean else ",asplit=2[a][aclean]")
         )
-        # content layers re-read at {fps} fps: ffmpeg's queue (~15 frames) bounds the delay
-        # between writing a PNG and its appearance at ~0.6 s (at 4 fps: ~4 s), see tr.DELAI_CHARGEMENT
-        slot = ["-re", "-f", "image2", "-loop", "1", "-framerate", str(c.fps), "-i"]
+        # dynamic layers are re-read from disk at LAYER_READ_FPS (decoding the PNGs at the output rate dominated the
+        # CPU cost); the graph converts them to `fps` after the opacity mixer. A changed PNG shows up within
+        # ~0.2-0.4 s, inside tr.DELAI_CHARGEMENT. No -re on them: at 5 i/s it would throttle the whole graph to ~10 i/s. The static background is decoded once (loop filter, size=1).
+        slot = ["-f", "image2", "-loop", "1", "-framerate", str(LAYER_READ_FPS), "-i"]
+        fond_slot = slot if self.reload_background else ["-f", "image2", "-loop", "1", "-framerate", "1", "-i"]
         out_clean: list[str] = []
         if clean:
             vmap = (
@@ -234,7 +237,7 @@ class Encoder:
             "-progress",
             "pipe:1",
             *(rehearsal_input(c) if self.rehearsal else [*source.input_options(c.camera_url), "-i", c.camera_url]),
-            *slot,
+            *fond_slot,
             self.layer_png["fond"],
             *slot,
             self.layer_png["a"],
