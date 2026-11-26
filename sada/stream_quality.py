@@ -1,6 +1,6 @@
 """Broadcast quality (resolution, frame rate, video bit rate), read from the back office at start-up.
 
-The mosque chooses it in the interface (Settings → Live → Quality); 720p, 25 images/s, 2500 kbit/s is what
+The mosque chooses it in the interface (Settings → Live → Quality); 720p, 30 images/s, 2500 kbit/s is what
 applies when nothing was saved or when the back office does not answer: the live never depends on it.
 """
 
@@ -14,6 +14,9 @@ from urllib.parse import urlencode
 from .i18n import _
 
 Fetch = Callable[[str, str], dict]
+
+#: never below 30 images/s, whatever an older back office says.
+MIN_FPS = 30
 
 
 def _http_get(url: str, token: str) -> dict:  # pragma: no cover (network)
@@ -52,6 +55,6 @@ def from_backoffice(
         )
     )
     out = {"width": width, "height": height, "video_bitrate": f"{kbps}k"}
-    if fps:  # 0 = automatic: the engine keeps its own rate (SADA_FPS)
-        out["fps"] = fps
+    if fps:  # 0: an older back office ("automatic"), the engine keeps its own rate (SADA_FPS)
+        out["fps"] = max(fps, MIN_FPS)
     return out

@@ -169,7 +169,7 @@
   "Overlay {kind}: {state}": "Incrustation {kind} : {state}",
   "The broadcast quality must be made of whole numbers.": "La qualité de diffusion doit être faite de nombres entiers.",
   "The resolution must be 720p or 1080p.": "La résolution doit être 720p ou 1080p.",
-  "The frame rate must be automatic, 25 or 30 images per second.": "La cadence doit être automatique, 25 ou 30 images par seconde.",
+  "The frame rate must be 30 or 60 images per second.": "La cadence doit être de 30 ou 60 images par seconde.",
   "The video bit rate must be between {lo} and {hi} kbit/s.": "Le débit vidéo doit être compris entre {lo} et {hi} kbit/s.",
   "Broadcast quality saved. The engine applies it at its next start.": "Qualité de diffusion enregistrée. Le moteur l'applique à son prochain démarrage."
 }
