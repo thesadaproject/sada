@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.0-alpha.22](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.21...sada-v0.1.0-alpha.22) (2026-11-26)
+
+
+### Bug Fixes
+
+* **pipeline:** a failed ffmpeg render reports its error instead of crashing ([#108](https://github.com/thesadaproject/sada/issues/108)) ([29eb96f](https://github.com/thesadaproject/sada/commit/29eb96fc6cc3d1e3432c1f372e863676506a9736))
+* **web:** optimistic state for the Régie and the sheets, no more button rollback ([#100](https://github.com/thesadaproject/sada/issues/100)) ([f2e6b4b](https://github.com/thesadaproject/sada/commit/f2e6b4b3382a4a2c3d15212daea5638bd98dec1c))
+
 ## [0.1.0-alpha.21](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.20...sada-v0.1.0-alpha.21) (2026-11-26)
 
 
