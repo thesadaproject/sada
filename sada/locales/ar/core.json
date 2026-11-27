@@ -198,6 +198,7 @@
   "ENCODER: source unavailable (ffmpeg code {code}), retrying with backoff": "المشفّر: المصدر غير متاح (رمز ffmpeg {code})، إعادة محاولة متباعدة",
   "ENCODER: source available again after {count} failed attempts": "المشفّر: المصدر متاح من جديد بعد {count} محاولات فاشلة",
   "ENCODER: starting the setup programme (monitoring copy only, no destination, no recording)": "المشفّر: بدء برنامج الضبط (نسخة المراقبة فقط، بلا وجهات ولا تسجيل)",
+  "ENCODER: waiting for the input to be published on the relay": "المشفّر: في انتظار نشر المدخل على المرحّل",
   "Setup mode: ended": "وضع الضبط: انتهى",
   "Setup mode: lease lapsed, rehearsal stopped": "وضع الضبط: انتهت المدة، توقفت البروفة",
   "Setup mode: started": "وضع الضبط: بدأ",

@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import urllib.request
 from collections.abc import Callable
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from .i18n import _
 
@@ -52,3 +52,25 @@ def from_backoffice(
     else:
         log(_("Live: no video input saved in the back office — local setting kept"))
     return adresse
+
+
+LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
+RELAY_RTSP_PORT = 8554
+
+
+def relay_ready(url: str) -> bool | None:
+    """Is the local relay path behind `url` published? None when it cannot be told (not a local relay RTSP
+    address, relay API unreachable): the caller then launches ffmpeg anyway, as before."""
+    try:
+        parts = urlsplit(url or "")
+        if parts.scheme != "rtsp" or parts.hostname not in LOCAL_HOSTS or (parts.port or 554) != RELAY_RTSP_PORT:
+            return None
+        path = parts.path.strip("/")
+        if not path:
+            return None
+        from .backoffice import live_watch
+
+        info = live_watch.publisher_info(path)
+    except Exception:  # noqa: BLE001 — never block a live on a readiness probe
+        return None
+    return None if info is None else bool(info["ready"])

@@ -109,6 +109,10 @@ STUCK_GRACE_S = 20.0
 BACKOFF_MIN_S = 1.0
 BACKOFF_MAX_S = 30.0
 
+# Longest wait for the relay to publish the input path before ffmpeg is launched anyway (a probe that lies
+# must not keep a live off the air).
+SOURCE_WAIT_MAX_S = 60.0
+
 
 def backoff_delay(failures: int) -> float:
     """Delay before relaunch number `failures` (1 = first consecutive failure): 1, 2, 4, ... capped at 30 s."""
@@ -176,6 +180,11 @@ class Encoder:
         self._opened = False  # the current ffmpeg opened its source (it produced output)
         self.failures = 0  # consecutive launches that never opened the source
         self._next_spawn = 0.0  # monotonic time before which no relaunch happens
+        # Optional probe: False = the input is not published yet (ffmpeg would only fail and back off); None/True = go.
+        self.source_ready = None
+        self._waiting_since: float | None = None
+        # Set while the programme is winding down (end screen): the encoder is never relaunched, nor judged stuck.
+        self.hold = False
 
     # ------------------------------------------------------------------- command
     def new_recording(self) -> tuple[str, str | None]:
@@ -330,8 +339,33 @@ class Encoder:
         with self._lock:
             self.wanted = True
             self._spawn_preview()
-            self._spawn()
+            self._waiting_since = None
+            self._next_spawn = 0.0
+            if self._source_pending():
+                self.log(_("ENCODER: waiting for the input to be published on the relay"))
+            else:
+                self._spawn()
         threading.Thread(target=self._watch, daemon=True, name="encoder-watch").start()
+
+    def _source_pending(self) -> bool:
+        """True while the relay does not publish the input yet (caller holds the lock). Gives up after
+        SOURCE_WAIT_MAX_S, and on any doubt (no probe, probe error, unknown answer): ffmpeg is launched."""
+        if self.rehearsal or self.source_ready is None:
+            return False
+        try:
+            ready = self.source_ready()
+        except Exception:  # noqa: BLE001
+            ready = None
+        if ready is not False:
+            self._waiting_since = None
+            return False
+        now = time.monotonic()
+        if self._waiting_since is None:
+            self._waiting_since = now
+        if now - self._waiting_since >= SOURCE_WAIT_MAX_S:
+            self._waiting_since = None
+            return False
+        return True
 
     def _spawn(self):
         rec, clean = (None, None) if self.rehearsal else self.new_recording()
@@ -412,10 +446,11 @@ class Encoder:
             self._spawn_preview()
         if self.proc and self.proc.poll() is not None:
             self._on_exit()
-        elif self.proc and self._dropped:
+        elif self.proc and self._dropped and not self.hold:
             self._relaunch_dropped()
-        elif not self.proc and self.wanted and time.monotonic() >= self._next_spawn:
-            self._spawn()
+        elif not self.proc and self.wanted and not self.hold and time.monotonic() >= self._next_spawn:
+            if not self._source_pending():
+                self._spawn()
 
     def _on_exit(self):
         """ffmpeg died (caller holds the lock). If it never opened its source, drop its empty recordings, back
@@ -483,7 +518,13 @@ class Encoder:
         current state and a fresh connection to the source. A graph still starting up is left alone."""
         with self._lock:
             p = self.proc
-            if not self.wanted or not p or p.poll() is not None or time.monotonic() - self._spawned_at < STUCK_GRACE_S:
+            if (
+                not self.wanted
+                or self.hold
+                or not p
+                or p.poll() is not None
+                or time.monotonic() - self._spawned_at < STUCK_GRACE_S
+            ):
                 return False
         self.log(_("ENCODER: ffmpeg alive but stuck ({why}), forced restart", why=why))
         p.kill()
