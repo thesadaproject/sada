@@ -49,14 +49,29 @@ def test_start_from_the_control_room_orders_the_studio(env, engine):
     assert run["kind"] == "khutba" and run["ended_at"] is None
 
 
-def test_a_scene_taken_off_air_orders_the_studio_with_the_right_type(env, engine):
+@pytest.mark.parametrize("scene", ["dars", "khutba", "slate"])
+def test_a_scene_taken_off_air_never_starts_a_live(env, engine, scene):
     d = pair(env)
     beat(d)
-    r = client(env, "responsable").ecrire("/live/regie/scene", {"scene": "dars"})
+    r = client(env, "responsable").ecrire("/live/regie/scene", {"scene": scene})
     assert r.status_code == 200, r.text
-    assert r.json()["studio"] == "ordered"
+    assert r.json()["studio"] == "none"
+    assert any(e[:2] == ("command", "scene") for e in engine)  # the picture changes...
+    assert beat(d)["command"] == "standby"  # ...the studio is not told to publish
+    assert one(env["conn"], models.StudioRun, mosque_id=env["mid"]) is None
+
+
+def test_a_scene_during_a_live_leaves_the_live_alone(env, engine):
+    d = pair(env)
+    beat(d)
+    c = client(env, "responsable")
+    c.ecrire("/live/start")
     assert beat(d)["command"] == "live"
-    assert one(env["conn"], models.StudioRun, mosque_id=env["mid"], origin="manual")["kind"] == "dars"
+    r = c.ecrire("/live/regie/scene", {"scene": "dars"})
+    assert r.status_code == 200, r.text
+    assert beat(d)["command"] == "live"
+    run = one(env["conn"], models.StudioRun, mosque_id=env["mid"], origin="manual")
+    assert run["kind"] == "khutba" and run["ended_at"] is None  # not retyped, not restarted
 
 
 def test_stop_from_the_control_room_stops_the_studio(env, engine):

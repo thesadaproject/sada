@@ -221,13 +221,11 @@ def current_announcement(conn, mosque: dict, now: float | None = None) -> dict:
 # the studio too. It is the studio's own manual live, on the designated device, so everything that follows a
 # manual live (the orchestrator's session, the silence watch, the journal) works unchanged.
 
-#: Commands of the control room that put the mosque on air, and the ones that take it off air.
-ON_AIR = frozenset({"start", "scene", "tarawih"})
+#: Commands of the control room that put the mosque on air, and the ones that take it off air. A scene is in
+#: neither: taken off air it only changes the picture (Studio and preview), it never starts a live; only
+#: "start" (and "tarawih") broadcasts.
+ON_AIR = frozenset({"start", "tarawih"})
 OFF_AIR = frozenset({"stop", "cancel"})
-
-
-def _kind_of(cmd: str, valeur: str | None) -> str:
-    return "dars" if cmd == "scene" and valeur in ("dars", "dars_fin") else "khutba"
 
 
 def follow_regie(conn, mosque: dict, cmd: str, valeur: str | None, ip: str | None, now: float | None = None) -> str:
@@ -241,6 +239,8 @@ def follow_regie(conn, mosque: dict, cmd: str, valeur: str | None, ip: str | Non
     now = time.time() if now is None else now
     if live_input.current(conn, mosque)["mode"] != "push":
         return "none"  # a camera read by the relay: no studio to drive
+    if cmd == "scene":
+        return "none"  # off air a scene only changes the picture; during a live the studio already publishes
     if cmd in ON_AIR:
         order, _slots = studio_plan.current_order(conn, mosque, now)
         if order.command == studio_plan.LIVE:
@@ -249,7 +249,7 @@ def follow_regie(conn, mosque: dict, cmd: str, valeur: str | None, ip: str | Non
         if dev is None:
             return "no_studio"
         try:
-            start_manual(conn, mosque, dev, _kind_of(cmd, valeur), "", ip, now)
+            start_manual(conn, mosque, dev, "khutba", "", ip, now)
         except Conflict:
             return "busy"
         return "ordered"

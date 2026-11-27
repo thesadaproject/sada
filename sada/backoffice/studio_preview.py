@@ -61,12 +61,12 @@ def current(conn, mosque_id: int, now: float | None = None) -> dict | None:
 
 
 def _upsert(conn, mosque_id: int, **values) -> None:
-    row = _row(conn, mosque_id)
-    base = {"user_id": None, "since": 0.0, "until": 0.0, "watched_until": 0.0}
-    if row:
-        base |= {k: row[k] for k in base}
-    orm.upsert(conn, PreviewRequest, ("mosque_id",), mosque_id=mosque_id, **(base | values))
-    orm.done(conn)
+    """Writes only the given columns of the mosque's row (created with the column defaults when absent).
+
+    One statement, never a read-modify-write of the whole row: `release`, `watched` and `request` each own
+    different columns, and a concurrent `watched` (every poll of the control room) must not put back what a
+    `release` just cleared."""
+    orm.upsert(conn, PreviewRequest, ("mosque_id",), mosque_id=mosque_id, **values)
 
 
 def request(conn, mosque: dict, user_id: int | None, now: float | None = None) -> dict:
@@ -74,7 +74,10 @@ def request(conn, mosque: dict, user_id: int | None, now: float | None = None) -
     now = time.time() if now is None else now
     held = current(conn, mosque["id"], now)
     since = held["since"] if held else now
-    _upsert(conn, mosque["id"], user_id=user_id, since=since, until=now + TTL_S, watched_until=now + WATCH_TTL_S)
+    values = {"user_id": user_id, "until": now + TTL_S, "watched_until": now + WATCH_TTL_S}
+    if not held:
+        values["since"] = now  # a renewal keeps `since`; only a new request sets it
+    _upsert(conn, mosque["id"], **values)
     return {"since": since, "until": now + TTL_S}
 
 
