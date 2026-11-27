@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.31](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.30...sada-v0.1.0-alpha.31) (2026-11-27)
+
+
+### Features
+
+* **live:** keep the live open on a reconnection screen when the studio's signal is lost ([#134](https://github.com/thesadaproject/sada/issues/134)) ([7a72e2e](https://github.com/thesadaproject/sada/commit/7a72e2eb018da7b30e4add8401c14a13e3312197))
+
 ## [0.1.0-alpha.30](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.29...sada-v0.1.0-alpha.30) (2026-11-27)
 
 
