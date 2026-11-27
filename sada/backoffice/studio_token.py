@@ -8,7 +8,8 @@ every call of a session (offer, ICE, close) is relayed with a fresh one, so it l
 minutes.
 
 Format: ``sdst1.<base64url(json)>.<base64url(hmac-sha256)>``. Claims: ``u`` user id, ``m`` mosque id,
-``s`` relay stream name, ``exp`` expiry (epoch seconds).
+``s`` relay stream name, ``exp`` expiry (epoch seconds), ``d`` device id, ``p`` (1) a preview token: it only
+publishes the control room's preview path (``live/<slug>-retour``, see ``studio_preview``), never the live.
 
 Secret: ``SADA_STUDIO_TOKEN_SECRET`` when set (needed as soon as several back-office replicas verify
 tokens), otherwise derived from the local internal token (``internal.local_token``) with a
@@ -60,8 +61,10 @@ def _sign(body: str) -> str:
     return _b64(hmac.new(_secret(), f"{PREFIX}.{body}".encode(), hashlib.sha256).digest())
 
 
-def issue(user_id: int | None, mosque: dict, now: float | None = None, device_id: int | None = None) -> tuple[str, int]:
-    """(token, lifetime in seconds) for this user (or this device) on this mosque's relay path."""
+def issue(
+    user_id: int | None, mosque: dict, now: float | None = None, device_id: int | None = None, preview: bool = False
+) -> tuple[str, int]:
+    """(token, lifetime in seconds) for this user (or this device) on this mosque's relay path (or its preview)."""
     life = ttl()
     claims = {
         "u": int(user_id or 0),
@@ -71,6 +74,8 @@ def issue(user_id: int | None, mosque: dict, now: float | None = None, device_id
     }
     if device_id:
         claims["d"] = int(device_id)
+    if preview:
+        claims["p"] = 1
     body = _b64(json.dumps(claims, separators=(",", ":"), sort_keys=True).encode())
     return f"{PREFIX}.{body}.{_sign(body)}", life
 

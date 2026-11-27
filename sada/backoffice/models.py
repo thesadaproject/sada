@@ -661,6 +661,21 @@ setup_leases = sa.Table(
     sa.Column("until", sa.Float, nullable=False),
 )
 
+# The web control room asks the Sada Studio for its picture, outside any live: one row per mosque, renewed
+# every few seconds while somebody watches. Nothing is broadcast: the device publishes to a relay path no
+# orchestrator reads (see studio_preview.py). `watched_until`: the control room is open (the devices then
+# send their heartbeat more often, so a request is seen within seconds).
+preview_requests = sa.Table(
+    "preview_requests",
+    metadata,
+    sa.Column("id", sa.Integer, primary_key=True),
+    sa.Column("mosque_id", sa.Integer, sa.ForeignKey("mosques.id"), nullable=False, unique=True),
+    sa.Column("user_id", sa.Integer, sa.ForeignKey("users.id")),
+    sa.Column("since", sa.Float, nullable=False, server_default="0"),
+    sa.Column("until", sa.Float, nullable=False, server_default="0"),
+    sa.Column("watched_until", sa.Float, nullable=False, server_default="0"),
+)
+
 # Problems of the studio, as the server sees them from the heartbeat: one row per incident, open until
 # the cause is gone. `open_key` (unique while open, NULL once resolved) keeps a problem from being
 # opened twice, even by two replicas; the mail columns drive the anti-spam (one mail per incident,
@@ -854,6 +869,10 @@ class StudioClaim(Base):
 
 class SetupLease(Base):
     __table__ = setup_leases
+
+
+class PreviewRequest(Base):
+    __table__ = preview_requests
 
 
 class StudioIncident(Base):

@@ -371,6 +371,15 @@ def _no_public_bundle(monkeypatch, tmp_path_factory):
     monkeypatch.setenv("SADA_PUBLIC_DIST", str(tmp_path_factory.getbasetemp() / "no-public-bundle"))
 
 
+@pytest.fixture(autouse=True)
+def _fresh_pairing_limits():
+    """The pairing limits (start, poll, approve) are counters of the process: every test starts from zero, so
+    a file that pairs many devices never runs the next one out of attempts."""
+    from sada.backoffice.api import studio as studio_api
+
+    studio_api.reset()
+
+
 @pytest.fixture
 def engine(monkeypatch):
     """Fake orchestrator: records what the back office sends, answers like the real one."""

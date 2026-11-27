@@ -10,29 +10,35 @@ import hashlib
 import json
 import os
 import threading
+import time
 from collections import OrderedDict
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
 
 from ... import scenes, transitions
 from ...i18n import _
-from ...state import PICKABLE_SCENES
+from ...state import OVERLAY_KINDS, PICKABLE_SCENES, normalize_overlay
 from .. import (
     custom_scenes,
     live,
     live_input,
     live_watch,
+    orm,
+    studio_devices,
     studio_plan,
+    studio_preview,
     studio_publisher,
     studio_service,
     studio_token,
 )
 from .. import screens as screens_mod
 from ..context import CtxDep, NotFound
-from ..studio_auth import Actor, ActorDep
+from ..models import Device
+from ..studio_auth import Actor, ActorDep, DeviceDep
 
 router = APIRouter()
 
@@ -232,6 +238,45 @@ async def apply_transition(mosque: dict, mode, setup: bool = False) -> dict | JS
     return await run_in_threadpool(_with_state, out, mosque, r, setup)
 
 
+async def apply_overlay(a: Actor, kind, patch: dict) -> dict | JSONResponse:
+    """Updates one overlay layer (qr, banner, logo): the patch is merged onto the state the caller sees.
+
+    Shared by the studio application and the web control room, so both validate and audit the same way."""
+    kind = str(kind or "").strip().lower()
+    if kind not in OVERLAY_KINDS:
+        return JSONResponse({"error": _("unknown overlay: {kind}", kind=kind)}, status_code=422)
+    setup = patch.pop("setup", None) is True
+    snapshot = await run_in_threadpool(live_flat, a.mosque, setup, setup)  # blocking HTTP to the engine
+    current = (snapshot.get("overlays") or {}).get(kind)
+    try:
+        merged = normalize_overlay(kind, patch, current)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    try:
+        r = await run_in_threadpool(live.set_overlay, a.mosque, kind, merged, **_setup_kwargs(setup))
+    except live.OrchestratorError as e:
+        return _setup_failure(e)
+    a.audit("studio.live.incrustation", incrustation=kind, visible=bool(merged.get("visible")), setup=setup)
+    out = {"ok": True, "overlays": r.get("overlays") or {kind: merged}}
+    return await run_in_threadpool(_with_state, out, a.mosque, r, setup)
+
+
+def _studios(conn, mosque: dict, holder: dict | None) -> list[dict]:
+    """The mosque's paired Sada Studio (not revoked), as the control room shows them: online, publishing, health."""
+    now = time.time()
+    rows = orm.rows(
+        conn, select(Device).where(Device.mosque_id == mosque["id"], Device.revoked_at.is_(None)).order_by(Device.id)
+    )
+    publishing = holder["device_id"] if holder and holder.get("source") == "device" else None
+    keys = ("id", "name", "online", "last_seen_at", "app_version", "state", "camera", "microphone", "bitrate_kbps")
+    out = []
+    for d in rows:
+        view = studio_devices.public(d, now)
+        out.append({k: view[k] for k in keys} | {"publishing": d["id"] == publishing})
+    # the one on air first, then the ones online
+    return sorted(out, key=lambda s: (not s["publishing"], not s["online"]))
+
+
 def _saved_transition(mosque: dict) -> str:
     return custom_scenes.get_transition(mosque)
 
@@ -248,8 +293,15 @@ def regie(ctx: CtxDep):
     tr_mode = live_st.get("transition") if live_st.get("transition") in transitions.TRANSITIONS else None
     if tr_mode is None:
         tr_mode = _saved_transition(mosque)
+    # the control room is open: the devices beat faster, so a request for their picture is seen at once
+    studio_preview.watched(ctx.conn, mosque["id"])
+    req = studio_preview.current(ctx.conn, mosque["id"])
     return {
         "publisher": holder and {k: holder[k] for k in ("source", "label", "since", "text")},
+        # the studio's picture asked outside a live: requested, and by whom the monitor is fed (`monitors.preview`)
+        "preview": {"requested": req is not None, "expires_in": round(req["until"] - time.time()) if req else 0},
+        # the paired Sada Studio: the control room is their remote control
+        "studios": _studios(ctx.conn, mosque, holder),
         "live": live_st,
         # revision of the live state and who composes the picture (also inside `live`)
         "rev": live_st.get("rev"),
@@ -295,6 +347,13 @@ async def regie_transition(request: Request, a: ActorDep):
     if isinstance(out, dict):
         a.audit("studio.live.transition", transition=out["transition"], setup=setup)
     return out
+
+
+@router.patch("/live/regie/overlays/{kind}")
+async def regie_overlay(kind: str, request: Request, a: ActorDep):
+    """Shows, hides or edits an overlay (qr, banner, logo) from the control room; the Sada Studio follows."""
+    a.need_live()
+    return await apply_overlay(a, kind, _body(await _json(request)))
 
 
 async def _read_bounded(file: UploadFile, limit: int) -> bytes:
@@ -622,6 +681,98 @@ async def whip_close(session: str, a: ActorDep):
     except live_watch.RelayUnavailable:
         pass  # the relay is gone, and the session with it
     a.audit("studio.whip.fin", session=session)
+    return Response(status_code=200)
+
+
+# ------------------------------------------------------------------ preview (the studio's picture on demand)
+# The control room asks (`/live/regie/preview`), the designated device sees it in its heartbeat and publishes
+# its composed programme here, to the preview path only (studio_preview). The relay token is a preview one.
+
+
+@router.post("/live/regie/preview")
+async def regie_preview(ctx: CtxDep):
+    """`{"on": true}` takes or renews the request for the studio's picture; `{"on": false}` gives it back."""
+    body = await ctx.raw_body()  # CSRF
+    ctx.require("live")
+    mosque = ctx.mosque
+    assert mosque is not None
+    if body.get("on") is True:
+        req = await run_in_threadpool(studio_preview.request, ctx.conn, mosque, ctx.user["id"])
+        return {"ok": True, "requested": True, "expires_in": round(req["until"] - time.time())}
+    await run_in_threadpool(studio_preview.release, ctx.conn, mosque["id"])
+    return {"ok": True, "requested": False}
+
+
+def _preview_refused(a: Actor) -> JSONResponse | None:
+    if not studio_preview.allowed(a.conn, a.mosque, a.device):
+        return JSONResponse(
+            {"error": _("the control room is not asking for the picture"), "code": "not_requested"}, 409
+        )
+    return None
+
+
+def _preview_token(a: Actor) -> str:
+    return studio_token.issue(None, a.mosque, device_id=a.device["id"], preview=True)[0]
+
+
+@router.post("/live/studio/preview/whip")
+async def preview_whip_offer(request: Request, a: DeviceDep):
+    """The device publishes its picture for the control room (WHIP), only while it is asked to."""
+    if (refused := _need_push(a) or _preview_refused(a)) is not None:
+        return refused
+    sdp = await request.body()
+    if not sdp or len(sdp) > MAX_SDP:
+        return JSONResponse({"error": _("bad offer")}, status_code=400)
+    path = studio_preview.path_of(a.mosque)
+    try:
+        r = await live_watch.whip_request("POST", path, _preview_token(a), body=sdp, ctype="application/sdp")
+    except live_watch.RelayUnavailable:
+        return JSONResponse({"error": _("relay unavailable")}, status_code=503)
+    session = (r.headers.get("location") or "").rstrip("/").rsplit("/", 1)[-1]
+    if r.status_code != 201 or not WHIP_SESSION.match(session):
+        return JSONResponse({"error": "relay"}, status_code=409 if r.status_code in (400, 401, 403) else 502)
+    a.audit("studio.apercu.debut", session=session)
+    return Response(
+        r.content,
+        status_code=201,
+        media_type="application/sdp",
+        headers={
+            "Location": f"/api/v1/live/studio/preview/whip/{session}",
+            "Cache-Control": "no-store",
+            "Accept-Patch": ICE_TYPE,
+        },
+    )
+
+
+@router.patch("/live/studio/preview/whip/{session}")
+async def preview_whip_ice(session: str, request: Request, a: DeviceDep):
+    if not WHIP_SESSION.match(session):
+        raise NotFound()
+    body = await request.body()
+    if len(body) > MAX_SDP:
+        return JSONResponse({"error": "bad request"}, status_code=400)
+    ctype = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
+    if ctype != ICE_TYPE:
+        return JSONResponse({"error": "unsupported"}, status_code=415)
+    path = studio_preview.path_of(a.mosque)
+    try:
+        r = await live_watch.whip_request("PATCH", path, _preview_token(a), session, body, ICE_TYPE)
+    except live_watch.RelayUnavailable:
+        return JSONResponse({"error": _("relay unavailable")}, status_code=503)
+    if r.status_code == 404:
+        raise NotFound()
+    return Response(status_code=204 if r.status_code in (200, 204) else 502)
+
+
+@router.delete("/live/studio/preview/whip/{session}")
+async def preview_whip_close(session: str, a: DeviceDep):
+    if not WHIP_SESSION.match(session):
+        raise NotFound()
+    try:
+        await live_watch.whip_request("DELETE", studio_preview.path_of(a.mosque), _preview_token(a), session)
+    except live_watch.RelayUnavailable:
+        pass  # the relay is gone, and the session with it
+    a.audit("studio.apercu.fin", session=session)
     return Response(status_code=200)
 
 

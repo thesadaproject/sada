@@ -15,6 +15,27 @@ function loaded(live: Snapshot["live"], rev?: number): LiveState {
 const view = (s: LiveState) => selectView({ live: s });
 
 describe("live slice", () => {
+  it("merges an overlay patch kind by kind, then falls back on failure", () => {
+    const overlays = { qr: { visible: true, url: "https://a.example", label: "Don", corner: "tr" as const }, banner: { visible: false, title: "", subtitle: "" } };
+    let s = loaded({ overlays });
+    s = liveReducer(s, commandStarted({ id: "overlay:banner", patch: { overlays: { banner: { visible: true, title: "Collecte" } } } }));
+    expect(view(s)?.live.overlays?.banner).toEqual({ visible: true, title: "Collecte", subtitle: "" });
+    expect(view(s)?.live.overlays?.qr).toEqual(overlays.qr);
+    s = liveReducer(s, commandFailed({ id: "overlay:banner", retour: { ok: false } }));
+    expect(view(s)?.live.overlays?.banner?.visible).toBe(false);
+  });
+
+  it("keeps the studios and the preview request of a stale poll (telemetry)", () => {
+    let s = loaded({ paused: false });
+    const pollSeq = s.seq;
+    s = liveReducer(s, commandStarted({ id: "pause", patch: { live: { paused: true } } }));
+    const studios = [{ id: 1, name: "PC salle", online: true, publishing: false }];
+    s = liveReducer(s, snapshotReceived({ data: base({ paused: false }, { studios, preview: { requested: true } }), seq: pollSeq, at: 2 }));
+    expect(view(s)?.studios).toEqual(studios);
+    expect(view(s)?.preview.requested).toBe(true);
+    expect(view(s)?.live.paused).toBe(true);
+  });
+
   it("drops a poll that started before a command (write fence, no rev)", () => {
     let s = loaded({ stream_on: false, paused: false });
     const pollSeq = s.seq; // the poll leaves now

@@ -26,6 +26,21 @@ export type Live = {
   tarawih?: { night?: number | null; mode?: string; reciters: string[]; reciter?: string | null } | null;
   rev?: number;
   compositing?: "studio" | "server";
+  transition?: string | null;
+  overlays?: Partial<Overlays> | null;
+};
+export type Overlays = {
+  qr: { visible: boolean; url: string; label: string; corner: "tl" | "tr" | "bl" | "br" };
+  banner: { visible: boolean; title: string; subtitle: string };
+  logo: { visible: boolean };
+};
+export type OverlayKind = keyof Overlays;
+export type OverlaysPatch = { [K in OverlayKind]?: Partial<Overlays[K]> };
+/** A paired Sada Studio, as the control room sees it (heartbeat and relay). */
+export type Studio = {
+  id: number; name: string; online: boolean; publishing: boolean; last_seen_at?: number | null;
+  app_version?: string | null; state?: string | null; camera?: boolean | null; microphone?: boolean | null;
+  bitrate_kbps?: number | null;
 };
 export type AudioState = { mic_on: boolean; muted: boolean; level_db: number | null };
 export type Commande = { key: string; destructive: boolean; choices: string[] };
@@ -41,10 +56,13 @@ export type Snapshot = {
   publisher: Publisher;
   audio: AudioState;
   scenes: SceneInfo[];
+  studios: Studio[];
+  /** The control room asked for the studio's picture (outside a live). */
+  preview: { requested: boolean };
 };
 
 /** What an action changes at once, before the server answers. */
-export type Patch = { live?: Partial<Live>; audio?: Partial<AudioState>; publisher?: null };
+export type Patch = { live?: Partial<Live>; overlays?: OverlaysPatch; audio?: Partial<AudioState>; publisher?: null };
 
 export type Pending = { seq: number; patch: Patch };
 /** Feedback line: a server text, or an i18n key when there is no text. */
@@ -74,7 +92,7 @@ export const initialState: LiveState = { server: null, rev: null, seq: 0, readAt
 
 const EMPTY: Snapshot = {
   live: {}, commands: [], monitors: {}, publisher: null,
-  audio: { mic_on: false, muted: false, level_db: null }, scenes: [],
+  audio: { mic_on: false, muted: false, level_db: null }, scenes: [], studios: [], preview: { requested: false },
 };
 
 /** Identifier of an action in flight: the command, and its value when it has one (`extend:10`). */
@@ -102,10 +120,19 @@ function olderRev(state: LiveState, rev: number | null): boolean {
   return rev != null && state.rev != null && rev < state.rev;
 }
 
+/** Overlays merged kind by kind: a patch on the banner leaves the QR code as it is. */
+function mergeOverlays(cur: Live["overlays"], p: OverlaysPatch): Partial<Overlays> {
+  const out: Record<string, unknown> = { ...(cur ?? {}) };
+  for (const [k, v] of Object.entries(p)) out[k] = { ...((cur as Record<string, object> | null | undefined)?.[k] ?? {}), ...v };
+  return out as Partial<Overlays>;
+}
+
 function applyPatch(s: Snapshot, p: Patch): Snapshot {
+  let live = p.live ? { ...s.live, ...p.live } : s.live;
+  if (p.overlays) live = { ...live, overlays: mergeOverlays(live.overlays, p.overlays) };
   return {
     ...s,
-    live: p.live ? { ...s.live, ...p.live } : s.live,
+    live,
     audio: p.audio ? { ...s.audio, ...p.audio } : s.audio,
     publisher: p.publisher === null ? null : s.publisher,
   };
@@ -121,6 +148,8 @@ function merge(state: LiveState, s: Partial<Snapshot> & { rev?: unknown }, at: n
     publisher: s.publisher !== undefined ? s.publisher : base.publisher,
     audio: audio ?? base.audio,
     scenes: s.scenes ?? base.scenes,
+    studios: s.studios ?? base.studios,
+    preview: s.preview ?? base.preview,
   };
   const rev = revOf(s);
   if (rev != null) state.rev = Math.max(rev, state.rev ?? rev);
@@ -138,6 +167,8 @@ const slice = createSlice({
       if (stale && state.server) {
         // Telemetry only: the monitors' health and the audio level are not touched by commands.
         if (data.monitors) state.server.monitors = data.monitors;
+        if (data.studios) state.server.studios = data.studios;
+        if (data.preview) state.server.preview = data.preview;
         const level = audioOf(data)?.level_db;
         if (level !== undefined) state.server.audio.level_db = level;
         return;

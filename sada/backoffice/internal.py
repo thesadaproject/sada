@@ -101,6 +101,26 @@ def publish_allowed(conn, slug: str, key: str | None) -> bool:
     return bool(h) and hmac.compare_digest(h, _digest(str(key)))
 
 
+def preview_publisher(conn, slug: str, token: str | None) -> dict | None:
+    """The device a preview token lets publish the control room's preview of the mosque `slug`, or None.
+
+    Only a preview token (claim `p`) of a paired, not revoked device of that very mosque, while the control
+    room's request holds and the device is the one asked (`studio_preview.allowed`)."""
+    from . import live_input, studio_preview, studio_token
+    from .models import Device
+
+    claims = studio_token.verify(token, slug)
+    if not claims or not claims.get("p") or not claims.get("d"):
+        return None
+    mosque = orm.first(conn, Mosque, id=claims["m"])
+    if not mosque or live_input.slug(mosque) != slug:
+        return None
+    dev = orm.first(conn, Device, id=claims["d"])
+    if not dev or dev["revoked_at"] or dev["mosque_id"] != mosque["id"]:
+        return None
+    return dev if studio_preview.allowed(conn, mosque, dev) else None
+
+
 def studio_publisher(conn, slug: str, token: str | None):
     """Who a studio token lets publish on the relay stream `slug`: a `studio_publisher.Who`, or None.
 
@@ -112,7 +132,7 @@ def studio_publisher(conn, slug: str, token: str | None):
     from .studio_publisher import Who
 
     claims = studio_token.verify(token, slug)
-    if not claims:
+    if not claims or claims.get("p"):  # a preview token never publishes the live
         return None
     mosque = orm.first(conn, Mosque, id=claims["m"])
     if not mosque or live_input.slug(mosque) != slug:

@@ -63,10 +63,20 @@ def test_init_est_rejouable(tmp_path):
         conn.close()
 
 
+# Tables created by a migration after the baseline: the former system never had them. A later migration that
+# changes a baseline table (a column) makes the models drift further: freeze that table's former shape here then.
+APRES_LA_BASE = {"preview_requests"}
+
+
+def _schema_de_l_ancien_systeme(conn) -> None:
+    """Ce que l'ancien code créait : les tables des modèles telles qu'à la version 0001."""
+    models.metadata.create_all(conn, tables=[t for t in models.metadata.sorted_tables if t.name not in APRES_LA_BASE])
+
+
 def _base_de_l_ancien_systeme(path, version: int = migrations.LEGACY_LAST) -> None:
     """Ce que l'ancien code laissait : le schéma des modèles et `schema_migrations` jusqu'à `version`."""
     with engine(path, db.DEFAULT_DB).begin() as conn:
-        models.metadata.create_all(conn)
+        _schema_de_l_ancien_systeme(conn)
         conn.exec_driver_sql("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, appliquee_le TEXT NOT NULL)")
         for v in range(1, version + 1):
             conn.exec_driver_sql(f"INSERT INTO schema_migrations VALUES ({v}, 'avant')")
@@ -119,7 +129,7 @@ def test_le_schema_de_depart_est_celui_de_l_ancien_systeme(tmp_path):
         eng = sa.create_engine(f"sqlite:///{path}")
         with eng.begin() as conn:
             if md_or_alembic == "ancien":
-                models.metadata.create_all(conn)
+                _schema_de_l_ancien_systeme(conn)
             else:
                 command.upgrade(migrations.config(conn), migrations.BASELINE)
         with eng.connect() as conn:

@@ -209,5 +209,6 @@
   "Broadcast quality reached after the start: applied at the next restart": "Qualité de diffusion obtenue après le démarrage : appliquée au prochain redémarrage",
   "Compositing ({stage}): {mode}": "Composition ({stage}) : {mode}",
   "by the Sada Studio, the stream is relayed as is": "par le Sada Studio, le flux est relayé tel quel",
-  "by the server": "par le serveur"
+  "by the server": "par le serveur",
+  "the control room is not asking for the picture": "la régie ne demande pas l'image"
 }

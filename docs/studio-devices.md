@@ -92,9 +92,13 @@ sleep disabled); only an explicit `false` is a problem.
   "slots":   [ /* the next 5 slots, same shape as `next` */ ],
   "config":  {"name": "Prayer hall PC", "mosque": {"name", "slug", "timezone"}, "heartbeat_interval_s": 30,
               "start_margin_s": 120, "token_path": "/api/v1/live/studio/token", "whip_path": "/api/v1/live/studio/whip"},
-  "credentials": {"device_id": "sdev_12", "device_secret": "sdev_12.…"}   // only when a rotation was requested: store it, use it from now on
+  "credentials": {"device_id": "sdev_12", "device_secret": "sdev_12.…"},  // only when a rotation was requested: store it, use it from now on
+  "preview": {"on": true, "expires_in": 41, "whip_path": "/api/v1/live/studio/preview/whip"}  // or null: see below
 }
 ```
+
+`heartbeat_interval_s` drops to 5 while the web control room is open (its poll marks it watched), so a request
+for the picture is seen within seconds; it is 30 otherwise.
 
 `current.source` is `schedule` or `manual`. `current` is `null` in standby. Only one device per mosque is
 ordered `live` (the manual live's device, else the holder of the stream, else the oldest online): the others
@@ -126,6 +130,25 @@ get `standby` / `other_device`. A device displaced by an administrator gets `sta
 credential as a bearer **in addition to** the session cookie. For a device, the token is refused with
 `409 {code:"not_ordered"}` unless it is ordered `live`, and with `409 {code:"live_active"}` when another source
 holds the stream. The WHIP start/end are journaled (`studio.whip.debut|fin`, with the device name).
+
+### The control room's preview (the studio's picture on demand)
+
+The web control room is the remote control of the Sada Studio. Outside a live it can ask for the studio's
+picture: `POST /api/v1/live/regie/preview {"on": true}` (session, CSRF, `live` right), renewed every 15 s while
+its monitor is open, `{"on": false}` when it closes (else it lapses in 45 s). `GET /live/regie` says
+`preview.requested`, and its `monitors.preview` reads the preview path.
+
+While a request holds, the heartbeat answer of the **designated device** (the oldest online one not held back,
+as for a scheduled live) carries `preview`; it is `null` for the others and **always `null` while the device is
+ordered `live`** (the live stream is what the control room watches then). The device publishes its composed
+programme with `POST|PATCH|DELETE /api/v1/live/studio/preview/whip[/{session}]` (device credential only), and
+stops when `preview` goes away. The offer is refused with `409 {code: "not_requested"}` when nobody asks or the
+device is not the designated one.
+
+Nothing of it can reach the public: the device publishes to `live/<slug>-retour`, a relay path no orchestrator
+reads (no destination, no recording), with a **preview token** (claim `p`) that the relay's authentication
+accepts on that path only, never on `live/<slug>`; a live token is refused on the preview path. A preview never
+becomes the live's publisher (no claim taken). Journal: `studio.apercu.debut|fin`.
 
 ## The orchestrator follows the live
 
@@ -206,4 +229,5 @@ inject these variables yet (to be added in the deployment values, secret for the
 `studio.appareil.appaire|renomme|revoque|desappaire|rotation.demandee|rotation`, `studio.appairage.refuse`,
 `studio.direct.manuel.debut|fin`, `studio.direct.annonce`, `studio.creneau.arret`, `studio.reprise`,
 `studio.publication.refusee`, `studio.reglages`, `studio.alertes.preferences|desabonnement`,
-`studio.incident.ouvert|resolu`, `studio.mail.*`, plus `studio.jeton` and `studio.whip.debut|fin`.
+`studio.incident.ouvert|resolu`, `studio.mail.*`, plus `studio.jeton`, `studio.whip.debut|fin` and
+`studio.apercu.debut|fin` (the control room's preview).

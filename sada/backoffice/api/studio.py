@@ -22,7 +22,6 @@ from sqlalchemy import select
 
 from ... import mailer, transitions
 from ...i18n import _
-from ...state import OVERLAY_KINDS, normalize_overlay
 from .. import (
     db,
     live,
@@ -34,6 +33,7 @@ from .. import (
     studio_devices,
     studio_incidents,
     studio_plan,
+    studio_preview,
     studio_publisher,
     studio_service,
 )
@@ -114,18 +114,22 @@ async def heartbeat(request: Request, a: DeviceDep):
         a.audit("studio.appareil.rotation", appareil_id=a.device["id"])
     out = studio_service.order_for(a.conn, a.mosque, a.device, now)
     cfg = studio_plan.settings(a.conn, a.mosque["id"])
+    watched = studio_preview.is_watched(a.conn, a.mosque["id"], now)
     resp = out.body() | {
         "server_time": studio_plan._iso(now),
         "config": {
             "name": a.device["name"],
             "mosque": {"name": a.mosque["name"], "slug": a.mosque["slug"], "timezone": a.mosque["timezone"]},
-            "heartbeat_interval_s": HEARTBEAT_S,
+            # faster while the web control room is open, so a request for the picture is seen within seconds
+            "heartbeat_interval_s": studio_preview.FAST_HEARTBEAT_S if watched else HEARTBEAT_S,
             "start_margin_s": cfg["start_margin_s"],
             "token_path": "/api/v1/live/studio/token",
             "whip_path": "/api/v1/live/studio/whip",
             "stream": stream_quality.for_studio(a.conn, a.mosque["id"]),
         },
         "slots": [s.as_dict(now) for s in out.slots[:5]],
+        # the control room wants this device's picture (outside a live): publish it to `preview.whip_path`
+        "preview": studio_preview.for_device(a.conn, a.mosque, a.device, out.order, now),
     }
     if new_credential:
         resp["credentials"] = {"device_id": studio_devices.public_id(a.device["id"]), "device_secret": new_credential}
@@ -302,26 +306,9 @@ async def live_screen_doc(screen: str, request: Request, a: DeviceDep, setup: in
 @router.patch("/studio/live/overlays/{kind}")
 async def live_overlay(kind: str, request: Request, a: DeviceDep):
     """Updates one overlay layer (qr, banner, logo); the patch is merged onto the current state."""
-    from .regie import _setup_failure, _setup_kwargs, _with_state, live_flat
+    from .regie import apply_overlay
 
-    kind = str(kind or "").strip().lower()
-    if kind not in OVERLAY_KINDS:
-        return JSONResponse({"error": _("unknown overlay: {kind}", kind=kind)}, status_code=422)
-    patch = await _json(request)
-    setup = patch.pop("setup", None) is True
-    snapshot = await run_in_threadpool(live_flat, a.mosque, setup, setup)  # blocking HTTP to the engine
-    current = (snapshot.get("overlays") or {}).get(kind)
-    try:
-        merged = normalize_overlay(kind, patch, current)
-    except ValueError as e:
-        return JSONResponse({"error": str(e)}, status_code=400)
-    try:
-        r = await run_in_threadpool(live.set_overlay, a.mosque, kind, merged, **_setup_kwargs(setup))
-    except live.OrchestratorError as e:
-        return _setup_failure(e)
-    a.audit("studio.live.incrustation", incrustation=kind, visible=bool(merged.get("visible")), setup=setup)
-    out = {"ok": True, "overlays": r.get("overlays") or {kind: merged}}
-    return await run_in_threadpool(_with_state, out, a.mosque, r, setup)
+    return await apply_overlay(a, kind, await _json(request))
 
 
 # ------------------------------------------------------------------ setup mode (device)
