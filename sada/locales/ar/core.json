@@ -218,5 +218,10 @@
   "Signal lost: the reconnection screen is on air, the live ends in {grace:g} s unless it comes back": "فُقدت الإشارة: شاشة إعادة الاتصال على الهواء، وينتهي البث بعد {grace:g} ث إن لم تعد",
   "Signal back: the live resumes": "عادت الإشارة: يستأنف البث",
   "Signal lost for {grace:g} s: {msg}": "الإشارة مفقودة منذ {grace:g} ث: {msg}",
-  "New day, new run: {run}": "يوم جديد، تشغيل جديد: {run}"
+  "New day, new run: {run}": "يوم جديد، تشغيل جديد: {run}",
+  "Disk space critical on the recording folder: {free:.1f} GB left. New recordings are suspended; the live stream goes on without a local recording. Free some space.": "مساحة القرص حرجة في مجلد التسجيل: بقي {free:.1f} غ.ب. أُوقف التسجيل الجديد؛ يستمر البث دون تسجيل محلي. يرجى تحرير مساحة.",
+  "Disk space is running low on the recording folder: {free:.1f} GB left, about {nights:.1f} night(s) of 3 hours. Free some space; the live stream is not affected.": "مساحة القرص تنخفض في مجلد التسجيل: بقي {free:.1f} غ.ب، أي نحو {nights:.1f} ليلة من 3 ساعات. يرجى تحرير مساحة؛ البث غير متأثر.",
+  "Disk space back to normal: {free:.1f} GB free": "عادت مساحة القرص إلى وضعها الطبيعي: {free:.1f} غ.ب حرة",
+  "ENCODER: the recording stopped (disk?), the live stream goes on without it": "المُرمِّز: توقف التسجيل (القرص؟)، يستمر البث بدونه",
+  "ENCODER: disk space critical, starting ffmpeg without a recording": "المُرمِّز: مساحة القرص حرجة، بدء ffmpeg دون تسجيل"
 }

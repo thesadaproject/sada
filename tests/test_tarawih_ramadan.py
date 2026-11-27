@@ -25,7 +25,7 @@ def test_a_tarawih_night_is_recorded_without_a_clean_copy(tmp_path):
     rec, clean = enc.new_recording()
     assert clean is None and rec.endswith(".mkv")
     cmd = enc.ffmpeg_cmd(rec, None)
-    assert sum("[f=matroska]" in c for c in cmd) == 1 and not any("_clean" in c for c in cmd)  # the live one only
+    assert sum("[f=matroska" in c for c in cmd) == 1 and not any("_clean" in c for c in cmd)  # the live one only
 
 
 def _tarawih_orchestrator(monkeypatch, kind):

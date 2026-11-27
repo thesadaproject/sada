@@ -118,7 +118,7 @@ class FakeEncoder:
         self.overlay = None
         self.started = self.stopped = 0
         self.restarts = 0
-        self.hold = self.no_fallback = self.fallback = False
+        self.hold = self.no_fallback = self.fallback = self.recording_failed = self.disk_critical = False
         self.lost_wall = None  # epoch s of the signal loss, set by the tests that need one
         self.lost_for: float | None = None  # seconds since it, None while the programme has its input
 

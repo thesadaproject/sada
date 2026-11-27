@@ -22,6 +22,7 @@ from PIL import Image
 
 from . import (
     destinations,
+    diskwatch,
     gabarit_antenne,
     mawaqit,
     notify,
@@ -99,6 +100,8 @@ def wait_for_backoffice(url: str, limit_s: float, probe=None, sleep=time.sleep, 
 class Orchestrator:
     #: Who composes the rehearsal stage: said by whoever takes the setup lease (see set_setup).
     _setup_compositing = "server"
+    #: Probe of the recording folder's free space (see diskwatch.py); None where the orchestrator is not fully built.
+    diskwatch: diskwatch.DiskWatch | None = None
     #: Scene picked off air from the control room: only the picture shown (Studio, preview), never a live.
     offair_scene: str | None = None
 
@@ -162,6 +165,7 @@ class Orchestrator:
         self.studio_poll = studio_link.Poller(cfg.backoffice_url if not cfg.sim_start else "", cfg.api_port)
         self.notifier = notify.from_config(cfg, log=log.info)
         self._notified_state = None
+        self.diskwatch = diskwatch.DiskWatch(cfg, self.notifier.send, log=log.warning)
         if self.notifier.enabled:
             log.info(_("Notifications to the imam: {destination}", destination=self.notifier.destination))
         else:
@@ -495,6 +499,9 @@ class Orchestrator:
     def _sync(self):
         """Aligns the live stage on its machine, then the notifications and the stream start/stop."""
         m, enc = self.machine, self.encoder
+        if self.diskwatch is not None:
+            self.diskwatch.poll()
+            enc.disk_critical = self.diskwatch.critical  # read when a recording is opened
         enc.hold = m.state == State.ENDED  # end screen: the stream is about to stop, never relaunch it
         # a live being ended on purpose (end screen) never gets the reconnection screen, and one that is up is cut
         enc.no_fallback = m.state in (State.ENDED, State.DARS_END)
@@ -729,6 +736,9 @@ class Orchestrator:
             encoder_alive=self.encoder.alive(),
             encoder_restarts=self.encoder.restarts,
             ingest_connected=self.vad.connected,
+            recording_free_bytes=float(self.diskwatch.free)
+            if self.diskwatch is not None and self.diskwatch.free is not None
+            else -1.0,
         )
 
     # --- setup mode (rehearsal stage) ---------------------------------------
@@ -1036,7 +1046,9 @@ class Orchestrator:
                         "recording": self.encoder.current_recording(),
                         "pos_s": round(pos, 1),
                         "fallback": bool(self.encoder.fallback),
+                        "recording_failed": bool(self.encoder.recording_failed),
                     },
+                    "disk": self.diskwatch.status() if self.diskwatch is not None else None,
                     **self._signal_status(),
                     "setup": self.setup_status(),
                     "compositing": self.live_stage.compositing,
