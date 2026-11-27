@@ -166,6 +166,8 @@ export const api = {
   regieOverlay: (kind: string, patch: Record<string, unknown>) => ecrire<any>("PATCH", `/live/regie/overlays/${kind}`, patch),
   /** Studio devices (pairing, list, incidents, schedule) — see docs/studio-devices.md. */
   studioDevices: () => demande<any>("/studio/devices"),
+  /** The Sada Studio's installers (latest release), per system; `page` when GitHub could not be read. */
+  studioDownload: () => demande<{ version: string | null; page: string; assets: Record<"windows" | "mac_arm64" | "mac_x64" | "linux", string | null> }>("/studio/download"),
   studioPair: (user_code: string, name: string) =>
     ecrire<{ ok: boolean; message: string }>("POST", "/studio/devices/pair", { user_code, name }),
   studioRename: (id: number, name: string) => ecrire<{ ok: boolean; message: string }>("PATCH", `/studio/devices/${id}`, { name }),

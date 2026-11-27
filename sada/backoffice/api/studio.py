@@ -407,6 +407,14 @@ def _holder_view(holder: dict | None) -> dict | None:
     return {k: holder[k] for k in ("source", "label", "since", "text", "device_id")}
 
 
+@router.get("/studio/download")
+async def studio_download(ctx: CtxDep):
+    """The Sada Studio's installers (latest release), for the getting-started screen and the Devices page."""
+    from .. import studio_download as dl
+
+    return await run_in_threadpool(dl.latest)
+
+
 @router.get("/studio/devices")
 def devices(ctx: CtxDep):
     _manage(ctx)
