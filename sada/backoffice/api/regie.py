@@ -426,7 +426,7 @@ async def regie_take_scene(request: Request, a: ActorDep):
     out = await apply_scene(a.conn, a.mosque, body.get("scene"), body.get("transition"), setup=setup)
     if isinstance(out, dict):
         a.audit("studio.live.commande", commande="scene", valeur=out["scene"], setup=setup)
-        if a.device is None and not setup:  # the web control room: a scene on air puts the studio on air too
+        if a.device is None and not setup:  # the web control room: a scene never starts the studio's live
             out["studio"] = await run_in_threadpool(
                 studio_service.follow_regie, a.conn, a.mosque, "scene", out["scene"], a.ip
             )
@@ -592,7 +592,7 @@ def _studio_token(a: Actor) -> str:
 def _need_push(a: Actor) -> JSONResponse | None:
     """The studio feeds the mosque's push input: a camera input is read by the relay itself."""
     if live_input.current(a.conn, a.mosque)["mode"] != "push":
-        return JSONResponse({"error": "input is not push"}, status_code=409)
+        return JSONResponse({"error": "input is not push", "code": "not_push"}, status_code=409)
     return None
 
 
@@ -731,10 +731,14 @@ async def preview_whip_offer(request: Request, a: DeviceDep):
     try:
         r = await live_watch.whip_request("POST", path, _preview_token(a), body=sdp, ctype="application/sdp")
     except live_watch.RelayUnavailable:
-        return JSONResponse({"error": _("relay unavailable")}, status_code=503)
+        return JSONResponse({"error": _("relay unavailable"), "code": "relay_unavailable"}, status_code=503)
     session = (r.headers.get("location") or "").rstrip("/").rsplit("/", 1)[-1]
     if r.status_code != 201 or not WHIP_SESSION.match(session):
-        return JSONResponse({"error": "relay"}, status_code=409 if r.status_code in (400, 401, 403) else 502)
+        # A refusal by the relay is transient (not ready, designation moved, its auth hiccuped): 503 with its own
+        # code, so the studio retries soon. 409 stays reserved for real conflicts (`not_requested`, `not_push`).
+        if r.status_code in (400, 401, 403):
+            return JSONResponse({"error": "relay refused the offer", "code": "relay_refused"}, status_code=503)
+        return JSONResponse({"error": "relay", "code": "relay_error"}, status_code=502)
     a.audit("studio.apercu.debut", session=session)
     return Response(
         r.content,

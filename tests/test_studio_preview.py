@@ -165,6 +165,97 @@ def test_whip_needs_a_device_not_a_session(env, relay):
     assert c.post(WHIP, content=b"v=0\r\n", headers={"Content-Type": "application/sdp"}).status_code == 401
 
 
+@pytest.mark.parametrize("refusal", [400, 401, 403])
+def test_a_relay_refusal_is_a_503_not_a_conflict(env, monkeypatch, refusal):
+    """The studio backs off briefly on 503 and for a long time on a 409: a refusal of the relay is not a conflict."""
+    d, _ = pair(env)
+    beat(d)
+    client(env, "responsable").ecrire("/live/regie/preview", {"on": True})
+
+    async def refuse(method, path, token, session=None, body=b"", ctype=None):
+        return httpx.Response(refusal)
+
+    monkeypatch.setattr(live_watch, "whip_request", refuse)
+    r = d.post(WHIP, content=b"v=0\r\n", headers={"Content-Type": "application/sdp"})
+    assert r.status_code == 503 and r.json()["code"] == "relay_refused"
+
+
+def test_a_relay_failure_is_a_502_and_an_unreachable_relay_a_503(env, monkeypatch):
+    d, _ = pair(env)
+    beat(d)
+    client(env, "responsable").ecrire("/live/regie/preview", {"on": True})
+
+    async def broken(method, path, token, session=None, body=b"", ctype=None):
+        return httpx.Response(500)
+
+    monkeypatch.setattr(live_watch, "whip_request", broken)
+    r = d.post(WHIP, content=b"v=0\r\n", headers={"Content-Type": "application/sdp"})
+    assert r.status_code == 502 and r.json()["code"] == "relay_error"
+
+    async def down(method, path, token, session=None, body=b"", ctype=None):
+        raise live_watch.RelayUnavailable("down")
+
+    monkeypatch.setattr(live_watch, "whip_request", down)
+    r = d.post(WHIP, content=b"v=0\r\n", headers={"Content-Type": "application/sdp"})
+    assert r.status_code == 503 and r.json()["code"] == "relay_unavailable"
+
+
+def test_a_camera_input_is_refused_with_its_own_code(env, monkeypatch):
+    d, _ = pair(env)
+    beat(d)
+    monkeypatch.setattr(live_input, "current", lambda conn, m: {"mode": "camera", "url": "rtsp://cam/x"})
+    r = d.post(WHIP, content=b"v=0\r\n", headers={"Content-Type": "application/sdp"})
+    assert r.status_code == 409 and r.json()["code"] == "not_push"
+
+
+# ------------------------------------------------------------------ targeted writes of the request row
+
+
+def _stale_read(monkeypatch, between):
+    """`between` runs once, right before the first write of the request row: whatever the caller read earlier is
+    then stale, as when a concurrent request lands between its read and its write."""
+    real = studio_preview.orm.upsert
+    state = {"done": False}
+
+    def upsert(*args, **kwargs):
+        if not state["done"]:
+            state["done"] = True
+            between()
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(studio_preview.orm, "upsert", upsert)
+
+
+def test_a_poll_racing_a_release_does_not_bring_the_request_back(env, monkeypatch):
+    mid = env["mid"]
+    conn = env["conn"]
+    now = time.time()
+    studio_preview.request(conn, {"id": mid}, None, now)
+    update(conn, models.PreviewRequest, {"watched_until": 0.0}, mosque_id=mid)  # the poll will write
+    # a poll (`watched`) has read until=T; `release` lands before it writes
+    _stale_read(monkeypatch, lambda: studio_preview.release(conn, mid))
+    studio_preview.watched(conn, mid, now + 1)
+    row = one(conn, models.PreviewRequest, mosque_id=mid)
+    assert row["until"] == 0.0  # the release survived
+    assert row["watched_until"] == pytest.approx(now + 1 + studio_preview.WATCH_TTL_S)  # and the poll was recorded
+    assert studio_preview.current(conn, mid, now + 1) is None
+
+
+def test_a_release_racing_a_renewal_keeps_the_renewal_columns_intact(env, monkeypatch):
+    mid = env["mid"]
+    conn = env["conn"]
+    now = time.time()
+    studio_preview.request(conn, {"id": mid}, env["ids"]["responsable"], now)
+    since = one(conn, models.PreviewRequest, mosque_id=mid)["since"]
+    _stale_read(monkeypatch, lambda: studio_preview.release(conn, mid))
+    studio_preview.request(conn, {"id": mid}, env["ids"]["responsable"], now + 10)
+    row = one(conn, models.PreviewRequest, mosque_id=mid)
+    assert row["until"] == pytest.approx(now + 10 + studio_preview.TTL_S)  # the later renewal wins, whole
+    assert row["since"] == since  # a renewal never moves `since`
+    studio_preview.release(conn, mid)
+    assert one(conn, models.PreviewRequest, mosque_id=mid)["since"] == since
+
+
 # ------------------------------------------------------------------ relay authentication
 
 
