@@ -498,3 +498,16 @@ def test_a_setup_opened_while_a_live_ends_publishes_the_rehearsal_once_the_live_
     o._sync()
     o._sync_setup()
     assert o.rehearsal.machine.scene == setup_mode.FIRST_SCENE and o.rehearsal.encoder.wanted is True
+
+
+def test_the_end_screen_holds_the_live_encoder_and_a_new_live_releases_it(monkeypatch):
+    o = make(monkeypatch)
+    o.machine.command("scene", o.signals(), "khutba")
+    o._sync()
+    assert o.encoder.hold is False
+    o.machine.state = o.machine.state.ENDED  # end screen: the encoder must not be relaunched any more
+    o._sync()
+    assert o.encoder.hold is True
+    o.machine.state = o.machine.state.KHUTBA
+    o._sync()
+    assert o.encoder.hold is False

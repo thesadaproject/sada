@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api, onUnauthorized, setCsrf, type Session } from "./api";
+import { proposerDemarrage } from "./demarrage";
 import Login from "./pages/Login";
 import FirstPassword from "./pages/FirstPassword";
 import MosquePicker from "./pages/MosquePicker";
@@ -54,11 +55,9 @@ export default function App() {
   // First login: the three-step wizard is opened once, then everything lives in Settings.
   useEffect(() => {
     if (!session || demarragePropose.current) return;
-    if (session.mosque?.needs_onboarding && session.user.permissions.includes("admin")) {
-      demarragePropose.current = true;
-      navigate("/demarrage", { replace: true });
-    }
-  }, [session, navigate]);
+    demarragePropose.current = true; // decided once per sign-in: the first page the person lands on
+    if (proposerDemarrage(session, pathname)) navigate("/demarrage", { replace: true });
+  }, [session, navigate, pathname]);
 
   if (!pret) return <p className="px-4 py-16 text-center text-muted">{t("common.loading")}</p>;
   if (!session) return <Login onLogin={(s) => { setCurrentSession(s); setCsrf(s.csrf); setSession(s); }} />;

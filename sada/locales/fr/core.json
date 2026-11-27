@@ -198,6 +198,7 @@
   "ENCODER: source unavailable (ffmpeg code {code}), retrying with backoff": "ENCODEUR : source indisponible (code ffmpeg {code}), nouvelles tentatives espacées",
   "ENCODER: source available again after {count} failed attempts": "ENCODEUR : source de nouveau disponible après {count} tentatives échouées",
   "ENCODER: starting the setup programme (monitoring copy only, no destination, no recording)": "ENCODEUR : démarrage du programme de réglage (copie de contrôle seulement, aucune destination, aucun enregistrement)",
+  "ENCODER: waiting for the input to be published on the relay": "ENCODEUR : en attente de la publication de l'entrée sur le relais",
   "Setup mode: ended": "Mode réglage : terminé",
   "Setup mode: lease lapsed, rehearsal stopped": "Mode réglage : bail expiré, répétition arrêtée",
   "Setup mode: started": "Mode réglage : démarré",

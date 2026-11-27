@@ -44,7 +44,7 @@ from .faces import FaceGate, FaceMonitor, yunet_detector
 from .i18n import _
 from .presence import MotionGate, PresenceMonitor
 from .scenes import SCENES, Moment, SceneRenderer, render_custom_scene
-from .state import CUSTOM_SCENE_PREFIX, STATE_OF_SCENE, Machine, SessionParams, Signals
+from .state import CUSTOM_SCENE_PREFIX, STATE_OF_SCENE, Machine, SessionParams, Signals, State
 from .vad import VadMonitor
 
 #: Scene key the encoder shows while a Sada Studio composes the picture itself: nothing over its stream.
@@ -148,6 +148,7 @@ class Orchestrator:
         self.gabarit = gabarit_antenne.depuis_backoffice(cfg, cfg.backoffice_url, cfg.api_port, log_fn=log.info)
         self.renderer = SceneRenderer(cfg)
         self.encoder = Encoder(cfg, self.run_dir, log=log.info)
+        self.encoder.source_ready = lambda: source.relay_ready(self.cfg.camera_url)
         self.encoder.reload_background = self._template_active()
         self.encoder.prepare(self.renderer.background())
         self.machine = Machine(sessions, cfg, log=log.info, pos_fn=self.encoder.position, extras=extras)
@@ -473,6 +474,7 @@ class Orchestrator:
     def _sync(self):
         """Aligns the live stage on its machine, then the notifications and the stream start/stop."""
         m, enc = self.machine, self.encoder
+        enc.hold = m.state == State.ENDED  # end screen: the stream is about to stop, never relaunch it
         self._show(self.live_stage)
         if m.state != self._notified_state:
             if self._notified_state is not None:
