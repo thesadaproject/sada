@@ -61,15 +61,12 @@ describe("Régie (remote control of the Sada Studio)", () => {
   });
   afterEach(() => { cleanup(); setCurrentSession(null); });
 
-  it("off air, a scene starts the live only once confirmed", async () => {
+  it("off air, a scene only changes the picture: no confirmation, no live shown", async () => {
     await monter();
-    confirm.mockResolvedValue(false);
     await act(async () => { fireEvent.click(sceneButton("dashboard.choice.khutba")); });
-    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ message: "regie.sceneStartsLive" }));
-    expect(api.regieScene).not.toHaveBeenCalled();
-    confirm.mockResolvedValue(true);
-    await act(async () => { fireEvent.click(sceneButton("dashboard.choice.khutba")); });
+    expect(confirm).not.toHaveBeenCalled();
     expect(api.regieScene).toHaveBeenCalledWith("khutba", "fade");
+    expect(screen.queryByText("dashboard.liveOn")).toBeNull();
   });
 
   it("on air, a scene (custom ones too) is taken at once", async () => {

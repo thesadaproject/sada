@@ -149,6 +149,7 @@ def test_studio_compositing_relays_the_stream_untouched(monkeypatch):
     o = make(monkeypatch)
     o._follow_editor(ann(publisher="device"))
     assert o.live_stage.compositing == "studio" and o.status()["compositing"] == "studio"
+    o.manual("start")  # a scene off air only changes the picture: a live is needed for the encoder to show it
     o.manual("scene", "priere")  # a full screen, mic closed when the server composes
     o.set_overlay("banner", {"visible": True, "title": "Soirée"})
     o.set_mute(True)
@@ -168,8 +169,9 @@ def test_server_compositing_is_unchanged(monkeypatch):
     o = make(monkeypatch)
     o._follow_editor(ann(publisher="obs"))
     assert o.live_stage.compositing == "server"
+    o.manual("start")
     o.manual("scene", "priere")
-    assert o.encoder.shown == ["priere"] and o.encoder.mic_on is False
+    assert o.encoder.shown[-1] == "priere" and o.encoder.mic_on is False
     o.manual("scene", "khutba")
     assert o.encoder.shown[-1] == "khutba" and o.encoder.mic_on is True
     o.set_mute(True)
@@ -180,6 +182,7 @@ def test_server_compositing_is_unchanged(monkeypatch):
 
 def test_a_silent_back_office_keeps_the_mode_and_a_change_redraws(monkeypatch):
     o = make(monkeypatch)
+    o.manual("start")
     o.manual("scene", "priere")
     r0 = o.status()["rev"]
     o._follow_editor(ann(publisher="device"))
