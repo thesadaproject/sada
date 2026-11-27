@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.29](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.28...sada-v0.1.0-alpha.29) (2026-11-27)
+
+
+### Features
+
+* **settings:** the video input is the Sada Studio, and an old OBS key can be revoked ([#125](https://github.com/thesadaproject/sada/issues/125)) ([3c0edac](https://github.com/thesadaproject/sada/commit/3c0edac5671e68551795438a0d5b2ad68df28562))
+
 ## [0.1.0-alpha.28](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.27...sada-v0.1.0-alpha.28) (2026-11-27)
 
 
