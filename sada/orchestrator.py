@@ -525,6 +525,12 @@ class Orchestrator:
             self._envoyer_rediffusions()
         self._save_sessions()
 
+    @staticmethod
+    def _grace(m) -> float:
+        """How long the live on air may stay on the reconnection screen: depends on what is on air (`grace_s`)."""
+        playing = m.playing
+        return studio_link.grace_s(playing.kind if playing is not None else None)
+
     def _follow_signal(self, m, enc) -> None:
         """The input of the live is gone (the encoder sends the reconnection screen): a state change for the readers
         (new `rev`), and the live ends like a normal stop once the grace is over, unless the input came back."""
@@ -536,12 +542,12 @@ class Orchestrator:
                 log.warning(
                     _(
                         "Signal lost: the reconnection screen is on air, the live ends in {grace:g} s unless it comes back",
-                        grace=studio_link.SIGNAL_GRACE_S,
+                        grace=self._grace(m),
                     )
                 )
             else:
                 log.info(_("Signal back: the live resumes"))
-        if lost_for is not None and lost_for >= studio_link.SIGNAL_GRACE_S and m.stream_on:
+        if lost_for is not None and lost_for >= self._grace(m) and m.stream_on:
             lost_at = enc.lost_wall
             log.info(
                 _("Signal lost for {grace:g} s: {msg}", grace=lost_for, msg=m.end_lost(self.signals(), "signal perdu"))
@@ -1015,13 +1021,14 @@ class Orchestrator:
         """Where the grace stands while the reconnection screen is on air: when the signal was lost (epoch s), when the
         live ends if it does not come back, and what remains (the readers count down from it, free of any clock skew)."""
         lost_for = self.encoder.signal_lost_for() if self._signal_lost else None
+        grace = self._grace(self.machine)
         lost = self.encoder.lost_wall if lost_for is not None else None
         if lost_for is None or lost is None:
             return {"signal_lost_since": None, "fallback_until": None, "fallback_remaining_s": None}
         return {
             "signal_lost_since": round(lost, 1),
-            "fallback_until": round(lost + studio_link.SIGNAL_GRACE_S, 1),
-            "fallback_remaining_s": round(max(0.0, studio_link.SIGNAL_GRACE_S - lost_for), 1),
+            "fallback_until": round(lost + grace, 1),
+            "fallback_remaining_s": round(max(0.0, grace - lost_for), 1),
         }
 
     def status(self) -> dict:

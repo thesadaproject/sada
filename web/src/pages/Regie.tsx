@@ -274,7 +274,7 @@ function SignalBanner({ live, lu }: { live: Live; lu: number }) {
       <p className="m-0 flex items-center gap-2.5 text-[1.05rem] font-bold text-white">
         <span className="inline-block size-2.5 shrink-0 animate-pulse rounded-full bg-[#e2c27a]" />
         {t("regie.signalLost")}
-        <span aria-hidden="true" className="font-semibold text-[#e2c27a] tabular-nums">{t("regie.signalLostCountdown", { time: hms(restant) })}</span>
+        <span aria-hidden="true" className="font-semibold text-[#e2c27a] tabular-nums">{t("regie.signalLostCountdown", { time: hms(Math.ceil(restant)) })}</span>
       </p>
       <p className="m-0 text-[0.88rem] text-night-muted">{t("regie.signalLostHint")}</p>
     </section>

@@ -35,6 +35,13 @@ POLL_S = 5.0
 #: ends as a normal stop. One constant for the whole product: the orchestrator's grace after a signal loss, and the
 #: back office's silence delay for a manual live whose device no longer answers (`studio_plan.MANUAL_SILENCE_S`).
 SIGNAL_GRACE_S = 120.0
+#: A night prayer (tarawih, qiyam) is long and recited once: a network that falls for a few minutes must not end it.
+TARAWIH_GRACE_S = 600.0
+
+
+def grace_s(kind: str | None) -> float:
+    """The grace of a session of this kind: the one place that decides it (orchestrator, back office)."""
+    return TARAWIH_GRACE_S if kind == "tarawih" else SIGNAL_GRACE_S
 TYPES = ("khutba", "dars", "conference")
 PUBLISHERS = ("device", "obs", "regie", "unknown")
 

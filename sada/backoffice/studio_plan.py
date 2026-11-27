@@ -57,8 +57,14 @@ HORIZON_DAYS = 8
 TARAWIH_MIN = state.TARAWIH_TIMING.max_s / 60
 ONLINE_S = 90  # a device that spoke less than this ago is online (the heartbeat is every 30 s)
 # a manual live whose device is silent this long is over: the same delay as the orchestrator's grace after a signal
-# loss (see studio_link.SIGNAL_GRACE_S), i.e. four missed heartbeats (HEARTBEAT_S = 30 in api/studio.py)
+# loss, which depends on the kind of the session (`studio_link.grace_s`): four missed heartbeats (HEARTBEAT_S = 30 in
+# api/studio.py) for a khutba, a dars or a conference
 MANUAL_SILENCE_S = int(studio_link.SIGNAL_GRACE_S)
+
+
+def silence_s(kind: str | None) -> float:
+    """How long a manual live of this kind may have a silent device before it is over."""
+    return studio_link.grace_s(kind)
 
 
 # ------------------------------------------------------------------ settings
@@ -311,7 +317,7 @@ def manual_run(conn, mosque_id: int, now: float | None = None) -> dict | None:
     if run is None:
         return None
     seen = conn.scalar(select(Device.last_seen_at).where(Device.id == run["device_id"])) or run["started_at"]
-    if now - seen > MANUAL_SILENCE_S:
+    if now - seen > silence_s(run.get("kind")):
         conn.execute(update(StudioRun).where(StudioRun.id == run["id"]).values(ended_at=now))
         orm.done(conn)
         db.audit(

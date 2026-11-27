@@ -78,6 +78,12 @@ describe("Régie (remote control of the Sada Studio)", () => {
     }
   });
 
+  it("a tarawih night, ten minutes of grace: the banner starts from the server's 10:00", async () => {
+    const live = { ...offAir.live, state: "TARAWIH", scene: "tarawih", stream_on: true, fallback_remaining_s: 600, fallback_until: 1, signal_lost_since: 0 };
+    await monter({ ...offAir, live });
+    expect(screen.getByRole("alert").textContent).toContain("regie.signalLostCountdown 10:00");
+  });
+
   it("no banner while the live has its signal, nor off air", async () => {
     await monter({ ...offAir, live: { ...offAir.live, state: "KHUTBA", stream_on: true, fallback_remaining_s: null } });
     expect(screen.queryByRole("alert")).toBeNull();
