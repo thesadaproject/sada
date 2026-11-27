@@ -763,12 +763,21 @@ class Machine:
         The plan goes on: the sessions still to come stay planned (see `_after_end_screen`)."""
         if not self.stream_on:
             return _("no live on air")
+        planned = not self.adhoc_on_air and self.rec is not None and self.live is self.rec
         self._adhoc_over = True
         self.override = True
         self.paused_from = None
         if self.state not in (State.ENDED, State.DARS_END):
             self._go(self._end_state(), sig, reason)
-        self._after_end_screen(sig, reason)
+        if planned:
+            # A planned session that was on air is over: the plan moves on to the next one (as after any end of a
+            # session), otherwise the next voice would open a bogus "manual" session next to the planned one.
+            self._adhoc_over = False
+            self.override = False
+            self._next_session(sig)
+            self._go(State.IDLE if self.session is not None else State.STOPPED, sig, reason)
+        else:
+            self._after_end_screen(sig, reason)
         return _("live ended: {reason}", reason=reason)
 
     def end_planned(self, sig: Signals, reason: str) -> str:

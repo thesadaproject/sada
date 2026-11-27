@@ -448,3 +448,31 @@ def test_the_back_office_forwards_the_signal_state_to_the_control_room():
     assert out["fallback_until"] == 1_700_000_120.0
     quiet = live.summarize({"signal_lost_since": None, "fallback_until": "x", "fallback_remaining_s": True})
     assert quiet["signal_lost_since"] is quiet["fallback_until"] is quiet["fallback_remaining_s"] is None
+
+
+def test_end_lost_moves_the_plan_on_so_the_next_voice_opens_no_bogus_session():
+    """A planned session ended after a signal loss is over: the plan goes to the next one, and nothing is reopened."""
+    m = Machine([DAY.replace(hour=13), DAY.replace(hour=20)], MachineParams(), extras=[{}, {}])
+    m.command("scene", sig(13, 0), "khutba")
+    m.end_lost(sig(13, 20, t=100.0), "signal perdu")
+    assert m.idx == 1 and m.state == State.IDLE and not m.override and not m.stream_on
+    for i in range(40):  # the voice is back in the room, long before the next planned session
+        m.tick(Signals(now=DAY.replace(hour=13, minute=25), t=200.0 + i * 30, voice_run=60.0, silence_run=0.0))
+    assert [r.planned for r in m.records] == ["13:00", "20:00"] and not m.stream_on  # no "manuel@..." session
+
+
+def test_end_lost_of_the_only_planned_session_ends_the_day():
+    m = Machine([DAY.replace(hour=13)], MachineParams(), extras=[{}])
+    m.command("scene", sig(13, 0), "khutba")
+    m.end_lost(sig(13, 20, t=100.0), "signal perdu")
+    assert m.state == State.STOPPED and not m.stream_on
+
+
+def test_a_tarawih_night_lost_for_good_is_over_and_tomorrow_is_not_affected():
+    nights = [(DAY.replace(hour=21), {"kind": "tarawih", "mode": "audio", "night": 5, "reciters": ["A"]}),
+              (DAY.replace(hour=23, minute=59), {"kind": "dars"})]  # fmt: skip
+    m = Machine([n[0] for n in nights], MachineParams(), extras=[n[1] for n in nights])
+    m.command("tarawih", sig(21, 30))
+    assert m.state == State.TARAWIH and m.live.kind == "tarawih"
+    m.end_lost(sig(22, 40, t=4000.0), "signal perdu")
+    assert m.records[0].status == "done" and m.idx == 1 and not m.stream_on
