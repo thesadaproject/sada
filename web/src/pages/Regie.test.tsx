@@ -117,6 +117,28 @@ describe("Régie (remote control of the Sada Studio)", () => {
     expect(screen.getByRole("status").textContent).toBe("regie.studioNotThere");
   });
 
+  it("hides « the picture arrives shortly » as soon as the programme picture is there", async () => {
+    api.liveCommande.mockResolvedValue({ ok: true, message: "ok", studio: "ordered" });
+    const live = { ...offAir.live, state: "BEFORE", stream_on: true };
+    await monter({ ...offAir, live });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "dashboard.cmd.start" })); });
+    expect(screen.getByRole("status").textContent).toBe("regie.studioOrdered");
+    // the next poll brings the picture (the tab coming back to the front polls at once)
+    api.regie.mockResolvedValue({ ...offAir, live, monitors: { ...offAir.monitors, program: { available: true, health: null } } });
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    });
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("keeps « the picture arrives shortly » while there is no picture yet", async () => {
+    api.liveCommande.mockResolvedValue({ ok: true, message: "ok", studio: "ordered" });
+    await monter({ ...offAir, live: { ...offAir.live, state: "BEFORE", stream_on: true } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "dashboard.cmd.start" })); });
+    expect(screen.getByRole("status").textContent).toBe("regie.studioOrdered");
+  });
+
   it("says when no studio is paired", async () => {
     await monter({ ...offAir, studios: [] });
     expect(screen.getByText(/regie.noStudio\b(?!Hint)/)).toBeTruthy();

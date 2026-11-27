@@ -11,7 +11,7 @@ import { heureDuJour, nombre } from "../format";
 import { usePolling, useNow } from "../usePolling";
 import { useAppDispatch, useAppSelector } from "../store";
 import {
-  actionId, selectPending, selectReadAt, selectRetour, selectView,
+  actionId, retourCleared, selectPending, selectReadAt, selectRetour, selectView,
   type Health, type Live, type Overlays, type SceneInfo, type Studio,
 } from "../store/liveSlice";
 import { changeTransition, fetchRegie, sendCommand, setOverlay, takeScene, takeover, toggleMute } from "../store/liveThunks";
@@ -418,6 +418,11 @@ function RegieEcran() {
   const pending = useAppSelector(selectPending);
   const lu = useAppSelector(selectReadAt);
   const retour = useAppSelector(selectRetour);
+  // « The picture arrives in a few seconds » is only true until the picture is there.
+  const imageArrivee = !!vue?.monitors.program?.available;
+  useEffect(() => {
+    if (imageArrivee && retour?.cle === "regie.studioOrdered") dispatch(retourCleared());
+  }, [imageArrivee, retour, dispatch]);
 
   // State refreshed every 3 s, paused while the tab is hidden; the clock ticks in LiveFacts. A poll
   // that left before a command (or older than the last `rev`) is dropped by the slice.
