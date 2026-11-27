@@ -287,7 +287,12 @@ class SessionRec:
     status: str = "pending"  # pending | live | done | skipped | janaza
     recording: int | None = None  # number of the recording that contains start_pos / end_pos
     start_pos: float | None = None  # offset (s) in the recording
-    end_pos: float | None = None
+    end_pos: float | None = None  # offset in `recording`; None when the session ended in another file (legacy view)
+    # Where the session ends when it spans several recordings (encoder relaunched, signal lost then back): the
+    # recording number and the offset in it. The session covers recordings `recording` .. `end_recording`, whole
+    # files in between (see session_media.py). Absent in runs recorded before: the session is in `recording` only.
+    end_recording: int | None = None
+    end_file_pos: float | None = None
     start_clock: str | None = None
     end_clock: str | None = None
     end_reason: str | None = None
@@ -535,8 +540,10 @@ class Machine:
         if r.status == "live":
             r.status = "done"
         rec, pos = self.pos_fn()
-        # encoder restarted during the session: the end is in another file, we keep the first one to the end
+        # encoder relaunched during the session: the end is in another file (`end_recording`); `end_pos` keeps its
+        # legacy meaning (None = "first file to its end") for what reads it without knowing the range
         r.end_pos = pos if rec == r.recording else None
+        r.end_recording, r.end_file_pos = rec, pos
         r.end_clock = f"{sig.now:%H:%M:%S}"
         r.end_reason = reason
         self.live = None
@@ -749,6 +756,20 @@ class Machine:
         self.override = True
         self._go(State.ENDED if self.live.kind == "khutba" else State.DARS_END, sig, "fin du direct Studio")
         return _("end screen, then the stream stops")
+
+    def end_lost(self, sig: Signals, reason: str) -> str:
+        """Ends the live whose picture never came back (signal lost for longer than the grace): the session on air is
+        closed and the stream stops, like a normal end, but without the end screen — there is no picture to put it on.
+        The plan goes on: the sessions still to come stay planned (see `_after_end_screen`)."""
+        if not self.stream_on:
+            return _("no live on air")
+        self._adhoc_over = True
+        self.override = True
+        self.paused_from = None
+        if self.state not in (State.ENDED, State.DARS_END):
+            self._go(self._end_state(), sig, reason)
+        self._after_end_screen(sig, reason)
+        return _("live ended: {reason}", reason=reason)
 
     def end_planned(self, sig: Signals, reason: str) -> str:
         """Ends the planned session on air the way its own end does (prayer screen for a khutba, end screen
@@ -1111,6 +1132,7 @@ class Machine:
             return False
         # reopened before _go, which would otherwise start a fresh session
         rec.status, rec.end_pos, rec.end_clock, rec.end_reason = "live", None, None, None
+        rec.end_recording = rec.end_file_pos = None
         self.live, self.cut = rec, (None, None)
         self.log(
             _(

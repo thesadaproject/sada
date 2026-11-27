@@ -21,6 +21,7 @@ from ..i18n import _
 from ..pipeline import notes
 from ..pipeline import verses as verses_mod
 from ..pipeline.output import SessionOutput
+from ..session_media import session_media
 from . import db, orm, search
 from .models import Clip, Khutba
 
@@ -105,10 +106,11 @@ def import_run(conn, mosque: dict, run_id: str, extract_video: bool = True, log=
         if not runs.produces_content(s):
             res["skipped"].append(sdir.name)
             continue
-        rec_path, _sources = runs.sources(data, s)
+        # the recording(s) as the pipeline read them: one assembled file when the session spans several
+        media = session_media(data, s, sdir)
+        rec_path, start, end = media.live, media.start, media.end
         tr = o.read(o.transcript, {})
         verses = o.read(o.verses, [])
-        start, end = s.get("start_pos"), s.get("end_pos")
         duration = (end - start) if (start is not None and end is not None) else tr.get("duration")
         planned = s.get("planned") or ""
         n_verses = len(verses_mod.for_display(verses))

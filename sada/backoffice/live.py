@@ -338,4 +338,12 @@ def summarize(st: dict) -> dict:
         # "studio": a Sada Studio device composes the picture itself, the engine only relays its stream
         "compositing": "studio" if st.get("compositing") == "studio" else "server",
         "playing_event": st.get("playing_event") if isinstance(st.get("playing_event"), dict) else None,
+        # signal lost: the reconnection screen is on air until `fallback_until` (epoch s), then the live ends by itself
+        "signal_lost_since": _number(st.get("signal_lost_since")),
+        "fallback_until": _number(st.get("fallback_until")),
+        "fallback_remaining_s": _number(st.get("fallback_remaining_s")),
     }
+
+
+def _number(value) -> float | None:
+    return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else None

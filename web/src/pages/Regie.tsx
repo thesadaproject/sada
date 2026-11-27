@@ -261,6 +261,26 @@ function LiveFacts({ live, lu }: { live: Live; lu: number }) {
   );
 }
 
+/** The signal of the live is gone: the destinations receive the reconnection screen and the live ends by itself when
+ *  the countdown reaches zero, unless the Studio comes back. The countdown starts from what the server said at the last
+ *  read (`fallback_remaining_s`), so a wrong clock on this device changes nothing. Own component: it ticks every second. */
+function SignalBanner({ live, lu }: { live: Live; lu: number }) {
+  const { t } = useTranslation();
+  const now = useNow(1000);
+  if (live.fallback_remaining_s == null) return null;
+  const restant = Math.max(0, live.fallback_remaining_s - (now - lu) / 1000);
+  return (
+    <section role="alert" className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-[10px] border border-[#e2c27a]/50 bg-[#e2c27a]/10 px-4 py-3 text-night-ink">
+      <p className="m-0 flex items-center gap-2.5 text-[1.05rem] font-bold text-white">
+        <span className="inline-block size-2.5 shrink-0 animate-pulse rounded-full bg-[#e2c27a]" />
+        {t("regie.signalLost")}
+        <span aria-hidden="true" className="font-semibold text-[#e2c27a] tabular-nums">{t("regie.signalLostCountdown", { time: hms(restant) })}</span>
+      </p>
+      <p className="m-0 text-[0.88rem] text-night-muted">{t("regie.signalLostHint")}</p>
+    </section>
+  );
+}
+
 /** Which Sada Studio this page drives, and whether it is there: the first thing to know from afar. */
 function StudioBar({ studios, publisher }: { studios: Studio[]; publisher: { source: string; text: string } | null }) {
   const { t, i18n } = useTranslation();
@@ -494,6 +514,8 @@ function RegieEcran() {
         )}
         {horsService && <p className="m-0 text-[0.9rem] text-night-muted">{t("dashboard.unreachableHint")}</p>}
       </section>
+
+      {!horsService && <SignalBanner live={live} lu={lu} />}
 
       <StudioBar studios={studios} publisher={editeur} />
 

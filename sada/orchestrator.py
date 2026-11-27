@@ -475,7 +475,10 @@ class Orchestrator:
         """Aligns the live stage on its machine, then the notifications and the stream start/stop."""
         m, enc = self.machine, self.encoder
         enc.hold = m.state == State.ENDED  # end screen: the stream is about to stop, never relaunch it
+        # a live being ended on purpose (end screen) never gets the reconnection screen, and one that is up is cut
+        enc.no_fallback = m.state in (State.ENDED, State.DARS_END)
         self._show(self.live_stage)
+        self._follow_signal(m, enc)
         if m.state != self._notified_state:
             if self._notified_state is not None:
                 self.telemetry.state_changed(self._notified_state.value, m.state.value)
@@ -492,6 +495,30 @@ class Orchestrator:
             log.info(_("Stream stopped. Recordings: {files}", files=[r for r, _x in enc.recordings]))
             self._envoyer_rediffusions()
         self._save_sessions()
+
+    def _follow_signal(self, m, enc) -> None:
+        """The input of the live is gone (the encoder sends the reconnection screen): a state change for the readers
+        (new `rev`), and the live ends like a normal stop once the grace is over, unless the input came back."""
+        lost_for = enc.signal_lost_for()
+        if (lost_for is not None) != self._signal_lost:
+            self._signal_lost = lost_for is not None
+            m.touch()
+            if self._signal_lost:
+                log.warning(
+                    _(
+                        "Signal lost: the reconnection screen is on air, the live ends in {grace:g} s unless it comes back",
+                        grace=studio_link.SIGNAL_GRACE_S,
+                    )
+                )
+            else:
+                log.info(_("Signal back: the live resumes"))
+        if lost_for is not None and lost_for >= studio_link.SIGNAL_GRACE_S and m.stream_on:
+            lost_at = enc.lost_wall
+            log.info(
+                _("Signal lost for {grace:g} s: {msg}", grace=lost_for, msg=m.end_lost(self.signals(), "signal perdu"))
+            )
+            # the studio's live is closed at the back office too, or the device would believe it is still on air
+            self.studio_poll.request_end(lost_at)
 
     def _set_compositing(self, stage: setup_mode.Stage | None, mode) -> None:
         """Who composes this stage's picture (see Stage.compositing). A change redraws the stage at the next pass
@@ -514,6 +541,7 @@ class Orchestrator:
     #: the picture back after this long without any publisher, never on a blip that would flash its slate on air.
     STUDIO_GONE_S = 20.0
     _studio_gone_since: float | None = None
+    _signal_lost = False  # the encoder is on the reconnection screen (see _follow_signal)
 
     def _follow_editor(self, ann, now: float | None = None) -> None:
         """The back office says who feeds the relay: a Sada Studio device composes its own picture.
@@ -527,6 +555,8 @@ class Orchestrator:
         stage = self.live_stage
         named = getattr(ann, "publisher", None) in ("obs", "regie")
         if stage is not None and stage.compositing == "studio" and mode == "server" and not named:
+            if self._signal_lost:
+                return  # the reconnection screen is on air: the server composing instead would only hide the return
             if self._studio_gone_since is None:
                 self._studio_gone_since = now
             if now - self._studio_gone_since < self.STUDIO_GONE_S:
@@ -949,6 +979,19 @@ class Orchestrator:
             )
         return out
 
+    def _signal_status(self) -> dict:
+        """Where the grace stands while the reconnection screen is on air: when the signal was lost (epoch s), when the
+        live ends if it does not come back, and what remains (the readers count down from it, free of any clock skew)."""
+        lost_for = self.encoder.signal_lost_for() if self._signal_lost else None
+        lost = self.encoder.lost_wall if lost_for is not None else None
+        if lost_for is None or lost is None:
+            return {"signal_lost_since": None, "fallback_until": None, "fallback_remaining_s": None}
+        return {
+            "signal_lost_since": round(lost, 1),
+            "fallback_until": round(lost + studio_link.SIGNAL_GRACE_S, 1),
+            "fallback_remaining_s": round(max(0.0, studio_link.SIGNAL_GRACE_S - lost_for), 1),
+        }
+
     def status(self) -> dict:
         with self.lock:
             st = self.machine.status()
@@ -970,7 +1013,9 @@ class Orchestrator:
                         "restarts": self.encoder.restarts,
                         "recording": self.encoder.current_recording(),
                         "pos_s": round(pos, 1),
+                        "fallback": bool(self.encoder.fallback),
                     },
+                    **self._signal_status(),
                     "setup": self.setup_status(),
                     "compositing": self.live_stage.compositing,
                     "mic": self.encoder.mic_on,

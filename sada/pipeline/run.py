@@ -16,6 +16,7 @@ from pathlib import Path
 
 from .. import paths, runs
 from ..i18n import _
+from ..session_media import session_media
 from ..text import duration as fmt_t
 from . import clips as clipmod
 from . import llm
@@ -339,17 +340,20 @@ def _main(argv=None):
                 )
             )
             continue
-        live, clean = runs.sources(data, s)
+        outdir = out / data["run_id"] / runs.session_dir(s["index"])
+        # a session on air across several recordings (signal lost then back, encoder relaunched) is joined first
+        media = session_media(data, s, outdir, build=True)
+        live, clean = media.live, media.clean
         if not live:
             log(_("session {index} ({planned}) skipped: no recording", index=s["index"], planned=s["planned"]))
             continue
         sopts = dict(opts, header=session_header(s, data, a)) if opts["header"] else opts
         r = process(
             live,
-            s["start_pos"],
-            s["end_pos"],
+            media.start,
+            media.end,
             f"{runs.session_dir(s['index'])}_{s['planned'].replace(':', 'h')}",
-            out / data["run_id"] / runs.session_dir(s["index"]),
+            outdir,
             clip_video=forced or _clip_video(clean),
             **sopts,
         )

@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -30,6 +31,10 @@ from .state import SESSION_STATES
 log = logging.getLogger("sada")
 
 POLL_S = 5.0
+#: How long a live whose picture disappeared is kept open on the destinations (on the reconnection screen) before it
+#: ends as a normal stop. One constant for the whole product: the orchestrator's grace after a signal loss, and the
+#: back office's silence delay for a manual live whose device no longer answers (`studio_plan.MANUAL_SILENCE_S`).
+SIGNAL_GRACE_S = 120.0
 TYPES = ("khutba", "dars", "conference")
 PUBLISHERS = ("device", "obs", "regie", "unknown")
 
@@ -90,6 +95,38 @@ def fetch(backoffice_url: str, api_port: int, getter: Callable[[str, str], dict]
     except Exception as e:  # noqa: BLE001 — never a reason to touch a live
         log.debug("studio-live unreachable: %s", e)
         return None
+
+
+def _http_post(url: str, token: str, body: dict) -> dict:  # pragma: no cover (network)
+    from .backoffice.internal import HEADER
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode(),
+        headers={HEADER: token, "Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=3) as r:  # noqa: S310 — configured back office
+        return json.loads(r.read(65536))
+
+
+def end_live(
+    backoffice_url: str, api_port: int, lost_at: float | None, poster: Callable[[str, str, dict], dict] | None = None
+) -> bool:
+    """Tells the back office the live ended because its picture never came back, so it closes the studio's manual live
+    and stops the running slot (the announcement then reads `live: false` and the device goes back to standby).
+    True when the back office took note; any failure is False and never raises (the caller tries again)."""
+    if not backoffice_url:
+        return False
+    from .backoffice.internal import token
+
+    url = backoffice_url.rstrip("/") + "/api/v1/internal/studio-live/end?" + urlencode({"port": api_port or 0})
+    try:
+        (poster or _http_post)(url, token(), {"lost_at": lost_at})
+        return True
+    except Exception as e:  # noqa: BLE001 — never a reason to touch the orchestrator
+        log.debug("studio-live/end unreachable: %s", e)
+        return False
 
 
 class Follower:
@@ -179,9 +216,12 @@ class Follower:
 class Poller:
     """Asks the back office every `POLL_S` seconds in a daemon thread and keeps the last answer."""
 
-    def __init__(self, backoffice_url: str, api_port: int, getter=None, every: float = POLL_S):
-        self.url, self.port, self.getter, self.every = backoffice_url, api_port, getter, every
+    def __init__(self, backoffice_url: str, api_port: int, getter=None, every: float = POLL_S, poster=None):
+        self.url, self.port, self.getter, self.every, self.poster = backoffice_url, api_port, getter, every, poster
         self.last: Announcement | None = None
+        # Set when the orchestrator ended the live after a signal loss (epoch s of the loss): the back office is told,
+        # at each look, until it took note or its announcement no longer says `live` (see `_look`).
+        self.end_pending: float | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -198,7 +238,25 @@ class Poller:
         """The last answer (None before the first one, or while the back office is silent)."""
         return self.last
 
+    def request_end(self, lost_at: float | None) -> None:
+        """The live was ended because its signal was lost: the back office is told from the polling thread, never
+        from the engine's loop, and again at each look while it has not answered and still announces a live."""
+        if self.url:
+            self.end_pending = lost_at if lost_at is not None else time.time()
+
+    def _look(self) -> Announcement | None:
+        ann = fetch(self.url, self.port, self.getter)
+        lost_at = self.end_pending
+        if lost_at is not None:
+            if ann is not None and not ann.live:
+                self.end_pending = None  # already over there (stopped by hand meanwhile, silence): nothing to tell
+            elif end_live(self.url, self.port, lost_at, self.poster):
+                self.end_pending = None
+                log.info(_("Studio live closed at the back office (signal lost)"))
+                ann = fetch(self.url, self.port, self.getter)
+        return ann
+
     def _run(self) -> None:
         while not self._stop.is_set():
-            self.last = fetch(self.url, self.port, self.getter)
+            self.last = self._look()
             self._stop.wait(self.every)

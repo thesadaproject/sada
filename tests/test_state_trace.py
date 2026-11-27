@@ -38,6 +38,8 @@ CUSTOM_SCENES = (*SCENES, "custom:attente")
 NEW_STATUS_KEYS = ("overlays", "transition", "mic_muted")  # added to Machine.status() after the old golden
 # added after both goldens: `rev` is a revision drawn from the wall clock, `playing_event` a derived view
 LATER_STATUS_KEYS = ("rev", "playing_event")
+# keys of each session record added after both goldens (the range of recordings a session spans)
+LATER_SESSION_KEYS = ("end_recording", "end_file_pos")
 PLANS = {
     "khutba2": [("12:30", {}), ("13:30", {})],
     "dars": [("12:30", {"kind": "dars", "title": "T"}), ("13:30", {"kind": "conference"})],
@@ -131,6 +133,7 @@ def run_scenario(plan: str, seed: int, steps: int = 700, custom: bool = False) -
             ]
         )
     status = {k: v for k, v in m.status().items() if k not in LATER_STATUS_KEYS}
+    status["sessions"] = [{k: v for k, v in r.items() if k not in LATER_SESSION_KEYS} for r in status["sessions"]]
     if not custom:
         status = {k: v for k, v in status.items() if k not in NEW_STATUS_KEYS}
     final = {"status": status, "timing": m.timing().__dict__, "logs": logs, "trace": trace}

@@ -175,6 +175,42 @@ def stop(conn, mosque: dict, dev: dict, ip: str | None, now: float | None = None
     return {"stopped": stopped} | answer(conn, mosque, dev, now)
 
 
+def end_lost(conn, mosque: dict, lost_at: float | None = None, now: float | None = None) -> dict:
+    """The orchestrator ended the live because the picture never came back (see `studio_link.SIGNAL_GRACE_S`): the
+    manual live is closed and the scheduled slot running now is marked as stopped, exactly as a manual stop does, so the
+    announcement says `live: false` and the device, at its next heartbeat, goes back to standby and does not restart it.
+
+    `lost_at` (epoch s): only what began before the loss is closed, so a live started since is never touched by a late
+    or repeated call. Nothing to close is not an error (the call may be repeated)."""
+    now = time.time() if now is None else now
+    limit = now if lost_at is None else float(lost_at)
+    ended = []
+    run = orm.first(conn, StudioRun, StudioRun.ended_at.is_(None), mosque_id=mosque["id"], origin="manual")
+    if run is not None and run["started_at"] <= limit:
+        conn.execute(update(StudioRun).where(StudioRun.id == run["id"]).values(ended_at=now))
+        orm.done(conn)
+        ended.append("manual")
+        db.audit(
+            conn, mosque["id"], None, "studio.direct.manuel.fin", "appareil", run["device_id"],
+            motif="signal_perdu", titre=run["title"],
+        )  # fmt: skip
+    order, slots = studio_plan.current_order(conn, mosque, now)
+    slot = studio_plan.running_slot(order, slots)
+    if slot is not None and slot.starts.timestamp() <= limit:
+        studio_plan.stop_marks(conn, mosque["id"], slot.key, now)
+        ended.append("slot")
+        db.audit(
+            conn, mosque["id"], None, "studio.creneau.arret", "appareil", None,
+            motif="signal_perdu", creneau=slot.key, titre=slot.title,
+        )  # fmt: skip
+    if ended:
+        claim = orm.first(conn, StudioClaim, mosque_id=mosque["id"])
+        if claim:  # the stream, if it is still there, is no longer wanted: the device must not stay on air
+            live_watch.kick(studio_publisher.path_of(mosque))
+            studio_publisher.release(conn, mosque["id"])
+    return {"ended": ended}
+
+
 def announce(conn, mosque: dict, dev: dict, kind: str, title: str, ip: str | None, now: float | None = None) -> dict:
     """Type and title of the live in progress (kept with it, for the replay)."""
     now = time.time() if now is None else now

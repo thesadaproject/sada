@@ -35,7 +35,7 @@ from typing import Protocol
 from sqlalchemy import delete, select, update
 
 from .. import events as events_mod
-from .. import prayers
+from .. import prayers, studio_link
 from ..i18n import _
 from . import db, events_store, orm, prayer_times
 from .models import Device, Mosque, StudioRun, StudioSettings
@@ -52,7 +52,9 @@ LIMITS = {
 KINDS = ("khutba", "dars", "conference", "tarawih")
 HORIZON_DAYS = 8
 ONLINE_S = 90  # a device that spoke less than this ago is online (the heartbeat is every 30 s)
-MANUAL_SILENCE_S = 900  # a manual live whose device is silent this long is over
+# a manual live whose device is silent this long is over: the same delay as the orchestrator's grace after a signal
+# loss (see studio_link.SIGNAL_GRACE_S), i.e. four missed heartbeats (HEARTBEAT_S = 30 in api/studio.py)
+MANUAL_SILENCE_S = int(studio_link.SIGNAL_GRACE_S)
 
 
 # ------------------------------------------------------------------ settings
