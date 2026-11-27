@@ -23,7 +23,7 @@ import httpx
 
 from . import internal, live_input
 
-SOURCES = ("source", "program")
+SOURCES = ("source", "program", "preview")
 RELAY_HLS_PORT = 8888
 RELAY_WEBRTC_PORT = 8889
 RELAY_API_PORT = 9997
@@ -69,6 +69,9 @@ def path_of(conn, mosque, which: str) -> str | None:
     name = live_input.slug(mosque)
     if which == "program":
         return f"live/{name}-prog"
+    if which == "preview":
+        # the Sada Studio's picture asked by the control room outside a live (studio_preview)
+        return f"live/{name}-retour"
     if which != "source":
         return None
     cur = live_input.current(conn, mosque)

@@ -157,6 +157,13 @@ export const api = {
   /** Control room: live state, commands, scenes and the health of the two monitors. */
   regie: () => demande<any>("/live/regie"),
   regieMute: (muted: boolean) => ecrire<{ ok: boolean; muted: boolean; mic_muted: boolean }>("POST", "/live/regie/mute", { muted }),
+  /** Any scene, built-in or `custom:<slug>`, with the transition shown in the control room. */
+  regieScene: (scene: string, transition?: string) => ecrire<any>("POST", "/live/regie/scene", { scene, ...(transition ? { transition } : {}) }),
+  /** Asks the Sada Studio for its picture (renewed while the monitor is open), or gives the request back. */
+  regiePreview: (on: boolean) => ecrire<{ ok: boolean; requested: boolean; expires_in?: number }>("POST", "/live/regie/preview", { on }),
+  regieTransition: (mode: string) => ecrire<any>("POST", "/live/regie/transition", { mode }),
+  /** Shows, hides or edits an overlay (qr, banner, logo): the patch is merged on the server. */
+  regieOverlay: (kind: string, patch: Record<string, unknown>) => ecrire<any>("PATCH", `/live/regie/overlays/${kind}`, patch),
   /** Studio devices (pairing, list, incidents, schedule) — see docs/studio-devices.md. */
   studioDevices: () => demande<any>("/studio/devices"),
   studioPair: (user_code: string, name: string) =>

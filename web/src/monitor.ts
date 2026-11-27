@@ -9,7 +9,7 @@ export type MonitorState = "connecting" | "webrtc" | "hls" | "offline";
 const RETRY_MS = 5000;
 const ICE_WAIT_MS = 1500;
 
-export function playMonitor(which: "source" | "program", video: HTMLVideoElement, onState: (s: MonitorState) => void) {
+export function playMonitor(which: "source" | "program" | "preview", video: HTMLVideoElement, onState: (s: MonitorState) => void) {
   const base = `/api/v1/live/watch/${which}`;
   let stopped = false;
   let pc: RTCPeerConnection | null = null;

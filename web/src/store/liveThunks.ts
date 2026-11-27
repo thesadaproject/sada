@@ -2,7 +2,7 @@
  *  then settles with the server's answer (full state + rev) or falls back to the confirmed state. */
 import { api } from "../api";
 import {
-  actionId, commandFailed, commandStarted, commandSucceeded, optimisticPatch, selectView,
+  actionId, commandFailed, type OverlayKind, type OverlaysPatch, commandStarted, commandSucceeded, optimisticPatch, selectView,
   snapshotFailed, snapshotReceived, type Patch, type Snapshot,
 } from "./liveSlice";
 import type { AppThunk } from "./index";
@@ -24,6 +24,8 @@ export function fromRegie(d: any): Data {
       },
     } : {}),
     scenes: Array.isArray(d?.scenes) ? d.scenes : [],
+    studios: Array.isArray(d?.studios) ? d.studios : [],
+    ...(d?.preview ? { preview: { requested: Boolean(d.preview.requested) } } : {}),
     ...(d?.rev !== undefined ? { rev: d.rev } : {}),
   };
 }
@@ -92,6 +94,28 @@ export const sendCommand = (key: string, corps: Record<string, string> = {}): Ap
     if (getState().live.pending[id]) return false;
     const patch = optimisticPatch(key, corps, selectView(getState()));
     return dispatch(run(id, patch, () => api.liveCommande(key, corps), (r) => (r?.message ? { texte: r.message } : {})));
+  };
+
+/** Takes a scene on air (built-in or `custom:<slug>`), with the transition currently shown. */
+export const takeScene = (scene: string): AppThunk<Promise<boolean>> => async (dispatch, getState) => {
+  const id = actionId("scene", scene);
+  if (getState().live.pending[id]) return false;
+  const transition = selectView(getState())?.live.transition ?? undefined;
+  return dispatch(run(id, { live: { scene, override: true } }, () => api.regieScene(scene, transition ?? undefined), () => ({})));
+};
+
+/** Fade or cut for the next scene changes (saved for the mosque). */
+export const changeTransition = (mode: string): AppThunk<Promise<boolean>> => async (dispatch, getState) => {
+  if (getState().live.pending.transition) return false;
+  return dispatch(run("transition", { live: { transition: mode } }, () => api.regieTransition(mode), () => ({})));
+};
+
+/** One overlay: shown, hidden or edited; the Sada Studio draws it from the server's state. */
+export const setOverlay = <K extends OverlayKind>(kind: K, patch: OverlaysPatch[K] & object): AppThunk<Promise<boolean>> =>
+  async (dispatch, getState) => {
+    const id = actionId("overlay", kind);
+    if (getState().live.pending[id]) return false;
+    return dispatch(run(id, { overlays: { [kind]: patch } }, () => api.regieOverlay(kind, patch as Record<string, unknown>), () => ({})));
   };
 
 /** Mute / unmute the incoming microphone: shown at once, the server mirrors it. */

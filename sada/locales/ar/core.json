@@ -209,5 +209,6 @@
   "Broadcast quality reached after the start: applied at the next restart": "تم الحصول على جودة البث بعد البدء: ستُطبَّق عند إعادة التشغيل القادمة",
   "Compositing ({stage}): {mode}": "التركيب ({stage}): {mode}",
   "by the Sada Studio, the stream is relayed as is": "بواسطة Sada Studio، يُنقل البث كما هو",
-  "by the server": "بواسطة الخادم"
+  "by the server": "بواسطة الخادم",
+  "the control room is not asking for the picture": "غرفة التحكم لا تطلب الصورة"
 }

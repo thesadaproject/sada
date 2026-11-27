@@ -28,6 +28,7 @@ from .. import (
     setup_session,
     storage,
     stream_quality,
+    studio_preview,
     studio_publisher,
     studio_service,
     tarawih,
@@ -182,6 +183,11 @@ async def publish_auth(request: Request, conn: ConnDep):
             ok = ipaddress.ip_address(str(q.get("ip") or "")).is_private
         except ValueError:
             ok = False
+    elif action == "publish" and studio_preview.slug_of_path(slug) and orm.first(conn, Mosque, slug=slug) is None:
+        # the Sada Studio's picture asked by the control room: a preview token over WHIP, nothing else; it is
+        # not the live's publisher (no claim taken), and no orchestrator reads this path
+        base = studio_preview.slug_of_path(slug) or ""
+        ok = q.get("protocol") == "webrtc" and internal.preview_publisher(conn, base, q.get("token")) is not None
     elif action == "publish":
         who = None
         if internal.publish_allowed(conn, slug, q.get("password")):

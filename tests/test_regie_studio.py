@@ -125,3 +125,36 @@ def test_web_routes_still_need_a_session(env, engine):
     assert c.post("/api/v1/live/regie/mute", json={"muted": True}).status_code == 401
     assert c.post("/api/v1/live/regie/transition", json={"mode": "cut"}).status_code == 401
     assert c.post("/api/v1/live/regie/scene", json={"scene": "khutba"}).status_code == 401
+
+
+# ------------------------------------------------------------------ the web control room drives the studio
+
+
+def test_web_control_room_updates_an_overlay(env, engine):
+    c = client(env, "responsable")
+    r = c.ecrire("/live/regie/overlays/banner", {"visible": True, "title": "Collecte"}, "PATCH")
+    assert r.status_code == 200, r.text
+    assert r.json()["overlays"]["banner"]["visible"] is True
+    assert [s for s in engine if s[0] == "overlay"][-1][1:] == (
+        "banner",
+        {"visible": True, "title": "Collecte", "subtitle": ""},
+    )
+    assert c.ecrire("/live/regie/overlays/qr", {"url": "http://x"}, "PATCH").status_code == 400
+    assert c.ecrire("/live/regie/overlays/nope", {"visible": True}, "PATCH").status_code == 422
+
+
+def test_web_overlay_needs_a_session_and_csrf(env, engine):
+    assert client(env).patch("/api/v1/live/regie/overlays/logo", json={"visible": True}).status_code == 401
+    c = client(env, "responsable")
+    assert c.patch("/api/v1/live/regie/overlays/logo", json={"visible": True}).status_code == 403
+    assert not [s for s in engine if s[0] == "overlay"]
+
+
+def test_control_room_lists_the_paired_studios(env, engine):
+    c = client(env, "responsable")
+    assert c.get("/api/v1/live/regie").json()["studios"] == []
+    d = dev(env, pair(env, name="PC salle"))
+    assert d.post("/api/v1/studio/heartbeat", json={"state": "idle"}).status_code == 200
+    studios = c.get("/api/v1/live/regie").json()["studios"]
+    assert [(s["name"], s["online"], s["publishing"]) for s in studios] == [("PC salle", True, False)]
+    assert "secret_hash" not in studios[0]
