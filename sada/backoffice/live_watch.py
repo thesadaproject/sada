@@ -85,8 +85,8 @@ def path_of(conn, mosque, which: str) -> str | None:
     return None
 
 
-def _url(port: int, tail: str) -> str:
-    return f"http://{relay_host()}:{port}/{tail}"
+def _url(port: int, tail: str, host: str | None = None) -> str:
+    return f"http://{host or relay_host()}:{port}/{tail}"
 
 
 async def _send(method: str, url: str, **kw) -> httpx.Response:
@@ -209,14 +209,15 @@ KICK_ROUTES = {
 }
 
 
-def publisher_info(path: str, timeout: float = 1.0) -> dict | None:
-    """{ready, type, id} of the path's publisher; None when the relay's API does not answer (unknown)."""
+def publisher_info(path: str, timeout: float = 1.0, host: str | None = None) -> dict | None:
+    """{ready, type, id} of the path's publisher; None when the relay's API does not answer (unknown).
+    `host`: the relay to ask when it is not the configured one (the orchestrator knows it from its input URL)."""
     global _api_down_at
     if time.monotonic() - _api_down_at < API_RETRY_S:
         return None
     try:
         r = httpx.get(
-            _url(RELAY_API_PORT, f"v3/paths/get/{quote(path, safe='')}"),
+            _url(RELAY_API_PORT, f"v3/paths/get/{quote(path, safe='')}", host),
             auth=(API_USER, api_password()),
             timeout=timeout,
         )
