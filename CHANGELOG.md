@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.24](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.23...sada-v0.1.0-alpha.24) (2026-11-26)
+
+
+### Bug Fixes
+
+* **web:** the Régie clock shows 00:49:38 after midnight, not 49:38 ([#115](https://github.com/thesadaproject/sada/issues/115)) ([e607d54](https://github.com/thesadaproject/sada/commit/e607d5420c6384e9b3a93db89d5a04bd9f40f834))
+
 ## [0.1.0-alpha.23](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.22...sada-v0.1.0-alpha.23) (2026-11-26)
 
 
