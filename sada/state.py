@@ -901,7 +901,12 @@ class Machine:
         r.reciter = r.reciters[i]
         rec, pos = self.pos_fn()
         at = pos - r.start_pos if rec == r.recording and r.start_pos is not None else None
-        r.reciter_marks.append({"at": round(max(at, 0.0), 1) if at is not None else None, "name": r.reciter})
+        mark = {"at": round(max(at, 0.0), 1) if at is not None else None, "name": r.reciter}
+        if at is None and r.start_pos is not None:
+            # the night went on in another recording (relaunch, signal back): the raw position is kept, the back
+            # office puts it on the timeline of the assembled recording (see session_media.Media.offsets)
+            mark.update(recording=rec, pos=round(pos, 1))
+        r.reciter_marks.append(mark)
         return _("current reciter: {name}", name=r.reciter)
 
     def _janaza(self, sig, arg):
