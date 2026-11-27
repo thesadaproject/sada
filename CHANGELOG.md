@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.25](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.24...sada-v0.1.0-alpha.25) (2026-11-27)
+
+
+### Bug Fixes
+
+* **live:** a scene picked by hand stays on air, and a Studio reconnection never brings back the server's picture ([#117](https://github.com/thesadaproject/sada/issues/117)) ([c2b322d](https://github.com/thesadaproject/sada/commit/c2b322dbabace1c13d052a2396adc11036565ef6))
+
 ## [0.1.0-alpha.24](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.23...sada-v0.1.0-alpha.24) (2026-11-26)
 
 
