@@ -88,7 +88,9 @@ def test_relay_ready_reads_the_relay_api(monkeypatch):
     monkeypatch.setattr(live_watch, "publisher_info", info)
     assert source.relay_ready("rtsp://127.0.0.1:8554/mosque-1") is False
     assert seen == [("mosque-1", "127.0.0.1")]
-    monkeypatch.setattr(live_watch, "publisher_info", lambda p, timeout=1.0, host=None: {"ready": True, "type": "", "id": ""})
+    monkeypatch.setattr(
+        live_watch, "publisher_info", lambda p, timeout=1.0, host=None: {"ready": True, "type": "", "id": ""}
+    )
     assert source.relay_ready("rtsp://localhost:8554/mosque-1") is True
     monkeypatch.setattr(live_watch, "publisher_info", lambda p, timeout=1.0, host=None: None)
     assert source.relay_ready("rtsp://127.0.0.1:8554/mosque-1") is None  # API unreachable: unknown
@@ -98,7 +100,9 @@ def test_relay_ready_asks_the_relay_named_in_the_url(monkeypatch):
     from sada.backoffice import live_watch
 
     seen = []
-    monkeypatch.setattr(live_watch, "publisher_info", lambda p, timeout=1.0, host=None: seen.append(host) or {"ready": False})
+    monkeypatch.setattr(
+        live_watch, "publisher_info", lambda p, timeout=1.0, host=None: seen.append(host) or {"ready": False}
+    )
     assert source.relay_ready("rtsp://receiver:8554/live/preprod") is False  # hosted: the relay is another container
     assert seen == ["receiver"]
 
