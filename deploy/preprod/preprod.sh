@@ -26,11 +26,9 @@ setenv() { { grep -v -E "^$1=" "$ENV_FILE" || true; echo "$1=$2"; } > "$ENV_FILE
 tailscale_ip() { command -v tailscale >/dev/null && tailscale ip -4 2>/dev/null | head -1 || true; }
 
 build() {
-  # Both front ends are copied by the image: build them from the root workspace first, otherwise
-  # `COPY packages/public/dist` fails on a clean checkout.
-  if [ ! -f "$ROOT/web/dist/index.html" ] || [ ! -f "$ROOT/packages/public/dist/index.html" ]; then
-    ( cd "$ROOT" && npm ci --silent && npm run build --silent )
-  fi
+  # Both front ends are copied by the image: always rebuild them from the root workspace, a stale `dist`
+  # (built before the checkout moved) would ship old screens next to the new back end.
+  ( cd "$ROOT" && npm ci --silent && npm run build --silent )
   docker build -t sada:preprod --build-arg SADA_VERSION="preprod-$(git -C "$ROOT" rev-parse --short HEAD)" "$ROOT"
 }
 
