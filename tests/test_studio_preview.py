@@ -21,8 +21,6 @@ def _setup(monkeypatch, tmp_path):
     monkeypatch.setattr(live_input, "current", lambda conn, m: {"mode": "push", "url": ""})
     monkeypatch.setattr(live_watch, "publisher_info", lambda path, timeout=1.0: {"ready": False, "type": "", "id": ""})
     studio_api.reset()
-    yield
-    studio_api.reset()  # the pairing limits are process-wide: leave them as found for the next test file
 
 
 @pytest.fixture
