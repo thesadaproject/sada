@@ -387,3 +387,16 @@ def test_voix_revenue_pendant_la_priere_rouvre_la_meme_session():
     d.step(clock=11 * 60, voice=False)
     assert m.records[0].status == "done"
     assert any("continue" in ligne for ligne in logs)
+
+
+def test_termine_choisi_a_la_main_reste_puis_stop_enchaine():
+    m, _ = mk(khutba={"ended_hold_s": 10})
+    d = Drv(m, at(12, 29))
+    m.command("start", d.sig())
+    m.command("scene", d.sig(), "termine")
+    assert m.state == State.ENDED
+    d.run(120)
+    assert m.state == State.ENDED and m.stream_on  # stays on air: nobody asked to stop
+    m.command("stop", d.sig())  # already on that screen: stop lets it run out
+    d.run(120)
+    assert m.state == State.STOPPED

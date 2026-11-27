@@ -362,6 +362,8 @@ class Machine:
         self.idx = 0
         self.state = State.IDLE
         self.override = False
+        # the screen on air was picked by hand (scene command): it stays, even an end screen, until the next order
+        self.held = False
         self.log = log or (lambda m: None)
         self.pos_fn = pos_fn or (lambda: (0, 0.0))
         # one record per session, same order: records[i] describes sessions[i]
@@ -466,6 +468,7 @@ class Machine:
         if old == new:
             return
         self.state = new
+        self.held = False
         self.entered_t = sig.t
         self.entered_now = sig.now
         self.grace_until = None
@@ -697,6 +700,7 @@ class Machine:
 
     def _stop(self, sig, arg):
         self.override = True
+        self.held = False  # already on the end screen picked by hand: "stop" lets it run out
         self._go(self._end_state(), sig, "commande stop")
         return _("end screen, then the stream stops")
 
@@ -779,6 +783,7 @@ class Machine:
         if self.state == State.JANAZA:  # end of the janaza: the remaining sessions resume automatically
             self._go(State.INTERMISSION if self.session else self._end_state(), sig, "commande auto (fin de janaza)")
         self.override = False
+        self.held = False
         return _("automatic mode resumed")
 
     def set_transition(self, mode: str) -> str:
@@ -804,12 +809,14 @@ class Machine:
                 self._go(State.CUSTOM, sig, f"commande scène {sc}")
             else:
                 self.last_reason = f"commande scène {sc}"
+            self.held = True
             return _("scene {scene} (auto suspended)", scene=sc)
         if sc not in STATE_OF_SCENE:
             return _("unknown scene: {scene} (valid: {valid})", scene=sc, valid=sorted(STATE_OF_SCENE))
         self.custom_scene = None
         self.override = True
         self._go(STATE_OF_SCENE[sc], sig, f"commande scène {sc}")
+        self.held = True  # an end screen picked by hand stays on air: only "stop" (or "auto") moves on from it
         return _("scene {scene} (auto suspended)", scene=sc)
 
     def _extend(self, sig, arg):
@@ -913,7 +920,7 @@ class Machine:
         handler = self._TICK.get(self.state)
         if handler is None:
             return  # JANAZA (manual only) and STOPPED: nothing moves by itself
-        if self.override and self.state not in self._TICK_IN_OVERRIDE:
+        if self.override and (self.held or self.state not in self._TICK_IN_OVERRIDE):
             return
         handler(self, sig)
         self.observe()  # an automatic switch is a mutation like any other
