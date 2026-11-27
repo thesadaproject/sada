@@ -217,5 +217,6 @@
   "ENCODER: input back, the programme resumes (new recording)": "المُرمِّز: عاد الدخل، يستأنف البرنامج (تسجيل جديد)",
   "Signal lost: the reconnection screen is on air, the live ends in {grace:g} s unless it comes back": "فُقدت الإشارة: شاشة إعادة الاتصال على الهواء، وينتهي البث بعد {grace:g} ث إن لم تعد",
   "Signal back: the live resumes": "عادت الإشارة: يستأنف البث",
-  "Signal lost for {grace:g} s: {msg}": "الإشارة مفقودة منذ {grace:g} ث: {msg}"
+  "Signal lost for {grace:g} s: {msg}": "الإشارة مفقودة منذ {grace:g} ث: {msg}",
+  "New day, new run: {run}": "يوم جديد، تشغيل جديد: {run}"
 }

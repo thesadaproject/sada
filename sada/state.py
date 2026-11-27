@@ -763,12 +763,21 @@ class Machine:
         The plan goes on: the sessions still to come stay planned (see `_after_end_screen`)."""
         if not self.stream_on:
             return _("no live on air")
+        planned = not self.adhoc_on_air and self.rec is not None and self.live is self.rec
         self._adhoc_over = True
         self.override = True
         self.paused_from = None
         if self.state not in (State.ENDED, State.DARS_END):
             self._go(self._end_state(), sig, reason)
-        self._after_end_screen(sig, reason)
+        if planned:
+            # A planned session that was on air is over: the plan moves on to the next one (as after any end of a
+            # session), otherwise the next voice would open a bogus "manual" session next to the planned one.
+            self._adhoc_over = False
+            self.override = False
+            self._next_session(sig)
+            self._go(State.IDLE if self.session is not None else State.STOPPED, sig, reason)
+        else:
+            self._after_end_screen(sig, reason)
         return _("live ended: {reason}", reason=reason)
 
     def end_planned(self, sig: Signals, reason: str) -> str:
@@ -901,7 +910,12 @@ class Machine:
         r.reciter = r.reciters[i]
         rec, pos = self.pos_fn()
         at = pos - r.start_pos if rec == r.recording and r.start_pos is not None else None
-        r.reciter_marks.append({"at": round(max(at, 0.0), 1) if at is not None else None, "name": r.reciter})
+        mark = {"at": round(max(at, 0.0), 1) if at is not None else None, "name": r.reciter}
+        if at is None and r.start_pos is not None:
+            # the night went on in another recording (relaunch, signal back): the raw position is kept, the back
+            # office puts it on the timeline of the assembled recording (see session_media.Media.offsets)
+            mark.update(recording=rec, pos=round(pos, 1))
+        r.reciter_marks.append(mark)
         return _("current reciter: {name}", name=r.reciter)
 
     def _janaza(self, sig, arg):

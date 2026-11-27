@@ -12,6 +12,7 @@ from sada import orchestrator as orch
 from sada.state import Machine, MachineParams, Signals, State
 
 D = dt.date(2026, 11, 14)  # Saturday
+STATE_DIR = "/tmp/sada-test-state-unused"
 TIMES = ["06:00", "13:00", "15:30", "17:12", "18:45"]  # fajr, dhuhr, asr, maghrib, isha
 
 
@@ -46,8 +47,9 @@ def orchestrator(down):
     """Orchestrator stripped to the schedule, as it stands after a start on the fallback."""
     o = object.__new__(orch.Orchestrator)
     o.cfg = SimpleNamespace(
-        backoffice_url="http://127.0.0.1:8090", api_port=8088, jumua_times_override=[], sim_start="12:00"
-    )
+        backoffice_url="http://127.0.0.1:8090", api_port=8088, jumua_times_override=[], sim_start="12:00",
+        state_dir=STATE_DIR,
+    )  # fmt: skip
     # simulated start: the khutba times apply on this Saturday too
     o.times, o.program, o.times_data, o.instances = ["12:30", "13:30"], [], None, []
     o._plan_day, o._rolled = D, False
@@ -72,6 +74,11 @@ def orchestrator(down):
         return None if down[0] else [dars()]
 
     o.fetched_times, o.fetched_program = fake_times, fake_program
+    # what a new day touches besides the plan: the run (sessions file, recordings)
+    o.encoder = SimpleNamespace(recordings=[], wanted=False)
+    o.run_id, o._saved = "20261114_090000", None
+    o.saved_runs = []
+    o._save_sessions = lambda: o.saved_runs.append(o.run_id)
     return o
 
 
@@ -258,3 +265,61 @@ def test_live_config_retry_is_off_when_the_back_office_was_reached():
     o._live_stale = False
     o._retry_live_config()
     assert o._live_thread is None
+
+
+def _midnight(monkeypatch, tmp_path, recordings, status):
+    monkeypatch.setattr(orch.prayers, "from_backoffice", lambda *a, **k: None)
+    monkeypatch.setattr(orch.events_mod, "from_backoffice", lambda *a, **k: None)
+    o = orchestrator([True])
+    o.cfg.state_dir = str(tmp_path)
+    o._stale = False
+    o._plan_day = D - dt.timedelta(days=1)
+    o.run_dir = tmp_path / o.run_id
+    o.encoder.recordings = list(recordings)
+    o.machine.records[0].status = status
+    return o
+
+
+def test_a_new_day_is_a_new_run_so_that_yesterdays_sessions_are_kept(monkeypatch, tmp_path):
+    """A process that runs for a whole Ramadan: tonight's session must not take the number of last night's."""
+    o = _midnight(monkeypatch, tmp_path, [("/r/night1.mkv", None)], "done")
+    first = o.run_id
+    o._roll_day(sig(at(0, 1)))
+    assert o.saved_runs == [first]  # yesterday's sessions were written to yesterday's run, before the plan changed
+    assert o.run_id == "20261114_000100" != first and o.run_dir == tmp_path / o.run_id
+    assert o.run_dir.is_dir() and o.encoder.recordings == []  # numbered from the first recording again
+    assert o._saved is None  # the new run's sessions file is written at the next pass
+
+
+def test_a_quiet_day_of_the_same_date_keeps_its_run(monkeypatch, tmp_path):
+    o = _midnight(monkeypatch, tmp_path, [], "pending")
+    o.run_id = "20261114_000500"  # started today, nothing happened yet
+    first = o.run_id
+    o._roll_day(sig(at(0, 1)))
+    assert o.run_id == first and o.saved_runs == []
+
+
+def test_a_run_of_another_day_is_left_behind_even_when_nothing_was_played(monkeypatch, tmp_path):
+    o = _midnight(monkeypatch, tmp_path, [], "pending")
+    o.run_id = "20261113_090000"  # started yesterday, a quiet day
+    o._roll_day(sig(at(0, 1)))
+    assert o.run_id == "20261114_000100"
+    assert runs_date(o.run_id) == "2026-11-14"  # a session of today is dated today
+
+
+def runs_date(run_id):
+    from sada import runs
+
+    return runs.run_date(run_id)
+
+
+def test_the_new_day_waits_for_the_night_to_end_and_the_run_with_it(monkeypatch, tmp_path):
+    o = _midnight(monkeypatch, tmp_path, [("/r/night.mkv", None)], "live")
+    o.machine.state = State.TARAWIH  # the night runs over midnight
+    first = o.run_id
+    o._roll_day(sig(at(0, 1)))
+    assert o.run_id == first and o.encoder.recordings  # nothing moves while it is on air
+    o.machine.state = State.STOPPED
+    o.machine.records[0].status = "done"
+    o._roll_day(sig(at(0, 40)))
+    assert o.run_id != first and o.encoder.recordings == []

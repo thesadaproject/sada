@@ -22,6 +22,7 @@ import logging
 import os
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,6 +32,8 @@ from .i18n import _
 log = logging.getLogger("sada")
 
 SIDECAR = "media.json"  # what the assembly left in the session's output folder
+FAILED = "media.failed"  # an assembly that could not be done: not tried again before RETRY_FAILED_S
+RETRY_FAILED_S = 6 * 3600.0
 LIVE_ALL = "recording_all.mkv"
 CLEAN_ALL = "recording_all_clean.mkv"
 
@@ -41,6 +44,13 @@ class Media:
     clean: str | None
     start: float | None
     end: float | None  # None: to the end of the file
+    # where each recording of the range starts on the assembled timeline (s from the start of the first file); empty
+    # when nothing was assembled. A position `p` in the k-th recording is `offsets[k] + p` in the assembled file.
+    offsets: tuple[float, ...] = ()
+
+    def position(self, k: int, pos: float) -> float | None:
+        """`pos` s into the k-th recording of the range, on the assembled timeline (None: not assembled / out of range)."""
+        return round(self.offsets[k] + pos, 1) if 0 <= k < len(self.offsets) else None
 
 
 def indexes(data: dict, s: dict) -> list[int]:
@@ -105,7 +115,18 @@ def _usable(path: str | None) -> bool:
     return bool(path) and Path(path).exists() and Path(path).stat().st_size > 0
 
 
-def session_media(data: dict, s: dict, outdir: Path, build: bool = False) -> Media:
+def needs_assembly(data: dict, s: dict, outdir: Path) -> bool:
+    """The session spans several recordings and nothing was assembled yet (and no recent failure to wait out)."""
+    if len(indexes(data, s)) <= 1 or (Path(outdir) / SIDECAR).exists():
+        return False
+    failed = Path(outdir) / FAILED
+    try:
+        return not failed.exists() or time.time() - failed.stat().st_mtime > RETRY_FAILED_S
+    except OSError:
+        return True
+
+
+def session_media(data: dict, s: dict, outdir: Path, build: bool = False, clean: bool = True) -> Media:
     """Recording(s) of the session as ONE live file, one clean file (or None) and the positions in them.
 
     `outdir`: the session's output folder, where the assembled files and the sidecar are kept. `build`: assemble now
@@ -119,16 +140,23 @@ def session_media(data: dict, s: dict, outdir: Path, build: bool = False) -> Med
         try:
             m = json.loads(side.read_text(encoding="utf-8"))
             if _usable(m.get("live")):
-                return Media(m["live"], m.get("clean") if _usable(m.get("clean")) else None, m["start"], m["end"])
+                clean_path = m.get("clean") if _usable(m.get("clean")) else None
+                return Media(m["live"], clean_path, m["start"], m["end"], tuple(m.get("offsets") or ()))
         except (OSError, ValueError, KeyError):
             pass
-    if not build:
+    if not build or not needs_assembly(data, s, Path(outdir)):
         return _legacy(data, s)
-    built = _assemble(data, s, nums, Path(outdir))
+    built = _assemble(data, s, nums, Path(outdir), clean)
+    if built is None:
+        try:  # not tried again at every look: whoever asks next within RETRY_FAILED_S gets the first recording
+            Path(outdir).mkdir(parents=True, exist_ok=True)
+            (Path(outdir) / FAILED).write_text(str(time.time()), encoding="utf-8")
+        except OSError:
+            pass
     return built or _legacy(data, s)
 
 
-def _assemble(data: dict, s: dict, nums: list[int], outdir: Path) -> Media | None:
+def _assemble(data: dict, s: dict, nums: list[int], outdir: Path, clean: bool = True) -> Media | None:
     recs, cleans = data.get("recordings") or [], data.get("recordings_clean") or []
     lives = [recs[i] for i in nums]
     if not all(_usable(p) for p in lives):
@@ -150,16 +178,25 @@ def _assemble(data: dict, s: dict, nums: list[int], outdir: Path) -> Media | Non
         )
         return None
     clean_all = None
-    if len(cleans) == len(recs):
+    if clean and len(cleans) == len(recs):
         parts = [cleans[i] for i in nums]
         if all(_usable(p) for p in parts) and _concat(parts, outdir / CLEAN_ALL):
             clean_all = str(outdir / CLEAN_ALL)
     last = s.get("end_file_pos")
     end = None if last is None else round(sum(before) + float(last), 3)
-    media = Media(str(live_all), clean_all, s.get("start_pos"), end)
+    offsets, total = [], 0.0
+    for d in before:
+        offsets.append(round(total, 3))
+        total += d
+    offsets.append(round(total, 3))
+    media = Media(str(live_all), clean_all, s.get("start_pos"), end, tuple(offsets))
     (outdir / SIDECAR).write_text(
-        json.dumps({"live": media.live, "clean": media.clean, "start": media.start, "end": media.end}, indent=1),
+        json.dumps(
+            {"live": media.live, "clean": media.clean, "start": media.start, "end": media.end, "offsets": offsets},
+            indent=1,
+        ),
         encoding="utf-8",
     )
+    (outdir / FAILED).unlink(missing_ok=True)
     log.info(_("session {index}: {count} recordings joined", index=s.get("index"), count=len(nums)))
     return media

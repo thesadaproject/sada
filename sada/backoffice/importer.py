@@ -15,13 +15,12 @@ from pathlib import Path
 
 from sqlalchemy import update
 
-from .. import runs
+from .. import runs, session_media
 from ..events import kind_label
 from ..i18n import _
 from ..pipeline import notes
 from ..pipeline import verses as verses_mod
 from ..pipeline.output import SessionOutput
-from ..session_media import session_media
 from . import db, orm, search
 from .models import Clip, Khutba
 
@@ -107,7 +106,7 @@ def import_run(conn, mosque: dict, run_id: str, extract_video: bool = True, log=
             res["skipped"].append(sdir.name)
             continue
         # the recording(s) as the pipeline read them: one assembled file when the session spans several
-        media = session_media(data, s, sdir)
+        media = session_media.session_media(data, s, sdir)
         rec_path, start, end = media.live, media.start, media.end
         tr = o.read(o.transcript, {})
         verses = o.read(o.verses, [])
@@ -245,17 +244,31 @@ def _slate_video(rec: str | None, start: float | None, end: float | None, slate:
         png.unlink(missing_ok=True)
 
 
-def reciter_chapters(s: dict) -> dict:
+def reciter_chapters(s: dict, media: session_media.Media | None = None) -> dict:
     """Reciters of a night and, when the control room switched them, the segments (offsets in s
-    from the start of the night). No switch: the reciters only, nothing is guessed."""
-    end = None
-    if s.get("start_pos") is not None and s.get("end_pos") is not None:
-        end = round(s["end_pos"] - s["start_pos"], 1)
-    marks = [m for m in s.get("reciter_marks") or [] if m.get("at") is not None and m.get("name")]
+    from the start of the night). No switch: the reciters only, nothing is guessed.
+
+    `media`: the night as the back office reads it. A mark made after the night went on in another recording
+    carries that recording's number and the raw position; on the assembled recording it is the sum of the durations
+    of the files before it and the position in its own file (`Media.position`)."""
+    start = media.start if media is not None else s.get("start_pos")
+    stop = media.end if media is not None else s.get("end_pos")
+    end = round(stop - start, 1) if start is not None and stop is not None else None
+    marks = []
+    for m in s.get("reciter_marks") or []:
+        if not m.get("name"):
+            continue
+        at = m.get("at")
+        if at is None and media is not None and start is not None and m.get("recording") is not None:
+            first = s.get("recording") or 0
+            placed = media.position(int(m["recording"]) - first, float(m.get("pos") or 0.0))
+            at = round(max(placed - start, 0.0), 1) if placed is not None else None
+        if at is not None:
+            marks.append({"at": at, "name": m["name"]})
     segments = []
     for i, m in enumerate(marks):
-        stop = marks[i + 1]["at"] if i + 1 < len(marks) else end
-        segments.append({"name": m["name"], "start": m["at"], "end": stop})
+        until = marks[i + 1]["at"] if i + 1 < len(marks) else end
+        segments.append({"name": m["name"], "start": m["at"], "end": until})
     return {"reciters": list(s.get("reciters") or []), "segments": segments}
 
 
@@ -274,12 +287,37 @@ def import_tarawih(conn, mosque: dict, run_id: str, extract_video: bool = True, 
         if s.get("kind") != "tarawih" or not runs.is_done(s) or s.get("start_pos") is None:
             continue
         idx = s["index"]
-        rec_path, _sources = runs.sources(data, s)
-        start, end = s.get("start_pos"), s.get("end_pos")
-        chapters = reciter_chapters(s)
+        sdir = dirs["output"] / run_id / f"tarawih{runs.session_number(idx)}"
         k = orm.first(conn, Khutba, mosque_id=mosque["id"], run_id=run_id, session_index=idx)
+        has_video = bool(k and k["video_path"] and Path(k["video_path"]).exists())
+        # A night on several recordings (signal lost then back, encoder relaunched) is assembled into one file, once:
+        # when its entry is created, when its video still has to be made, or when it was imported cut at the first
+        # recording (before this existed). Afterwards the sidecar answers, nothing is done at each look.
+        repair = k is not None and session_media.needs_assembly(data, s, sdir)
+        media = session_media.session_media(
+            data, s, sdir, build=k is None or repair or (extract_video and not has_video), clean=False
+        )
+        rec_path, start, end = media.live, media.start, media.end
+        chapters = reciter_chapters(s, media)
+        if k is not None and rec_path != k["recording"] and media.offsets:
+            # imported cut at the first recording: the entry is completed and its short video made again
+            conn.execute(
+                update(Khutba)
+                .where(Khutba.id == k["id"])
+                .values(
+                    recording=rec_path,
+                    start_pos=start,
+                    end_pos=end,
+                    duration_s=(end - start) if end is not None and start is not None else None,
+                    speaker=", ".join(chapters["reciters"]),
+                    chapters=json.dumps(chapters, ensure_ascii=False),
+                    video_path=None,
+                )
+            )
+            if k["video_path"]:
+                Path(k["video_path"]).unlink(missing_ok=True)
+            k = orm.first(conn, Khutba, id=k["id"])
         if not k:
-            sdir = dirs["output"] / run_id / f"tarawih{runs.session_number(idx)}"
             sdir.mkdir(parents=True, exist_ok=True)
             night = s.get("night")
             cur = Khutba(

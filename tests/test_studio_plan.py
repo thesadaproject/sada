@@ -160,3 +160,33 @@ def test_settings_are_validated_and_defaults_apply(env):
             continue
         raise AssertionError(bad)
     assert studio_plan.settings(c, env["mid"])["start_margin_s"] == 300
+
+
+def _tarawih_slot(env, **extra):
+    day = dt.date(2027, 2, 20)
+    events_store.write(
+        env["conn"],
+        env["mid"],
+        [{"uid": "t", "kind": "tarawih", "title": "Tarawih", "period": {"from": "2027-02-08", "until": "2027-03-09"},
+          "recurrence": {"offset_min": 15}, "mode": "audio", **extra}],
+    )  # fmt: skip
+    ctx = studio_plan.SlotContext(
+        env["conn"], mosque(env), PARIS, studio_plan.settings(env["conn"], env["mid"]), day,
+        {day: ({"isha": "19:45", "isha_iqama": "20:00"}, [])},
+    )  # fmt: skip
+    (slot,) = studio_plan.ProgrammeSource().slots_on(day, ctx)
+    return slot
+
+
+def test_a_tarawih_slot_without_a_maximum_lasts_as_long_as_the_engine_lets_the_night_run(env):
+    """Not a dars's 90 minutes: the device is told to stand by at the end of the slot, which would cut a long night."""
+    slot = _tarawih_slot(env)
+    assert slot.kind == "tarawih"
+    # the engine's cap (3 h) counted from the tarawih proper, 15 minutes after the end of isha
+    assert slot.ends - slot.starts == dt.timedelta(minutes=studio_plan.TARAWIH_MIN + 15) == dt.timedelta(minutes=195)
+    assert studio_plan.settings(env["conn"], env["mid"])["dars_min"] == 90  # the dars setting is not what applies
+
+
+def test_a_tarawih_slot_keeps_the_maximum_chosen_by_the_mosque(env):
+    slot = _tarawih_slot(env, max_min=150)
+    assert slot.ends - slot.starts == dt.timedelta(minutes=165)  # 150 + the 15 minutes before the tarawih proper

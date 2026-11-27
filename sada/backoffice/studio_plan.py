@@ -35,7 +35,7 @@ from typing import Protocol
 from sqlalchemy import delete, select, update
 
 from .. import events as events_mod
-from .. import prayers, studio_link
+from .. import prayers, state, studio_link
 from ..i18n import _
 from . import db, events_store, orm, prayer_times
 from .models import Device, Mosque, StudioRun, StudioSettings
@@ -51,6 +51,10 @@ LIMITS = {
 }
 KINDS = ("khutba", "dars", "conference", "tarawih")
 HORIZON_DAYS = 8
+# A tarawih night has no fixed length: without a maximum chosen by the mosque, its slot lasts as long as the engine lets
+# the night run (its safety cap), not as long as a dars. The device is ordered to stand by when the slot ends, so a slot
+# shorter than the night would cut the broadcast of a 20-rak'a night half way.
+TARAWIH_MIN = state.TARAWIH_TIMING.max_s / 60
 ONLINE_S = 90  # a device that spoke less than this ago is online (the heartbeat is every 30 s)
 # a manual live whose device is silent this long is over: the same delay as the orchestrator's grace after a signal
 # loss (see studio_link.SIGNAL_GRACE_S), i.e. four missed heartbeats (HEARTBEAT_S = 30 in api/studio.py)
@@ -197,6 +201,9 @@ class ProgrammeSource:
         out = []
         for inst in events_mod.instances_on(events, day, ctx.times(day)[0]):
             minutes = inst.max_min or ctx.cfg["dars_min"]
+            if inst.kind == "tarawih":
+                # the engine counts the night's maximum from the tarawih proper, `offset_min` after the end of isha
+                minutes = (inst.max_min or TARAWIH_MIN) + float((inst.tarawih or {}).get("offset_min") or 0)
             start = to_utc(inst.starts, ctx.tz)
             out.append(
                 Slot(

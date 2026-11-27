@@ -217,5 +217,6 @@
   "ENCODER: input back, the programme resumes (new recording)": "ENCODEUR : entrée retrouvée, le programme reprend (nouvel enregistrement)",
   "Signal lost: the reconnection screen is on air, the live ends in {grace:g} s unless it comes back": "Signal perdu : l'écran de reconnexion est à l'antenne, le direct se termine dans {grace:g} s s'il ne revient pas",
   "Signal back: the live resumes": "Signal retrouvé : le direct reprend",
-  "Signal lost for {grace:g} s: {msg}": "Signal perdu depuis {grace:g} s : {msg}"
+  "Signal lost for {grace:g} s: {msg}": "Signal perdu depuis {grace:g} s : {msg}",
+  "New day, new run: {run}": "Nouveau jour, nouveau run : {run}"
 }
