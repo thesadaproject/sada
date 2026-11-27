@@ -136,3 +136,34 @@ def test_slot_known_to_the_plan_is_left_to_the_plan():
     m, f = machine(at(20, 0)), Follower()
     assert f.step(m, sig(at(19, 58)), SLOT) is None  # the plan starts it itself, from the stream
     assert m.live is None and not f.owned
+
+
+def test_stale_live_announcement_does_not_reopen_a_session_after_a_stop():
+    """Control-room stop: the machine ends first, the back office still reads "live" for a few seconds."""
+    m, f = machine(at(20, 0)), Follower()
+    f.step(m, sig(at(15, 0), t=1000.0), MANUAL)
+    assert m.state == State.DARS
+    m.command("stop", sig(at(15, 5), t=1300.0))
+    assert m.state == State.ENDED
+    for i in range(3):  # stale polls
+        assert f.step(m, sig(at(15, 5, 1 + i), t=1301.0 + i), MANUAL) is None
+        assert m.state == State.ENDED and not m.adhoc_on_air
+    f.step(m, sig(at(15, 6), t=1400.0), OFF)  # the back office catches up: the latch is released
+    assert not f._ended_here
+
+
+def test_stale_announcement_after_stop_of_a_planned_khutba_stays_ended():
+    m, f = machine(at(12, 30)), Follower()
+    m.tick(sig(at(12, 30), t=1000.0, voice=30.0))
+    m.command("start", sig(at(12, 30, 1), t=1001.0))
+    assert m.state == State.KHUTBA
+    f.step(m, sig(at(12, 30, 2), t=1002.0), None)
+    m.command("stop", sig(at(12, 40), t=1600.0))
+    assert m.state == State.ENDED
+    assert f.step(m, sig(at(12, 40, 1), t=1601.0), MANUAL) is None
+    assert m.state == State.ENDED
+
+
+def test_live_announced_at_boot_is_still_followed():
+    m, f = machine(at(20, 0)), Follower()
+    assert f.step(m, sig(at(15, 0)), MANUAL) is not None and m.adhoc_on_air

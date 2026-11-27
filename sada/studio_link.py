@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from urllib.parse import urlencode
 
 from .i18n import _
+from .state import SESSION_STATES
 
 log = logging.getLogger("sada")
 
@@ -97,11 +98,32 @@ class Follower:
     def __init__(self):
         self.owned = False  # the machine's current session was opened by the studio
         self.slot_on = False  # a scheduled live was ordered at the last look
+        self._was_on_air = False  # the machine was in a session at the previous look
+        self._ended_here = False  # a session just ended while the announcement still reads "live" (stale)
+
+    @staticmethod
+    def _on_air(machine) -> bool:
+        return machine.state in SESSION_STATES or machine.adhoc_on_air
 
     def step(self, machine, sig, ann: Announcement | None) -> str | None:
         """One decision. Returns a log line when something changed (None otherwise)."""
+        note = self._step(machine, sig, ann)
+        self._was_on_air = self._on_air(machine)  # what this look left on air, compared at the next one
+        return note
+
+    def _step(self, machine, sig, ann: Announcement | None) -> str | None:
+        ended = self._was_on_air and not self._on_air(machine)
         if ann is None:
+            self._ended_here = self._ended_here or ended  # stale until a fresh answer says otherwise
             return None  # silence of the back office: nothing changes
+        if ann.live and ended:
+            # The machine ended its session (stop from the control room, end of plan) before the back office
+            # dropped the live: that announcement is stale, not a new live to open.
+            self._ended_here = True
+        if not ann.live:
+            self._ended_here = False
+        elif self._ended_here:
+            return None
         if ann.live and ann.source == "manual":
             return self._manual_on(machine, sig, ann)
         if ann.live and ann.source == "schedule":
