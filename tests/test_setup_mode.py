@@ -118,6 +118,9 @@ class FakeEncoder:
         self.overlay = None
         self.started = self.stopped = 0
         self.restarts = 0
+        self.hold = self.no_fallback = self.fallback = False
+        self.lost_wall = None  # epoch s of the signal loss, set by the tests that need one
+        self.lost_for: float | None = None  # seconds since it, None while the programme has its input
 
     def current_recording(self):
         return None
@@ -148,6 +151,9 @@ class FakeEncoder:
 
     def position(self):
         return 0, 0.0
+
+    def signal_lost_for(self):
+        return self.lost_for
 
 
 class FakeRenderer:

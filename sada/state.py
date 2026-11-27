@@ -750,6 +750,20 @@ class Machine:
         self._go(State.ENDED if self.live.kind == "khutba" else State.DARS_END, sig, "fin du direct Studio")
         return _("end screen, then the stream stops")
 
+    def end_lost(self, sig: Signals, reason: str) -> str:
+        """Ends the live whose picture never came back (signal lost for longer than the grace): the session on air is
+        closed and the stream stops, like a normal end, but without the end screen — there is no picture to put it on.
+        The plan goes on: the sessions still to come stay planned (see `_after_end_screen`)."""
+        if not self.stream_on:
+            return _("no live on air")
+        self._adhoc_over = True
+        self.override = True
+        self.paused_from = None
+        if self.state not in (State.ENDED, State.DARS_END):
+            self._go(self._end_state(), sig, reason)
+        self._after_end_screen(sig, reason)
+        return _("live ended: {reason}", reason=reason)
+
     def end_planned(self, sig: Signals, reason: str) -> str:
         """Ends the planned session on air the way its own end does (prayer screen for a khutba, end screen
         for a dars), for an end decided outside: the studio slot is over."""

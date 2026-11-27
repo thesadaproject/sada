@@ -212,5 +212,10 @@
   "Compositing ({stage}): {mode}": "التركيب ({stage}): {mode}",
   "by the Sada Studio, the stream is relayed as is": "بواسطة Sada Studio، يُنقل البث كما هو",
   "by the server": "بواسطة الخادم",
-  "the control room is not asking for the picture": "غرفة التحكم لا تطلب الصورة"
+  "the control room is not asking for the picture": "غرفة التحكم لا تطلب الصورة",
+  "ENCODER: input lost, the reconnection screen is sent to the destinations": "المُرمِّز: فُقد الدخل، تُرسَل شاشة إعادة الاتصال إلى الوجهات",
+  "ENCODER: input back, the programme resumes (new recording)": "المُرمِّز: عاد الدخل، يستأنف البرنامج (تسجيل جديد)",
+  "Signal lost: the reconnection screen is on air, the live ends in {grace:g} s unless it comes back": "فُقدت الإشارة: شاشة إعادة الاتصال على الهواء، وينتهي البث بعد {grace:g} ث إن لم تعد",
+  "Signal back: the live resumes": "عادت الإشارة: يستأنف البث",
+  "Signal lost for {grace:g} s: {msg}": "الإشارة مفقودة منذ {grace:g} ث: {msg}"
 }

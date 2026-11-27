@@ -25,7 +25,7 @@ from pathlib import Path
 import zmq
 from PIL import Image
 
-from . import source
+from . import signal_screen, source
 from . import transitions as tr
 from .i18n import _
 
@@ -114,6 +114,20 @@ BACKOFF_MAX_S = 30.0
 SOURCE_WAIT_MAX_S = 60.0
 
 
+# Signal loss. Once the relay no longer publishes the input of a live that had one, the encoder moves to a second
+# ffmpeg that sends the reconnection screen (a still picture and silence, see `Encoder.fallback_cmd`) so the
+# destinations keep a stream and the live stays open on the platforms. How long that may last is the orchestrator's
+# decision (`studio_link.SIGNAL_GRACE_S`); the encoder only reports since when the signal is gone.
+#
+# FALLBACK_AFTER_S is deliberately longer than the studio link's poll (`studio_link.POLL_S`): a live that is stopped on
+# purpose stops its stream too, and the orchestrator only learns it from the next poll. Within that window the
+# voluntary stop wins (`Encoder.no_fallback`) and the reconnection screen never shows.
+FALLBACK_AFTER_S = 8.0
+PROBE_EVERY_S = 2.0  # how often the relay is asked whether the input is published while a live runs
+RETURN_PROBES = 2  # consecutive probes that must see the input again before the programme goes back to it
+FALLBACK_RETRY_S = 2.0  # relaunch delay of a reconnection ffmpeg that died (no exponential backoff: it must stay up)
+
+
 def backoff_delay(failures: int) -> float:
     """Delay before relaunch number `failures` (1 = first consecutive failure): 1, 2, 4, ... capped at 30 s."""
     return min(BACKOFF_MAX_S, BACKOFF_MIN_S * 2 ** max(0, failures - 1))
@@ -185,6 +199,21 @@ class Encoder:
         self._waiting_since: float | None = None
         # Set while the programme is winding down (end screen): the encoder is never relaunched, nor judged stuck.
         self.hold = False
+        # Set by the orchestrator while the live is being ended on purpose (end screen): never any reconnection screen
+        # then, and one that is up is cut at once.
+        self.no_fallback = False
+        # Signal loss (see FALLBACK_AFTER_S): `fallback` is True while the current ffmpeg is the reconnection one.
+        self.fallback = False
+        self._had_signal = (
+            False  # the current run opened its input at least once (a live that never had one is only waiting)
+        )
+        self._lost_since: float | None = None  # `clock()` when the relay stopped publishing the input
+        self.lost_wall: float | None = None  # the same instant, wall clock (epoch s), for the status
+        self._probe_at = 0.0
+        self._back = 0  # consecutive probes that saw the input published again
+        self._fallback_png: str | None = None
+        self.clock = time.monotonic  # injectable (tests)
+        self.wall = time.time
 
     # ------------------------------------------------------------------- command
     def new_recording(self) -> tuple[str, str | None]:
@@ -315,6 +344,25 @@ class Encoder:
             self._tee_targets() if rec is None else f"{self._tee_targets()}|[f=matroska]{rec}",
         ] + out_clean
 
+    def fallback_cmd(self, png: str) -> list[str]:
+        """The reconnection ffmpeg: the still picture `png` (already the size of the programme) and silence, encoded
+        like the programme (same fps, bit rate, GOP, audio) towards the same destinations and monitoring copy. No
+        recording, no clean copy: nothing of it is kept. Self-contained (no zmq, no layers): never driven."""
+        c = self.cfg
+        return [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostats",
+            "-re", "-f", "image2", "-loop", "1", "-framerate", str(c.fps), "-i", png,
+            "-re", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+            "-vf", f"scale={c.width}:{c.height}:force_original_aspect_ratio=decrease,"
+                   f"pad={c.width}:{c.height}:(ow-iw)/2:(oh-ih)/2,fps={c.fps},setsar=1,format=yuv420p",
+            "-map", "0:v", "-map", "1:a",
+            "-c:v", "libx264", "-preset", x264_preset(), "-tune", "zerolatency",
+            "-b:v", c.video_bitrate, "-maxrate", c.video_bitrate, "-bufsize", bufsize(c.video_bitrate),
+            "-g", str(c.fps * 2), "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "128k", "-ar", "48000",
+            "-flags", "+global_header", "-f", "tee", self._tee_targets(),
+        ]  # fmt: skip
+
     def _tee_targets(self) -> str:
         """One tee output per destination: a platform that drops must not interrupt the others."""
         outs = [] if self.rehearsal else [f"[f=flv:onfail=ignore]{url}" for url in self.cfg.rtmp_urls]
@@ -341,6 +389,9 @@ class Encoder:
             self._spawn_preview()
             self._waiting_since = None
             self._next_spawn = 0.0
+            self.fallback = self._had_signal = False
+            self._lost_since = self.lost_wall = None
+            self._probe_at, self._back = 0.0, 0
             if self._source_pending():
                 self.log(_("ENCODER: waiting for the input to be published on the relay"))
             else:
@@ -422,7 +473,7 @@ class Encoder:
                 try:
                     self.out_time = int(line.split("=")[1]) / 1e6
                     if proc is self.proc and not self._opened:
-                        self._opened = True  # ffmpeg is producing output: the source answered
+                        self._opened = self._had_signal = True  # ffmpeg is producing output: the source answered
                         if self.failures:
                             self.log(
                                 _("ENCODER: source available again after {count} failed attempts", count=self.failures)
@@ -444,6 +495,10 @@ class Encoder:
         if self.preview and self.preview.poll() is not None:
             self.preview = None
             self._spawn_preview()
+        self._watch_signal()
+        if self.fallback:
+            self._tick_fallback()
+            return
         if self.proc and self.proc.poll() is not None:
             self._on_exit()
         elif self.proc and self._dropped and not self.hold:
@@ -451,6 +506,115 @@ class Encoder:
         elif not self.proc and self.wanted and not self.hold and time.monotonic() >= self._next_spawn:
             if not self._source_pending():
                 self._spawn()
+        if self._should_fall_back():
+            self._enter_fallback()
+
+    # ------------------------------------------------------------------ signal loss
+    def _watch_signal(self) -> None:
+        """Asks the relay every PROBE_EVERY_S whether the input is still published (caller holds the lock).
+
+        Only a clear answer counts: a source the relay cannot tell about (camera, OBS on another host, API down) is
+        never taken for a lost one. A live that never had its input is just waiting for it: no loss either."""
+        if self.rehearsal or self.source_ready is None or not self.wanted:
+            return
+        now = self.clock()
+        if now < self._probe_at:
+            return
+        self._probe_at = now + PROBE_EVERY_S
+        try:
+            ready = self.source_ready()
+        except Exception:  # noqa: BLE001
+            ready = None
+        if ready is None:
+            return
+        if ready:
+            self._lost_since = self.lost_wall = None
+            self._back += 1
+        else:
+            self._back = 0
+            if self._lost_since is None and self._had_signal:
+                self._lost_since, self.lost_wall = now, self.wall()
+
+    def _should_fall_back(self) -> bool:
+        return (
+            self.wanted
+            and not self.fallback
+            and not self.hold
+            and not self.no_fallback
+            and self._lost_since is not None
+            and self.clock() - self._lost_since >= FALLBACK_AFTER_S
+        )
+
+    def signal_lost_for(self) -> float | None:
+        """Seconds since the signal was lost while the reconnection screen is on air, None otherwise."""
+        if not self.fallback or self._lost_since is None:
+            return None
+        return max(0.0, self.clock() - self._lost_since)
+
+    def _enter_fallback(self) -> None:
+        """The input is gone: the programme ffmpeg is stopped and the reconnection one takes its place (caller holds the
+        lock). Its recording is closed by the stop (SIGTERM), the next one only starts when the input is back."""
+        p = self.proc
+        self.fallback = True
+        self._back = 0
+        self.log(_("ENCODER: input lost, the reconnection screen is sent to the destinations"))
+        if p and p.poll() is None:
+            p.terminate()  # finalises the MKV cleanly
+            try:
+                p.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                p.kill()
+        self.proc = None
+        self.restarts += 1
+        self._spawn_fallback()
+
+    def _spawn_fallback(self) -> None:
+        if self._fallback_png is None:
+            self._fallback_png = signal_screen.write(self.run_dir / "signal_lost.png", self.cfg.width, self.cfg.height)
+        if self._log_file:
+            self._log_file.close()
+        self._log_file = open(self.run_dir / "encoder.log", "ab")
+        self._dropped = False
+        self._spawned_at = time.monotonic()
+        self.proc = subprocess.Popen(
+            self.fallback_cmd(self._fallback_png), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+            bufsize=1, encoding="utf-8", errors="replace",
+        )  # fmt: skip
+        threading.Thread(target=self._read_errors, args=(self.proc, self._log_file), daemon=True).start()
+
+    def _tick_fallback(self) -> None:
+        """One supervision pass while the reconnection screen is on air (caller holds the lock)."""
+        if self.hold or self.no_fallback:
+            self._leave_fallback()  # the live is ending on purpose: cut at once, no reconnection screen
+            return
+        if self._back >= RETURN_PROBES:
+            self._leave_fallback()
+            self.log(_("ENCODER: input back, the programme resumes (new recording)"))
+            self._spawn()
+            return
+        if self.proc and self.proc.poll() is not None:
+            self.proc = None
+            self._next_spawn = time.monotonic() + FALLBACK_RETRY_S
+        elif self.proc and self._dropped and time.monotonic() - self._spawned_at >= STUCK_GRACE_S:
+            self._dropped = False
+            self.proc.kill()
+        if not self.proc and time.monotonic() >= self._next_spawn:
+            self._spawn_fallback()
+
+    def _leave_fallback(self) -> None:
+        """Stops the reconnection ffmpeg (caller holds the lock); the signal state starts over."""
+        p, self.proc = self.proc, None
+        self.fallback = False
+        self._lost_since = self.lost_wall = None
+        self._back = 0
+        self.failures = 0
+        self._next_spawn = 0.0
+        if p and p.poll() is None:
+            p.terminate()
+            try:
+                p.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                p.kill()
 
     def _on_exit(self):
         """ffmpeg died (caller holds the lock). If it never opened its source, drop its empty recordings, back
@@ -485,6 +649,8 @@ class Encoder:
     def stop(self):
         with self._lock:
             self.wanted = False
+            self.fallback = False
+            self._lost_since = self.lost_wall = None
             p = self.proc
         if self.preview and self.preview.poll() is None:
             self.preview.terminate()
@@ -521,6 +687,7 @@ class Encoder:
             if (
                 not self.wanted
                 or self.hold
+                or self.fallback  # the reconnection ffmpeg has no graph to answer
                 or not p
                 or p.poll() is not None
                 or time.monotonic() - self._spawned_at < STUCK_GRACE_S
@@ -533,9 +700,13 @@ class Encoder:
     def alive(self) -> bool:
         return bool(self.proc and self.proc.poll() is None)
 
+    def graph_up(self) -> bool:
+        """The programme ffmpeg runs, so its filters answer ZeroMQ (not the case of the reconnection one)."""
+        return self.alive() and not self.fallback
+
     def current_recording(self) -> str | None:
-        """Recording currently being written (None = stream stopped)."""
-        return self.recordings[-1][0] if self.wanted and self.recordings else None
+        """Recording currently being written (None = stream stopped, or reconnection screen: it is not recorded)."""
+        return self.recordings[-1][0] if self.wanted and self.recordings and not self.fallback else None
 
     def position(self) -> tuple[int, float]:
         """(recording number, position in s within it). Stream stopped: the next recording, at 0 s."""
@@ -652,7 +823,7 @@ class Encoder:
             if target != self.vol:  # audio fade, same start as the image
                 expr = tr.volume_ramp(self.vol, target)
                 self.vol = target
-                if self.alive():
+                if self.graph_up():
                     threading.Thread(target=self._zmq_send, args=(f"volume@mic volume {expr}",), daemon=True).start()
             if not job:
                 continue
@@ -690,7 +861,7 @@ class Encoder:
         keys = ([] if p.fond_from == p.fond_to else ["fond"]) + [f"a_{p.src}", f"a_{p.dst}", move]
         n_last = 0 if dur <= 0 else int(round(dur * self.cfg.fps))
         played = 0
-        if self.alive():
+        if self.graph_up():
             ctx = zmq.Context.instance()
             poller, socks, idx = zmq.Poller(), {}, {}
 

@@ -30,6 +30,10 @@ from .state import SESSION_STATES
 log = logging.getLogger("sada")
 
 POLL_S = 5.0
+#: How long a live whose picture disappeared is kept open on the destinations (on the reconnection screen) before it
+#: ends as a normal stop. One constant for the whole product: the orchestrator's grace after a signal loss, and the
+#: back office's silence delay for a manual live whose device no longer answers (`studio_plan.MANUAL_SILENCE_S`).
+SIGNAL_GRACE_S = 120.0
 TYPES = ("khutba", "dars", "conference")
 PUBLISHERS = ("device", "obs", "regie", "unknown")
 

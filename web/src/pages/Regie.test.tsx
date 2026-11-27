@@ -5,7 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (k: string) => k, i18n: { language: "fr" } }),
+  useTranslation: () => ({ t: (k: string, o?: { time?: string }) => (o?.time ? `${k} ${o.time}` : k), i18n: { language: "fr" } }),
 }));
 const api = vi.hoisted(() => ({
   regie: vi.fn(), regieScene: vi.fn(), regiePreview: vi.fn(), regieOverlay: vi.fn(), regieTransition: vi.fn(),
@@ -60,6 +60,28 @@ describe("Régie (remote control of the Sada Studio)", () => {
     api.regieOverlay.mockResolvedValue({ ok: true });
   });
   afterEach(() => { cleanup(); setCurrentSession(null); });
+
+  it("signal lost: a banner counts down to the automatic end, from the server's remaining time", async () => {
+    vi.useFakeTimers();
+    try {
+      const live = { ...offAir.live, state: "KHUTBA", scene: "khutba", stream_on: true, fallback_remaining_s: 72, fallback_until: 1, signal_lost_since: 0 };
+      await monter({ ...offAir, live });
+      expect(screen.getByRole("alert").textContent).toContain("regie.signalLost");
+      expect(screen.getByRole("alert").textContent).toContain("regie.signalLostCountdown 1:12");
+      await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+      expect(screen.getByRole("alert").textContent).toContain("regie.signalLostCountdown 1:11");
+      api.regie.mockRejectedValue(new Error("offline"));  // no newer read: the countdown runs on its own
+      await act(async () => { await vi.advanceTimersByTimeAsync(200_000); });
+      expect(screen.getByRole("alert").textContent).toContain("regie.signalLostCountdown 0:00");  // never negative
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("no banner while the live has its signal, nor off air", async () => {
+    await monter({ ...offAir, live: { ...offAir.live, state: "KHUTBA", stream_on: true, fallback_remaining_s: null } });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 
   it("off air, a scene only changes the picture: no confirmation, no live shown", async () => {
     await monter();
