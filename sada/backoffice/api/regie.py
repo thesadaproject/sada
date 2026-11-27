@@ -426,6 +426,10 @@ async def regie_take_scene(request: Request, a: ActorDep):
     out = await apply_scene(a.conn, a.mosque, body.get("scene"), body.get("transition"), setup=setup)
     if isinstance(out, dict):
         a.audit("studio.live.commande", commande="scene", valeur=out["scene"], setup=setup)
+        if a.device is None and not setup:  # the web control room: a scene on air puts the studio on air too
+            out["studio"] = await run_in_threadpool(
+                studio_service.follow_regie, a.conn, a.mosque, "scene", out["scene"], a.ip
+            )
     return out
 
 
