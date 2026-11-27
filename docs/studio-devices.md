@@ -200,7 +200,10 @@ receives the last answer; nothing heavy happens during a live):
 (the device receives a new credential with its next heartbeat; the old one works for one hour or until the new
 one is used), `GET /studio/schedule`, `GET /studio/incidents`, `GET|PUT /studio/settings` (PUT: administrator;
 `start_margin_s`, `offline_alert_min`, `khutba_min`, `dars_min`, `preflight_min`),
-`PUT /studio/alerts/preferences` `{email?, subscribed?}` (the account's own). Another mosque's device or
+`PUT /studio/alerts/preferences` `{email?, subscribed?}` (the account's own), `GET /studio/download` (the Sada
+Studio's installers of its latest GitHub release, per system: `{version, page, assets: {windows, mac_arm64, mac_x64,
+linux}}`, cached for an hour, every asset `null` and the releases page alone when GitHub cannot be read; any
+signed-in person; the getting-started screen offers them instead of OBS). Another mosque's device or
 incident is a `404`. Page: **Appareils** (`/appareils`, next to the control room).
 
 ## Sanity checks and alert e-mails

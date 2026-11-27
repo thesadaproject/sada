@@ -6,9 +6,11 @@ import { liste } from "../format";
 import { Btn, Card, Field, Kicker, Title, inputClass } from "@sada/ui";
 import { Apercu, CalcFields } from "../PrayerFields";
 import { calcDepuis, calcVersServeur, type Calc } from "../prayerForm";
+import { EtapeStudio, type Appareil } from "./OnboardingStudio";
 
 /** Mise en route : quatre écrans, un seul formulaire à la fois.
- *  1. d'où vient l'image (caméra de la mosquée, ou un ordinateur qui pousse),
+ *  1. d'où vient l'image : Sada Studio sur le PC de la mosquée (télécharger, relier), ou une caméra RTSP que le
+ *     moteur lit (installation non hébergée). OBS n'est plus proposé ici (il reste dans Réglages),
  *  2. où le direct est publié,
  *  3. d'où viennent les horaires de prière (Mawaqit, calculés, ou plus tard : rien n'est enregistré),
  *  4. récapitulatif. Rien d'autre : les réglages fins restent dans Réglages, et le compartiment
@@ -26,17 +28,17 @@ export default function Onboarding() {
   const { t } = useTranslation();
   const nav = useNavigate();
   const [etape, setEtape] = useState(0);
-  const [mode, setMode] = useState<Mode>("camera");
-  // A hosted platform offers the push only: its server cannot reach a camera inside the mosque.
-  const [modes, setModes] = useState<Mode[]>(["camera", "push"]);
+  const [mode, setMode] = useState<Mode>("push");
+  // The Sada Studio only, until the server says otherwise: a hosted platform never offers the camera (its server
+  // cannot reach into a mosque's network), and it must not show for a moment while the settings load.
+  const [modes, setModes] = useState<Mode[]>(["push"]);
+  const [appareils, setAppareils] = useState<Appareil[]>([]);
   const [adresse, setAdresse] = useState("");
-  const [obs, setObs] = useState("");
   const [cibles, setCibles] = useState<Cible[]>([]);
   const [essai, setEssai] = useState<{ ok: boolean; detail: string } | null>(null);
   const [test, setTest] = useState(false);
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState("");
-  const [copie, setCopie] = useState(false);
   const [horaires, setHoraires] = useState<ChoixHoraires>("later");
   const [urlMawaqit, setUrlMawaqit] = useState("");
   const [calc, setCalc] = useState<Calc>(calcDepuis({}));
@@ -44,10 +46,11 @@ export default function Onboarding() {
   useEffect(() => {
     api.settings().then((r) => {
       const e: Entree = r.input;
-      setMode(e.mode === "push" ? "push" : "camera");
-      if (e.modes?.length) setModes(e.modes);
+      // A camera already set up stays chosen; otherwise the Sada Studio is the way in.
+      setMode(e.mode === "camera" && e.configured ? "camera" : e.modes && !e.modes.includes("push") ? "camera" : "push");
+      // The Sada Studio first.
+      if (e.modes?.length) setModes([...e.modes].sort((a, b) => (a === "push" ? -1 : b === "push" ? 1 : 0)));
       setAdresse(e.url);
-      setObs(e.push_rtmp);
       setCibles(liste<any>(r.targets));
       // What is already chosen (the wizard may be reopened) is shown as chosen.
       setUrlMawaqit(r.prayer?.mawaqit_url ?? "");
@@ -68,7 +71,6 @@ export default function Onboarding() {
 
   const enregistrerEntree = async () => {
     const r = await api.saveInput(mode, adresse);
-    setObs(r.input.push_rtmp);
     setAdresse(r.input.url);
   };
 
@@ -92,10 +94,6 @@ export default function Onboarding() {
     nav("/");
   };
 
-  const copier = async () => {
-    try { await navigator.clipboard.writeText(obs); setCopie(true); setTimeout(() => setCopie(false), 2000); } catch { /* clipboard refusé */ }
-  };
-
   const maj = (i: number, champ: keyof Cible, valeur: string | boolean) =>
     setCibles((liste) => liste.map((c, j) => (j === i ? { ...c, [champ]: valeur } : c)));
 
@@ -111,8 +109,8 @@ export default function Onboarding() {
             onClick={() => { setMode(m); setEssai(null); }}
             className={`cursor-pointer rounded-[9px] border p-3 text-left ${mode === m ? "border-leaf bg-leaf/10" : "border-line bg-white hover:bg-paper-2"}`}
           >
-            <span className="block font-semibold">{t(`onboarding.${m}Title`)}</span>
-            <span className="mt-0.5 block text-[0.85rem] text-muted">{t(`onboarding.${m}Hint`)}</span>
+            <span className="block font-semibold">{m === "push" ? t("onboarding.studioTitle") : t("onboarding.cameraTitle")}</span>
+            <span className="mt-0.5 block text-[0.85rem] text-muted">{m === "push" ? t("onboarding.studioHint") : t("onboarding.cameraHint")}</span>
           </button>
         ))}
       </div>}
@@ -129,18 +127,7 @@ export default function Onboarding() {
           </div>
         </div>
       ) : (
-        <div className="grid gap-3">
-          <Field label={t("onboarding.pushServer")} aide={t("onboarding.pushNote")}>
-            <div className="flex gap-2">
-              <input className={`${inputClass} font-mono text-[0.88rem]`} value={obs} readOnly />
-              <Btn variante="ghost" onClick={copier}>{copie ? t("onboarding.copied") : t("onboarding.copy")}</Btn>
-            </div>
-          </Field>
-          <div className="flex items-center gap-2.5">
-            <Btn variante="ghost" onClick={tester} disabled={test}>{test ? t("onboarding.testing") : t("onboarding.test")}</Btn>
-            {essai && <span className={`text-[0.88rem] ${essai.ok ? "text-green" : "text-muted"}`}>{essai.detail}</span>}
-          </div>
-        </div>
+        <EtapeStudio onAppareils={setAppareils} />
       )}
     </Card>
   );
@@ -210,13 +197,17 @@ export default function Onboarding() {
     : horaires === "compute" ? t("prayer.onb.summaryComputed", { methode: t(`prayer.methods.${calc.method}`) })
     : t("prayer.onb.summaryLater");
 
+  const resumeStudio = appareils.length
+    ? t("onboarding.summaryStudio", { noms: appareils.map((a) => a.name).join(", ") })
+    : t("onboarding.summaryStudioNone");
+
   const fin = (
     <Card>
       <Kicker>{t("onboarding.doneKicker")}</Kicker>
       <Title>{t("onboarding.doneTitle")}</Title>
       <p className="mt-0 mb-3 max-w-[80ch] text-[0.92rem]">{t("onboarding.doneBody")}</p>
       <p className="m-0 mb-4 font-mono text-[0.85rem] text-muted">
-        {t("onboarding.summary", { entree: mode === "push" ? obs : adresse, n: cibles.filter((c) => c.enabled).length })}
+        {t("onboarding.summary", { entree: mode === "push" ? resumeStudio : adresse, n: cibles.filter((c) => c.enabled).length })}
         {" · "}{resumeHoraires}
       </p>
       <Btn variante="leaf" onClick={terminer}>{t("onboarding.finish")}</Btn>
