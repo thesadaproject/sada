@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.26](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.25...sada-v0.1.0-alpha.26) (2026-11-27)
+
+
+### Features
+
+* **regie:** the web control room drives the Sada Studio, with its picture on demand ([#119](https://github.com/thesadaproject/sada/issues/119)) ([0535e3e](https://github.com/thesadaproject/sada/commit/0535e3eb0299bc659c4462483fed1628fdffc9f7))
+
 ## [0.1.0-alpha.25](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.24...sada-v0.1.0-alpha.25) (2026-11-27)
 
 
