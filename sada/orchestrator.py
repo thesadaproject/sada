@@ -44,7 +44,7 @@ from .faces import FaceGate, FaceMonitor, yunet_detector
 from .i18n import _
 from .presence import MotionGate, PresenceMonitor
 from .scenes import SCENES, Moment, SceneRenderer, render_custom_scene
-from .state import Machine, SessionParams, Signals
+from .state import CUSTOM_SCENE_PREFIX, STATE_OF_SCENE, Machine, SessionParams, Signals
 from .vad import VadMonitor
 
 #: Scene key the encoder shows while a Sada Studio composes the picture itself: nothing over its stream.
@@ -99,6 +99,8 @@ def wait_for_backoffice(url: str, limit_s: float, probe=None, sleep=time.sleep, 
 class Orchestrator:
     #: Who composes the rehearsal stage: said by whoever takes the setup lease (see set_setup).
     _setup_compositing = "server"
+    #: Scene picked off air from the control room: only the picture shown (Studio, preview), never a live.
+    offair_scene: str | None = None
 
     def __init__(self, cfg: Config):
         self.cfg = cfg
@@ -692,12 +694,30 @@ class Orchestrator:
         else:
             self._sync()
 
+    def _take_offair_scene(self, scene: str, setup: bool) -> bool:
+        """A known scene taken while nothing is on air (and not from the setup view): it only becomes the picture
+        shown. The state, the encoder and the recording stay as they are. Under `self.lock`."""
+        if setup or self.machine.stream_on:
+            return False
+        sc = str(scene or "").strip().lower()
+        if sc.startswith(CUSTOM_SCENE_PREFIX):
+            if not self.machine.custom_known(sc):
+                return False
+        elif sc not in STATE_OF_SCENE:
+            return False  # unknown: the machine answers it, changing nothing
+        self.offair_scene = sc
+        return True
+
     def manual(self, cmd: str, arg=None, transition: str | None = None, setup: bool = False) -> dict:
         with self.lock:
             st = self._stage_for(setup)
             m = st.machine
             if transition is not None:
                 m.set_transition(transition)
+            if cmd == "scene" and st is self.live_stage and self._take_offair_scene(arg, setup):
+                m.touch()
+                msg = _("scene {scene} (off air: picture only)", scene=self.offair_scene)
+                return {"message": msg, "state": m.state.value, "transition": m.transition, **self._fresh(st)}
             msg = m.command(cmd, self.signals(), arg)
             self._sync_stage(st)
             return {"message": msg, "state": m.state.value, "transition": m.transition, **self._fresh(st)}
@@ -755,6 +775,15 @@ class Orchestrator:
                 raise ValueError(_("unknown scene: {scene}", scene=scene_id))
             if transition is not None:
                 m.set_transition(transition)
+            if st is self.live_stage and self._take_offair_scene(scene_id, setup):
+                m.touch()
+                return {
+                    "message": _("scene {scene} (off air: picture only)", scene=scene_id),
+                    "state": m.state.value,
+                    "scene": scene_id,
+                    "transition": m.transition,
+                    **self._fresh(st),
+                }
             msg = m.command("scene", self.signals(), scene_id)
             self._sync_stage(st)
             return {
@@ -921,6 +950,9 @@ class Orchestrator:
     def status(self) -> dict:
         with self.lock:
             st = self.machine.status()
+            if self.machine.stream_on:
+                self.offair_scene = None  # a live took over: the scene on air is the machine's
+            st["preview_scene"] = self.offair_scene
             v, s = self.vad.runs()
             _tok, pos = self.encoder.position()
             face_abs = self.faces.absence_run() if self.faces else None

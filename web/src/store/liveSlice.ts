@@ -16,7 +16,7 @@ import { createSelector, createSlice, type PayloadAction } from "@reduxjs/toolki
 
 export type Health = { online: boolean; kbps?: number | null; readers?: number } | null;
 export type Live = {
-  ok?: boolean; state?: string; scene?: string | null; clock?: string | null;
+  ok?: boolean; state?: string; scene?: string | null; preview_scene?: string | null; clock?: string | null;
   session?: { n?: number | null; total?: number; planned?: string | null; started?: string | null } | null;
   /** Today's programme, in order (status: pending | live | done | skipped | janaza). */
   day?: { planned: string; status: string; kind: string; title: string; speaker: string; started?: string | null; ended?: string | null }[];

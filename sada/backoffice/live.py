@@ -310,6 +310,8 @@ def summarize(st: dict) -> dict:
     return {
         "state": st.get("state"),
         "scene": st.get("scene"),
+        # picture picked off air from the control room (Studio, preview): nothing is broadcast
+        "preview_scene": st.get("preview_scene"),
         "clock": st.get("clock"),
         "session": session,
         "day": _day(sessions),

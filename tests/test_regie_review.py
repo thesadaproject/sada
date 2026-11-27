@@ -82,7 +82,8 @@ def test_orchestrator_scene_command_for_an_unknown_custom_scene_changes_nothing(
     assert o.machine.state == before and o.machine.scene != "custom:ghost"
     png = _png()
     o.set_custom_scene("custom:known", png)
-    assert o.machine.scene == "custom:known"
+    # off air: the picture only, never a live
+    assert o.machine.scene is None and not o.machine.stream_on and o.status()["preview_scene"] == "custom:known"
 
 
 def _png() -> bytes:

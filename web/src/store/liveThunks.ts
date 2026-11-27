@@ -114,7 +114,7 @@ export const takeScene = (scene: string): AppThunk<Promise<boolean>> => async (d
   const id = actionId("scene", scene);
   if (getState().live.pending[id]) return false;
   const transition = selectView(getState())?.live.transition ?? undefined;
-  return dispatch(run(id, { live: { scene, override: true } }, () => api.regieScene(scene, transition ?? undefined), (r) => studioRetour(r) ?? {}));
+  return dispatch(run(id, { live: selectView(getState())?.live.stream_on ? { scene, override: true } : { preview_scene: scene } }, () => api.regieScene(scene, transition ?? undefined), (r) => studioRetour(r) ?? {}));
 };
 
 /** Fade or cut for the next scene changes (saved for the mosque). */

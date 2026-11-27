@@ -451,9 +451,8 @@ function RegieEcran() {
   // On air without the studio's picture (started before the studio was online, or it was stopped there): "Start"
   // stays, it orders the studio to publish again.
   const studioAttend = enDirect && !!studios[0]?.online && !studios[0].publishing;
-  // Off air, a scene puts the mosque on air at once (the engine starts the live): never on a single stray click.
+  // Off air a scene only changes the picture (Studio and preview): it never starts a live, so no confirmation.
   async function prendre(sc: SceneInfo) {
-    if (!enDirect && !(await confirm({ message: t("regie.sceneStartsLive", { scene: nomScene(sc) }), action: t("dashboard.cmd.start") }))) return;
     await dispatch(takeScene(sc.id));
   }
 
@@ -556,7 +555,7 @@ function RegieEcran() {
           </div>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-2">
             {infos.map((sc) => {
-              const actif = live.scene === sc.id;
+              const actif = (enDirect ? live.scene : live.preview_scene) === sc.id;
               const occupe = enCours("scene", sc.id);
               return (
                 <button key={sc.id} type="button" aria-pressed={actif} aria-busy={occupe || undefined} disabled={horsService}

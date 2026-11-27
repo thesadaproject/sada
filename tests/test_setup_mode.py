@@ -14,7 +14,7 @@ from sada import encoder as enc_mod
 from sada import orchestrator as orch
 from sada import setup_mode
 from sada.config import Config
-from sada.state import Machine, MachineParams
+from sada.state import Machine, MachineParams, State
 
 # ------------------------------------------------------------------ the lease
 
@@ -250,11 +250,57 @@ def test_a_setup_command_is_refused_once_the_lease_lapsed(monkeypatch, tmp_path)
     assert o.machine.stream_on is False and o.encoder.wanted is False  # nothing went live by accident
 
 
-def test_a_command_without_the_setup_mark_is_the_lives_as_before(monkeypatch, tmp_path):
+def test_an_off_air_scene_without_the_setup_mark_only_changes_the_picture(monkeypatch, tmp_path):
     o = make(monkeypatch)
     open_setup(o, tmp_path)
-    o.manual("scene", "priere")
-    assert o.machine.scene == "priere" and o.encoder.wanted  # the console's "take it on air" still works
+    state = o.machine.state
+    out = o.manual("scene", "priere")
+    assert o.machine.state == state and o.machine.scene is None and not o.machine.stream_on
+    assert o.encoder.wanted is False and o.encoder.started == 0 and o.encoder.shown == []  # no encoder, no recording
+    assert out["status"]["preview_scene"] == "priere" and out["status"]["stream_on"] is False
+
+
+def test_an_off_air_scene_in_the_stopped_state_never_goes_on_air(monkeypatch):
+    o = make(monkeypatch)
+    o.machine.state = State.STOPPED
+    for scene in ("entracte", "priere", "khutba"):
+        o.manual("scene", scene)
+        assert o.machine.state == State.STOPPED and o.machine.stream_on is False
+        assert o.encoder.wanted is False and o.encoder.started == 0
+        assert o.status()["preview_scene"] == scene
+
+
+def test_an_unknown_off_air_scene_changes_nothing(monkeypatch):
+    o = make(monkeypatch)
+    out = o.manual("scene", "disco")
+    assert "unknown scene" in out["message"] and o.status()["preview_scene"] is None
+    assert o.encoder.wanted is False
+
+
+def test_an_off_air_custom_scene_only_changes_the_picture(monkeypatch):
+    o = make(monkeypatch)
+    o._custom_scenes["custom:affiche"] = Image.new("RGBA", (4, 4))
+    out = o.set_custom_scene("custom:affiche", None)
+    assert out["status"]["preview_scene"] == "custom:affiche"
+    assert o.machine.stream_on is False and o.encoder.wanted is False and o.encoder.started == 0
+
+
+def test_a_scene_during_a_live_is_taken_as_before(monkeypatch):
+    o = make(monkeypatch)
+    o.manual("start")
+    assert o.machine.stream_on and o.encoder.wanted
+    o.manual("scene", "entracte")
+    assert o.machine.state == State.INTERMISSION and o.machine.scene == "entracte" and o.encoder.wanted
+    st = o.status()
+    assert st["scene"] == "entracte" and st["preview_scene"] is None  # the picture on air is the machine's
+
+
+def test_the_picture_picked_off_air_is_dropped_once_a_live_starts(monkeypatch):
+    o = make(monkeypatch)
+    o.manual("scene", "entracte")
+    assert o.status()["preview_scene"] == "entracte"
+    o.manual("start")
+    assert o.status()["preview_scene"] is None
 
 
 def test_the_lease_lapsing_stops_the_rehearsal_by_itself(monkeypatch, tmp_path):
