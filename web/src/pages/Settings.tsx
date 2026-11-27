@@ -5,14 +5,12 @@ import { liste } from "../format";
 import { Btn, Card, Field, Tabs, Title, inputClass, toucher } from "@sada/ui";
 import { idOnglet, idPanneau } from "@sada/ui";
 import { RecitersEditor } from "../RecitersEditor";
-import { useConfirm } from "../confirmContext";
 import PrayerSettings from "./PrayerSettings";
+import { EntreeVideo, type Entree } from "./EntreeVideo";
 
 type Message = { ok: boolean; texte: string } | null;
 
 /** A live destination as the screen edits it: the key comes back masked, and stays masked. */
-type Entree = { mode: "camera" | "push"; url: string; push_rtmp: string; has_key?: boolean;
-                modes?: ("camera" | "push")[] };
 type Cible = { id?: number; label: string; url: string; enabled: boolean };
 /** Texts of the slates as the screen edits them: {écran: {champ: texte}}; empty = default. */
 type Ecrans = Record<string, Record<string, string>>;
@@ -74,7 +72,6 @@ function depuisServeur(d: any): Record<string, string> {
  *  (replays bucket, folders, public address, model, transcription, orchestrator) lives on the
  *  operator's platform page, never here. */
 export default function Settings() {
-  const confirm = useConfirm();
   const { t, i18n } = useTranslation();
   const [d, setD] = useState<any>(null);
   const [f, setF] = useState<Record<string, string>>({});
@@ -86,9 +83,8 @@ export default function Settings() {
   const [msg, setMsg] = useState<Message>(null);
   const [cibles, setCibles] = useState<Cible[]>([]);
   const [ciblesInitiales, setCiblesInitiales] = useState("");
-  const [entree, setEntree] = useState<Entree>({ mode: "camera", url: "", push_rtmp: "" });
+  const [entree, setEntree] = useState<Entree>({ mode: "push", url: "", push_rtmp: "" });
   const [entreeInitiale, setEntreeInitiale] = useState("");
-  const [essai, setEssai] = useState<{ ok: boolean; detail: string } | null>(null);
   const [ecrans, setEcrans] = useState<Ecrans>({});
   const [ecransInitial, setEcransInitial] = useState("");
   const [ecranVue, setEcranVue] = useState<string>("avant");
@@ -99,7 +95,6 @@ export default function Settings() {
   const [rapport, setRapport] = useState<RapportImport | null>(null);
   const [importe, setImporte] = useState(false);
   const [guide, setGuide] = useState({ agent: "", humain: "", docs: "", agentEn: "", humainEn: "", docsEn: "" });
-  const [cle, setCle] = useState<{ obs_server: string; obs_key: string; obs_srt?: string } | null>(null);
   const fichier = useRef<HTMLInputElement>(null);
   const gabaritFichier = useRef<HTMLInputElement>(null);
 
@@ -196,26 +191,6 @@ export default function Settings() {
       setMsg({ ok: false, texte: err.message });
     } finally {
       setEnCours(false);
-    }
-  };
-
-  const nouvelleCle = async () => {
-    if (entree.has_key && !(await confirm({ message: t("settings.keyConfirm"), action: t("settings.keyReset"), danger: false }))) return;
-    try {
-      const r = await api.newStreamKey();
-      setCle({ obs_server: r.obs_server, obs_key: r.obs_key, obs_srt: r.obs_srt });
-      setEntree((e) => ({ ...e, has_key: true }));
-    } catch (err: any) {
-      setEssai({ ok: false, detail: err.message });
-    }
-  };
-  const testerEntree = async () => {
-    setEssai(null);
-    try {
-      const r = await api.testInput(entree.mode, entree.url);
-      setEssai({ ok: r.ok, detail: r.detail });
-    } catch (err: any) {
-      setEssai({ ok: false, detail: err.message });
     }
   };
 
@@ -316,52 +291,8 @@ export default function Settings() {
         {sousOnglet === "connexion" && <div className="grid max-w-[520px] gap-3.5"
           role="tabpanel" id={idPanneau("reglages-live", "connexion")} aria-labelledby={idOnglet("reglages-live", "connexion")}>
         {/* Video input: the same choice as in "Mise en route", editable here afterwards. */}
-        <div className="border-t border-line pt-3.5">
-          <p className="m-0 mb-2 text-[0.75rem] font-semibold uppercase tracking-[0.12em] text-green">{t("settings.inputKicker")}</p>
-          {/* A hosted platform offers the push only: no tabs when there is nothing to choose. */}
-          {(entree.modes ?? ["camera", "push"]).length > 1 && <Tabs items={[{ cle: "camera", label: t("onboarding.cameraTitle") },
-                        { cle: "push", label: t("onboarding.pushTitle") }]}
-            base="reglages-entree" label={t("settings.inputKicker")}
-            valeur={entree.mode}
-            onChange={(m) => { setEntree((e) => ({ ...e, mode: m === "push" ? "push" : "camera" })); setEssai(null); setMsg(null); }} />}
-          <div className="mt-3 grid gap-1.5"
-            role="tabpanel" id={idPanneau("reglages-entree", entree.mode)} aria-labelledby={idOnglet("reglages-entree", entree.mode)}>
-            {entree.mode === "camera" ? (
-              <Field label={t("onboarding.cameraUrl")} aide={t("onboarding.cameraUrlHelp")}>
-                <div className="flex gap-2">
-                  <input className={`${inputClass} font-mono text-[0.85rem]`} value={entree.url} spellCheck={false}
-                    placeholder="rtsp://…" onChange={(e) => { setEntree((x) => ({ ...x, url: e.target.value })); setEssai(null); setMsg(null); }} />
-                  <Btn variante="ghost" onClick={testerEntree}>{t("onboarding.test")}</Btn>
-                </div>
-              </Field>
-            ) : (
-              <Field label={t("onboarding.pushServer")} aide={t("onboarding.pushNote")}>
-                <div className="flex gap-2">
-                  <input className={`${inputClass} font-mono text-[0.85rem]`} value={entree.push_rtmp} readOnly />
-                  <Btn variante="ghost" onClick={testerEntree}>{t("onboarding.test")}</Btn>
-                </div>
-              </Field>
-            )}
-            {entree.mode === "push" && (
-              <Field label={t("settings.keyLabel")} aide={cle ? t("settings.keyOnce") : entree.has_key ? t("settings.keyHidden") : t("settings.keyNone")}>
-                {cle ? (
-                  <div className="grid gap-1.5">
-                    <input className={`${inputClass} font-mono text-[0.85rem]`} value={cle.obs_server} readOnly aria-label={t("onboarding.pushServer")} />
-                    <input className={`${inputClass} font-mono text-[0.85rem]`} value={cle.obs_key} readOnly aria-label={t("settings.keyLabel")}
-                      onFocus={(e) => e.target.select()} />
-                    {cle.obs_srt && (
-                      <input className={`${inputClass} font-mono text-[0.85rem]`} value={cle.obs_srt} readOnly aria-label="SRT"
-                        onFocus={(e) => e.target.select()} />
-                    )}
-                  </div>
-                ) : (
-                  <div><Btn variante="ghost" onClick={nouvelleCle}>{entree.has_key ? t("settings.keyReset") : t("settings.keyCreate")}</Btn></div>
-                )}
-              </Field>
-            )}
-            {essai && <span className={`text-[0.86rem] ${essai.ok ? "text-green" : "text-muted"}`}>{essai.detail}</span>}
-          </div>
-        </div>
+        <EntreeVideo entree={entree} setEntree={setEntree} onEdit={() => setMsg(null)}
+          onKeyRevoked={() => setEntreeInitiale((i) => JSON.stringify({ ...JSON.parse(i || "{}"), has_key: false }))} />
 
         </div>}
         {sousOnglet === "destinations" && <div>
