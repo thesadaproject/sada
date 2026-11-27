@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.28](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.27...sada-v0.1.0-alpha.28) (2026-11-27)
+
+
+### Features
+
+* **onboarding:** the picture comes from the Sada Studio, installed and linked from the first screen ([#123](https://github.com/thesadaproject/sada/issues/123)) ([0456eb4](https://github.com/thesadaproject/sada/commit/0456eb41a4c664cb9005a7447e341b0be8f24dc1))
+
 ## [0.1.0-alpha.27](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.26...sada-v0.1.0-alpha.27) (2026-11-27)
 
 
