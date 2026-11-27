@@ -93,6 +93,15 @@ def new_publish_key(conn, mosque_id: int) -> str:
     return k
 
 
+def revoke_publish_key(conn, mosque_id: int) -> bool:
+    """The mosque's OBS stream key stops working at once (the Sada Studio has its own credentials). True when one
+    existed."""
+    had = bool(conn.scalar(select(Mosque.publish_key_hash).where(Mosque.id == mosque_id)))
+    conn.execute(update(Mosque).where(Mosque.id == mosque_id).values(publish_key_hash=""))
+    orm.done(conn)
+    return had
+
+
 def publish_allowed(conn, slug: str, key: str | None) -> bool:
     """Whether `key` is the stream key of the mosque `slug` (no key set = nobody may publish)."""
     if not slug or not key:

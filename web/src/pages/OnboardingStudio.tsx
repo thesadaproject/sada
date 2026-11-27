@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { Btn, Field, inputClass } from "@sada/ui";
 import { api, ApiError } from "../api";
 import { usePolling } from "../usePolling";
@@ -19,7 +20,8 @@ const PRINCIPAUX: Record<"windows" | "mac" | "linux", Plateforme[]> = {
 };
 const TOUS: Plateforme[] = ["windows", "mac_arm64", "mac_x64", "linux"];
 
-export function EtapeStudio({ onAppareils }: { onAppareils?: (a: Appareil[]) => void }) {
+/** `contexte`: in Settings, the devices are managed on their own page (link), not "later". */
+export function EtapeStudio({ onAppareils, contexte = "onboarding" }: { onAppareils?: (a: Appareil[]) => void; contexte?: "onboarding" | "settings" }) {
   const { t } = useTranslation();
   const [dl, setDl] = useState<Telechargement | null>(null);
   const [appareils, setAppareils] = useState<Appareil[]>([]);
@@ -119,7 +121,14 @@ export function EtapeStudio({ onAppareils }: { onAppareils?: (a: Appareil[]) => 
             ))}
           </ul>
         )}
-        <p className="m-0 text-[0.85rem] text-muted">{enLigne.length > 0 ? t("onboarding.pairedHint") : t("onboarding.pairLater")}</p>
+        {contexte === "settings" ? (
+          <p className="m-0 text-[0.85rem] text-muted">
+            {t("settings.studioDevices")}{" "}
+            <Link to="/appareils" className="text-green underline underline-offset-2">{t("nav.devices")}</Link>
+          </p>
+        ) : (
+          <p className="m-0 text-[0.85rem] text-muted">{enLigne.length > 0 ? t("onboarding.pairedHint") : t("onboarding.pairLater")}</p>
+        )}
       </section>
     </div>
   );

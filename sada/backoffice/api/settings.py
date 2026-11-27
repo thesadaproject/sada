@@ -370,6 +370,20 @@ async def input_key(ctx: CtxDep):
     }
 
 
+@router.delete("/settings/input/key")
+async def input_key_revoke(ctx: CtxDep):
+    """Revokes the OBS stream key: the picture comes from the Sada Studio, an old OBS must not publish any more.
+    A stream running with the key goes on until it stops; it is refused the next time it connects."""
+    await ctx.raw_body()  # CSRF
+    ctx.require("admin")
+    from .. import internal
+
+    had = internal.revoke_publish_key(ctx.conn, ctx.mosque["id"])
+    if had:
+        db.audit(ctx.conn, ctx.mosque["id"], ctx.user["id"], "cle_diffusion.revoquee", "mosquee", ctx.mosque["id"])
+    return {"ok": True, "revoked": had}
+
+
 @router.post("/settings/input/test")
 async def input_test(ctx: CtxDep):
     """Checks the input right now: what the picture looks like, or why nothing arrives."""

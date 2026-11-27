@@ -421,7 +421,8 @@ export const api = {
   },
   /** The wizard is offered once: completing or skipping it records the choice. */
   onboardingDone: (done = true) => ecrire<any>("PUT", "/settings/onboarding", { done }),
-  newStreamKey: () => ecrire<{ key: string; obs_server: string; obs_key: string; obs_srt?: string }>("POST", "/settings/input/key"),
+  /** The OBS stream key stops working (the picture comes from the Sada Studio). */
+  revokeStreamKey: () => ecrire<{ ok: boolean; revoked: boolean }>("DELETE", "/settings/input/key"),
   testInput: (mode: string, url: string) =>
     ecrire<{ ok: boolean; detail: string; url: string }>("POST", "/settings/input/test", { mode, url }),
   testNotifications: () => ecrire<any>("POST", "/settings/notifications/test"),
