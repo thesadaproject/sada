@@ -387,14 +387,35 @@ class Orchestrator:
             return
         self.instances = events_mod.instances_on(self.program, day, self.prayer_times)
         sessions, extras = self.day_plan(day)
+        played = bool(self.encoder.recordings) or any(r.status != "pending" for r in self.machine.records)
+        if played:
+            self._save_sessions()  # yesterday's sessions, as they ended, before the plan gives way to today's
         if not self.machine.new_day(sessions, extras, sig):
             return  # a session runs over midnight: retried on the next tick
         self._plan_day = day
+        self._rotate_run(sig.now, played)
         log.info(_("Sessions of the day (mosque clock): {times}", times=[s.strftime("%H:%M") for s in sessions]))
         if self.cfg.backoffice_url and not self.cfg.jumua_times_override:
             # today's prayer times (and programme) from the back office: applied by _retry_plan
             self._stale, self._rolled = True, True
             self._retry_delay, self._retry_at = RETRY_DELAY_S, 0.0
+
+    def _rotate_run(self, now: dt.datetime, played: bool) -> None:
+        """A new day is a new run (its own `sessions.json`, session numbers from 1, recordings from the first).
+
+        The process runs for weeks (a whole Ramadan: one tarawih night each day). The machine starts each day's plan
+        over, so keeping one run would overwrite yesterday's sessions file and give tonight's session the number of
+        last night's: the pipeline and the back office address a session by (run, number), so the second night
+        would never be imported. A run is only opened when the previous one holds something (or is of another day):
+        a quiet day leaves nothing behind. Called with the stream off (the new day only starts when no session is on)."""
+        if self.encoder.wanted or not (played or runs.run_date(self.run_id) != now.date().isoformat()):
+            return
+        self.run_id = runs.new_run_id(now)
+        self.run_dir = Path(self.cfg.state_dir) / self.run_id
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        self.encoder.recordings = []  # the sessions of the new run count their recordings from the first
+        self._saved = None
+        log.info(_("New day, new run: {run}", run=self.run_id))
 
     def _retry_plan(self, sig: Signals):
         """Back office down at start: get the times and the programme again, then replan today.
