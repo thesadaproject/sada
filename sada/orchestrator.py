@@ -507,6 +507,7 @@ class Orchestrator:
             if notify.should_send(m.state, m, self.clock.now()):
                 self.notifier.notify_state(m.state, m)
         if m.stream_on and not enc.wanted:
+            enc.clean_wanted = not (m.playing is not None and m.playing.kind == "tarawih")
             self._stop_rehearsal()  # the live takes the monitoring copy: the setup steps aside first
             enc.start()
             self._stream_since = time.monotonic()

@@ -199,6 +199,9 @@ class Encoder:
         self._waiting_since: float | None = None
         # Set while the programme is winding down (end screen): the encoder is never relaunched, nor judged stuck.
         self.hold = False
+        # False for a session that is never clipped (a tarawih night): its recordings need no clean copy, which would
+        # double the disk (and the work) of a night of hours. Read when a recording is opened.
+        self.clean_wanted = True
         # Set by the orchestrator while the live is being ended on purpose (end screen): never any reconnection screen
         # then, and one that is up is cut at once.
         self.no_fallback = False
@@ -221,7 +224,8 @@ class Encoder:
         Path(c.record_dir).mkdir(parents=True, exist_ok=True)
         stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
         rec = str(Path(c.record_dir) / f"live_{stamp}.mkv")
-        return rec, (str(Path(c.record_dir) / f"live_{stamp}_clean.mkv") if c.record_clean else None)
+        clean = c.record_clean and self.clean_wanted
+        return rec, (str(Path(c.record_dir) / f"live_{stamp}_clean.mkv") if clean else None)
 
     def ffmpeg_cmd(self, rec: str | None, clean: str | None) -> list[str]:
         c = self.cfg
