@@ -96,6 +96,14 @@ services:
     <<: *image
     command: ["python", "-m", "sada.orchestrator"]
     depends_on: [backoffice, receiver]
+    # the image's HEALTHCHECK targets the back office (8090); the orchestrator only serves its API on 8088
+    # (same check as the chart's readinessProbe: the API port accepts connections)
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8088), timeout=4).close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     # the preprod mosque's token is issued by `preprod.sh seed` and kept in deploy/preprod/.env (git-ignored)
     environment:
       TZ: Europe/Paris
