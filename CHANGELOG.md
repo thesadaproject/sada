@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.27](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.26...sada-v0.1.0-alpha.27) (2026-11-27)
+
+
+### Bug Fixes
+
+* **regie:** starting the live from the control room puts the Sada Studio on air ([#121](https://github.com/thesadaproject/sada/issues/121)) ([6fa5247](https://github.com/thesadaproject/sada/commit/6fa5247b89b3dbf75905ae71eca15143491f8b73))
+
 ## [0.1.0-alpha.26](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.25...sada-v0.1.0-alpha.26) (2026-11-27)
 
 
