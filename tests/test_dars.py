@@ -129,3 +129,19 @@ def test_extras_et_sessions_doivent_s_aligner():
     """A silent misalignment would turn a dars into a khutba: the machine refuses."""
     with pytest.raises(ValueError):
         Machine([at(19, 0), at(20, 0)], MachineParams(), extras=[{"kind": "dars"}])
+
+
+def test_fin_du_dars_choisie_a_la_main_reste_a_l_ecran():
+    """La scène « Fin du dars » prise à la main (mode manuel) ne s'en va pas toute seule : ni bascule
+    de scène ni arrêt du flux tant que la régie n'a rien demandé. Seule la commande « stop » enchaîne."""
+    m, _ = mk(dars={"ended_hold_s": 10})
+    d = Drv(m, at(18, 59))
+    m.command("start", d.sig())
+    assert m.state == State.DARS
+    m.command("scene", d.sig(), "dars_fin")
+    assert m.state == State.DARS_END and m.override
+    d.run(120)
+    assert m.state == State.DARS_END and m.scene == "dars_fin" and m.stream_on
+    m.command("stop", d.sig())
+    d.run(120)
+    assert m.state == State.STOPPED

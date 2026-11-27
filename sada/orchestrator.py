@@ -506,11 +506,29 @@ class Orchestrator:
             )
         )
 
-    def _follow_editor(self, ann) -> None:
-        """The back office says who feeds the relay: a Sada Studio device composes its own picture."""
+    #: the Studio's stream may drop for a few seconds (WHIP reconnection, relay not ready yet): the server only takes
+    #: the picture back after this long without any publisher, never on a blip that would flash its slate on air.
+    STUDIO_GONE_S = 20.0
+    _studio_gone_since: float | None = None
+
+    def _follow_editor(self, ann, now: float | None = None) -> None:
+        """The back office says who feeds the relay: a Sada Studio device composes its own picture.
+
+        Another editor that is clearly there (OBS, the control room) takes over at once. Nobody, or a publisher the
+        back office cannot name, takes over from the Studio only once it lasted `STUDIO_GONE_S`."""
         mode = getattr(ann, "compositing", None) if ann is not None else None
-        if mode is not None:
-            self._set_compositing(self.live_stage, mode)
+        if mode is None:
+            return
+        now = time.monotonic() if now is None else now
+        stage = self.live_stage
+        named = getattr(ann, "publisher", None) in ("obs", "regie")
+        if stage is not None and stage.compositing == "studio" and mode == "server" and not named:
+            if self._studio_gone_since is None:
+                self._studio_gone_since = now
+            if now - self._studio_gone_since < self.STUDIO_GONE_S:
+                return
+        self._studio_gone_since = None
+        self._set_compositing(stage, mode)
 
     def _blank(self) -> Image.Image:
         return Image.new("RGBA", (int(self.cfg.width), int(self.cfg.height)), (0, 0, 0, 0))

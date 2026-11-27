@@ -8,13 +8,15 @@ is compared to the one recorded before the refactor.
 
 Two golden files:
 
-* `state_trace_golden.json` is the one recorded BEFORE the control-room work (2ff5469) and is never regenerated
-  for it: the scenes and commands that existed then must still trace identically. The only difference allowed is
-  the status keys that work added (`NEW_STATUS_KEYS`), which are left out of that digest.
+* `state_trace_golden.json` is the one recorded BEFORE the control-room work (2ff5469): the scenes and commands that
+  existed then must still trace identically. The only difference allowed is the status keys that work added
+  (`NEW_STATUS_KEYS`), which are left out of that digest. Re-recorded once, for an intended change: an end screen
+  picked by hand (scene `termine` / `dars_fin` in manual mode) now stays on air instead of stopping the stream; every
+  trace that changed was checked to diverge at that very point and nowhere else.
 * `state_trace_custom_golden.json` records the same days with the `custom:` scene commands mixed in (a custom
   scene is known to the machine), so the new behaviour is pinned without touching the old proof.
 
-To re-record the second one after an INTENDED change: `python tests/test_state_trace.py`.
+To re-record both after an INTENDED change (check first where the traces diverge): `python tests/test_state_trace.py`.
 """
 
 from __future__ import annotations
@@ -180,8 +182,7 @@ def test_traces_cover_every_state():
 if __name__ == "__main__":
     import pathlib
 
-    out = {f"{p}/{s}": run_scenario(p, s, custom=True)[0] for p in sorted(PLANS) for s in SEEDS}
-    pathlib.Path(__file__).with_name("state_trace_custom_golden.json").write_text(
-        json.dumps(out, indent=0, sort_keys=True) + "\n"
-    )
-    print(len(out), "digests recorded", file=sys.stderr)
+    for name, custom in (("state_trace_golden.json", False), ("state_trace_custom_golden.json", True)):
+        out = {f"{p}/{s}": run_scenario(p, s, custom=custom)[0] for p in sorted(PLANS) for s in SEEDS}
+        pathlib.Path(__file__).with_name(name).write_text(json.dumps(out, indent=0, sort_keys=True) + "\n")
+        print(name, len(out), "digests recorded", file=sys.stderr)

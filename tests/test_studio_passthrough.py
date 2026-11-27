@@ -189,9 +189,29 @@ def test_a_silent_back_office_keeps_the_mode_and_a_change_redraws(monkeypatch):
     assert o.live_stage.compositing == "studio"
     o._sync()
     assert o.encoder.shown[-1] == orch.PASSTHROUGH_SCENE
-    o._follow_editor(ann(publisher=None))  # the studio stopped publishing: the server composes again
+    o._follow_editor(ann(publisher=None), now=100.0)  # the studio's stream drops: a blip, nothing changes yet
+    assert o.live_stage.compositing == "studio"
+    o._follow_editor(ann(publisher=None), now=100.0 + o.STUDIO_GONE_S)  # gone for good: the server composes again
     o._sync()
     assert o.live_stage.compositing == "server" and o.encoder.shown[-1] == "priere"
+
+
+def test_a_studio_reconnection_never_flashes_the_server_picture(monkeypatch):
+    o = make(monkeypatch)
+    o._follow_editor(ann(publisher="device"), now=0.0)
+    for t in (5.0, 10.0, 15.0):  # WHIP reconnection: nobody, then a publisher not claimed yet
+        o._follow_editor(ann(publisher=None if t < 15 else "unknown"), now=t)
+        assert o.live_stage.compositing == "studio"
+    o._follow_editor(ann(publisher="device"), now=19.0)  # back: the absence count starts over
+    o._follow_editor(ann(publisher=None), now=30.0)
+    assert o.live_stage.compositing == "studio"
+
+
+def test_obs_taking_the_relay_is_composed_by_the_server_at_once(monkeypatch):
+    o = make(monkeypatch)
+    o._follow_editor(ann(publisher="device"), now=0.0)
+    o._follow_editor(ann(publisher="obs"), now=1.0)
+    assert o.live_stage.compositing == "server"
 
 
 def test_the_rehearsal_of_a_studio_device_is_relayed_too(monkeypatch, tmp_path):
