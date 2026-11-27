@@ -51,5 +51,6 @@
   "studio live started: {kind}": "direct Studio démarré : {kind}",
   "Studio slot not in the plan: recorded as an extra session (“{title}”)": "Créneau Studio hors programme : enregistré comme session supplémentaire (« {title} »)",
   "no live on air": "aucun direct à l'antenne",
-  "live ended: {reason}": "direct terminé : {reason}"
+  "live ended: {reason}": "direct terminé : {reason}",
+  "Studio live closed at the back office (signal lost)": "Direct Studio clos côté back office (signal perdu)"
 }

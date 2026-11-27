@@ -287,7 +287,12 @@ class SessionRec:
     status: str = "pending"  # pending | live | done | skipped | janaza
     recording: int | None = None  # number of the recording that contains start_pos / end_pos
     start_pos: float | None = None  # offset (s) in the recording
-    end_pos: float | None = None
+    end_pos: float | None = None  # offset in `recording`; None when the session ended in another file (legacy view)
+    # Where the session ends when it spans several recordings (encoder relaunched, signal lost then back): the
+    # recording number and the offset in it. The session covers recordings `recording` .. `end_recording`, whole
+    # files in between (see session_media.py). Absent in runs recorded before: the session is in `recording` only.
+    end_recording: int | None = None
+    end_file_pos: float | None = None
     start_clock: str | None = None
     end_clock: str | None = None
     end_reason: str | None = None
@@ -535,8 +540,10 @@ class Machine:
         if r.status == "live":
             r.status = "done"
         rec, pos = self.pos_fn()
-        # encoder restarted during the session: the end is in another file, we keep the first one to the end
+        # encoder relaunched during the session: the end is in another file (`end_recording`); `end_pos` keeps its
+        # legacy meaning (None = "first file to its end") for what reads it without knowing the range
         r.end_pos = pos if rec == r.recording else None
+        r.end_recording, r.end_file_pos = rec, pos
         r.end_clock = f"{sig.now:%H:%M:%S}"
         r.end_reason = reason
         self.live = None
@@ -1125,6 +1132,7 @@ class Machine:
             return False
         # reopened before _go, which would otherwise start a fresh session
         rec.status, rec.end_pos, rec.end_clock, rec.end_reason = "live", None, None, None
+        rec.end_recording = rec.end_file_pos = None
         self.live, self.cut = rec, (None, None)
         self.log(
             _(

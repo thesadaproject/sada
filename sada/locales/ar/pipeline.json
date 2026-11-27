@@ -80,5 +80,9 @@
   "translation: Hamidullah excerpt not literal for {key}, full translation kept": "الترجمة: مقتطف حميد الله غير حرفي لـ {key}، أُبقيت الترجمة الكاملة",
   "Dominant language: {code}": "اللغة الغالبة: {code}",
   "segmented render: {copied:.0f}s copied, {encoded:.0f}s encoded": "تصيير بالمقاطع: {copied:.0f} ث منسوخة، {encoded:.0f} ث مُرمَّزة",
-  "segmented render impossible ({error}): full render": "تعذّر التصيير بالمقاطع ({error}): تصيير كامل"
+  "segmented render impossible ({error}): full render": "تعذّر التصيير بالمقاطع ({error}): تصيير كامل",
+  "session {index}: a recording of its range is missing, only the first one is used": "الجلسة {index}: تسجيل من نطاقها مفقود، يُستخدم الأول فقط",
+  "session {index}: duration of a recording unknown, only the first one is used": "الجلسة {index}: مدة أحد التسجيلات غير معروفة، يُستخدم الأول فقط",
+  "session {index}: the recordings could not be joined, only the first one is used": "الجلسة {index}: تعذّر ضمّ التسجيلات، يُستخدم الأول فقط",
+  "session {index}: {count} recordings joined": "الجلسة {index}: تم ضمّ {count} تسجيلات"
 }

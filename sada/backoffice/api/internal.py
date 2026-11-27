@@ -270,6 +270,22 @@ def live_input_url(request: Request, conn: ConnDep, port: int = 0):
     return {"mosque_id": mid, "url": live_input.effective(conn, mid)}
 
 
+@router.post("/internal/studio-live/end")
+async def studio_live_end(request: Request, conn: ConnDep, port: int = 0):
+    """The orchestrator ended the live after a signal loss: closes the studio's manual live and stops the running slot
+    (journaled with the reason `signal_perdu`). Idempotent; body `{"lost_at": epoch s}` bounds what is closed."""
+    mid = _caller(request, conn, port)
+    if isinstance(mid, JSONResponse):
+        return mid
+    try:
+        body = await request.json()
+        lost_at = float(body["lost_at"]) if isinstance(body, dict) and body.get("lost_at") is not None else None
+    except Exception:  # noqa: BLE001
+        lost_at = None
+    mosque = orm.first(conn, Mosque, id=mid)
+    return {"mosque_id": mid, **studio_service.end_lost(conn, mosque, lost_at)}
+
+
 @router.get("/internal/studio-live")
 def studio_live(request: Request, conn: ConnDep, port: int = 0):
     """Type and title announced for the live in progress (studio device or schedule), for the replay:

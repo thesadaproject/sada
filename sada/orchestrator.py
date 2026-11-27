@@ -513,9 +513,12 @@ class Orchestrator:
             else:
                 log.info(_("Signal back: the live resumes"))
         if lost_for is not None and lost_for >= studio_link.SIGNAL_GRACE_S and m.stream_on:
+            lost_at = enc.lost_wall
             log.info(
                 _("Signal lost for {grace:g} s: {msg}", grace=lost_for, msg=m.end_lost(self.signals(), "signal perdu"))
             )
+            # the studio's live is closed at the back office too, or the device would believe it is still on air
+            self.studio_poll.request_end(lost_at)
 
     def _set_compositing(self, stage: setup_mode.Stage | None, mode) -> None:
         """Who composes this stage's picture (see Stage.compositing). A change redraws the stage at the next pass

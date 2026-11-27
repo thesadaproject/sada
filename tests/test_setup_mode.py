@@ -200,6 +200,8 @@ def make(monkeypatch, preview="rtmp://receiver:1935/live/x-prog"):
     o.live_stage = setup_mode.Stage(o.machine, o.encoder)
     o.setup = setup_mode.SetupLease()
     o.rehearsal = None
+    o.ended_at_back_office = []  # lost-signal ends the poller was asked to report
+    o.studio_poll = SimpleNamespace(request_end=o.ended_at_back_office.append)
     return o
 
 
