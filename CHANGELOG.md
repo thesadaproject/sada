@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.32](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.31...sada-v0.1.0-alpha.32) (2026-11-27)
+
+
+### Bug Fixes
+
+* **tarawih:** every night of the month is kept and imported whole ([#136](https://github.com/thesadaproject/sada/issues/136)) ([765760b](https://github.com/thesadaproject/sada/commit/765760bd7fe402bb81fb77ccb99a02a06fdf945c))
+
 ## [0.1.0-alpha.31](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.30...sada-v0.1.0-alpha.31) (2026-11-27)
 
 
