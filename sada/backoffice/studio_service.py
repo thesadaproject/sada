@@ -213,3 +213,56 @@ def current_announcement(conn, mosque: dict, now: float | None = None) -> dict:
         "title": cur.get("title"),
         "slot_id": cur.get("slot_id"),
     }
+
+
+# ------------------------------------------------------------------ the web control room drives the studio
+# The control room is the Sada Studio's remote control: a command that puts the mosque on air from there must
+# also tell the studio to publish (else the engine goes on air with nothing to relay), and stopping there stops
+# the studio too. It is the studio's own manual live, on the designated device, so everything that follows a
+# manual live (the orchestrator's session, the silence watch, the journal) works unchanged.
+
+#: Commands of the control room that put the mosque on air, and the ones that take it off air.
+ON_AIR = frozenset({"start", "scene", "tarawih"})
+OFF_AIR = frozenset({"stop", "cancel"})
+
+
+def _kind_of(cmd: str, valeur: str | None) -> str:
+    return "dars" if cmd == "scene" and valeur in ("dars", "dars_fin") else "khutba"
+
+
+def follow_regie(conn, mosque: dict, cmd: str, valeur: str | None, ip: str | None, now: float | None = None) -> str:
+    """Aligns the studio on a control-room command. Returns what happened, for the answer:
+
+    `ordered` (the studio was told to publish), `already` (it already is: a slot or a manual live),
+    `stopped`, `no_studio` (no paired device online: OBS or a camera feeds the mosque, or the PC is off),
+    `busy` (another source holds the stream, or the device is held back), `none` (nothing to do)."""
+    from . import live_input, studio_preview
+
+    now = time.time() if now is None else now
+    if live_input.current(conn, mosque)["mode"] != "push":
+        return "none"  # a camera read by the relay: no studio to drive
+    if cmd in ON_AIR:
+        order, _slots = studio_plan.current_order(conn, mosque, now)
+        if order.command == studio_plan.LIVE:
+            return "already"
+        dev = studio_preview.designated(conn, mosque, now)
+        if dev is None:
+            return "no_studio"
+        try:
+            start_manual(conn, mosque, dev, _kind_of(cmd, valeur), "", ip, now)
+        except Conflict:
+            return "busy"
+        return "ordered"
+    if cmd in OFF_AIR:
+        run = studio_plan.manual_run(conn, mosque["id"], now)
+        order, slots = studio_plan.current_order(conn, mosque, now)
+        if run is None and studio_plan.running_slot(order, slots) is None:
+            return "none"
+        claim = orm.first(conn, StudioClaim, mosque_id=mosque["id"])
+        did = (run or {}).get("device_id") or (claim or {}).get("device_id")
+        dev = orm.first(conn, Device, id=did) if did else studio_preview.designated(conn, mosque, now)
+        if dev is None:
+            return "none"
+        stop(conn, mosque, dev, ip, now)
+        return "stopped"
+    return "none"

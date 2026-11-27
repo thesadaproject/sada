@@ -67,8 +67,21 @@ function erreur(e: unknown) {
   return typeof m === "string" && m ? { ok: false, texte: m } : { ok: false, cle: "common.error" };
 }
 
+/** What the Sada Studio was told along with a control-room command (`studio` in the answer). Off air with no
+ *  studio online, or another source holding the stream, the engine goes on air without the studio's picture:
+ *  said in red, the command itself succeeded. */
+function studioRetour(r: any): { ok?: boolean; cle?: string } | null {
+  switch (r?.studio) {
+    case "ordered": return { cle: "regie.studioOrdered" };
+    case "stopped": return { cle: "regie.studioStopped" };
+    case "no_studio": return { ok: false, cle: "regie.studioNotThere" };
+    case "busy": return { ok: false, cle: "regie.studioBusy" };
+    default: return null;
+  }
+}
+
 /** Generic runner: optimistic patch, request, reconcile. Resolves to true on success. */
-const run = (id: string, patch: Patch, send: () => Promise<any>, ok: (r: any) => { texte?: string; cle?: string }):
+const run = (id: string, patch: Patch, send: () => Promise<any>, ok: (r: any) => { ok?: boolean; texte?: string; cle?: string }):
   AppThunk<Promise<boolean>> => async (dispatch, getState) => {
   const epoch = getState().live.epoch;
   dispatch(commandStarted({ id, patch }));
@@ -93,7 +106,7 @@ export const sendCommand = (key: string, corps: Record<string, string> = {}): Ap
     const id = actionId(key, corps.valeur);
     if (getState().live.pending[id]) return false;
     const patch = optimisticPatch(key, corps, selectView(getState()));
-    return dispatch(run(id, patch, () => api.liveCommande(key, corps), (r) => (r?.message ? { texte: r.message } : {})));
+    return dispatch(run(id, patch, () => api.liveCommande(key, corps), (r) => studioRetour(r) ?? (r?.message ? { texte: r.message } : {})));
   };
 
 /** Takes a scene on air (built-in or `custom:<slug>`), with the transition currently shown. */
@@ -101,7 +114,7 @@ export const takeScene = (scene: string): AppThunk<Promise<boolean>> => async (d
   const id = actionId("scene", scene);
   if (getState().live.pending[id]) return false;
   const transition = selectView(getState())?.live.transition ?? undefined;
-  return dispatch(run(id, { live: { scene, override: true } }, () => api.regieScene(scene, transition ?? undefined), () => ({})));
+  return dispatch(run(id, { live: { scene, override: true } }, () => api.regieScene(scene, transition ?? undefined), (r) => studioRetour(r) ?? {}));
 };
 
 /** Fade or cut for the next scene changes (saved for the mosque). */

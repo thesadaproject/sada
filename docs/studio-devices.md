@@ -131,6 +131,15 @@ credential as a bearer **in addition to** the session cookie. For a device, the 
 `409 {code:"not_ordered"}` unless it is ordered `live`, and with `409 {code:"live_active"}` when another source
 holds the stream. The WHIP start/end are journaled (`studio.whip.debut|fin`, with the device name).
 
+### The control room drives the studio
+
+The web control room is the studio's remote control. With a push input, a command that puts the mosque on air
+there (`POST /live/start`, `/live/tarawih`, a scene: `/live/scene`, `/live/regie/scene`) also opens a **manual
+live on the designated device** (the same as the studio's own start, type `dars` for the dars scenes, `khutba`
+otherwise), unless the device is already ordered `live`; `POST /live/stop` and `/live/cancel` end it the way the
+studio's stop does. The answer says what the studio was told: `studio: "ordered" | "already" | "stopped" |
+"no_studio" | "busy" | "none"`. Without it, the engine would go on air with nothing to relay.
+
 ### The control room's preview (the studio's picture on demand)
 
 The web control room is the remote control of the Sada Studio. Outside a live it can ask for the studio's

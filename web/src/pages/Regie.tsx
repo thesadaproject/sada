@@ -103,71 +103,101 @@ function useDemandeRetour(actif: boolean) {
   }, [actif]);
 }
 
-/** The monitor: on air, the programme; otherwise the studio's picture on demand (or the raw input of a
- *  source the server composes itself, such as OBS or an IP camera). */
-function Moniteur({ live, monitors, studio }: {
-  live: Live; monitors: Record<string, { available: boolean; health: Health }>; studio: Studio | null;
+/** One monitor: a 16:9 picture with its title, its slates and its stream facts. */
+function Ecran({ titre, sous, which, disponible, antenne = false, actions, ardoise }: {
+  titre: string; sous: string; which: "source" | "program" | "preview"; disponible: boolean; antenne?: boolean;
+  actions?: React.ReactNode;
+  /** What to show while no picture plays (`enLigne` false). */
+  ardoise: (connexion: boolean) => React.ReactNode;
 }) {
   const { t, i18n } = useTranslation();
-  const [retour, setRetour] = useState(false);
+  const monitors = useAppSelector(selectView)?.monitors ?? {};
   const [etat, setEtat] = useState<MonitorState>("connecting");
-  const enDirect = !!live.stream_on;
-  const studioEnLigne = !!studio?.online;
-  // on air the studio streams anyway: the programme is the truth, nothing more is asked of it
-  const mode: "program" | "preview" | "source" | "none" = enDirect
-    ? "program"
-    : studioEnLigne ? "preview"
-    : monitors.source?.available ? "source" : "none";
-  const voirRetour = mode === "preview" && retour;
-  useDemandeRetour(voirRetour);
-  const which = mode === "none" ? "program" : mode;
   // Another feed: its state starts over (adjusted while rendering, not in an effect).
   const [vu, setVu] = useState(which);
   if (vu !== which) { setVu(which); setEtat("connecting"); }
-  const disponible = mode === "preview" ? voirRetour && !!monitors.preview?.available : !!monitors[which]?.available;
   const enLigne = disponible && (etat === "webrtc" || etat === "hls");
-  const titre = mode === "program" ? t("regie.program") : mode === "preview" ? t("regie.studioFeed") : t("regie.preview");
-  const sous = mode === "program" ? t("regie.programHint") : mode === "preview" ? t("regie.studioFeedHint", { name: studio?.name ?? "" }) : t("regie.previewHint");
-  const h = mode === "none" ? null : monitors[which]?.health ?? null;
-
+  const h = monitors[which]?.health ?? null;
   return (
     <figure className="m-0 min-w-0">
-      <figcaption className="mb-1.5 flex items-center justify-between gap-2">
+      <figcaption className="mb-1.5 flex min-h-8 items-center justify-between gap-2">
         <span className="flex min-w-0 items-baseline gap-2">
-          <span className={titreSection}>{titre}</span>
+          <span className={`${titreSection} shrink-0 whitespace-nowrap`}>{titre}</span>
           <span className="truncate text-[0.8rem] text-night-muted">{sous}</span>
         </span>
         <span className="flex shrink-0 items-center gap-2">
-          {mode === "program" && enLigne && (
+          {antenne && enLigne && (
             <span className="rounded bg-live px-1.5 py-0.5 text-[0.7rem] font-bold uppercase tracking-wider text-white">{t("regie.onAir")}</span>
           )}
-          {voirRetour && (
-            <Btn variante="light" className="min-h-8 px-2.5 py-1 text-[0.82rem]" onClick={() => setRetour(false)}>{t("regie.studioFeedStop")}</Btn>
-          )}
+          {actions}
         </span>
       </figcaption>
-      <div className={`relative aspect-video overflow-hidden rounded-lg bg-black ring-2 ${mode === "program" && enLigne ? "ring-live" : "ring-white/10"}`}>
+      <div className={`relative aspect-video overflow-hidden rounded-lg bg-black ring-2 ${antenne && enLigne ? "ring-live" : "ring-white/10"}`}>
         {disponible && <Video key={which} which={which} available={disponible} onState={setEtat} />}
-        {mode === "preview" && !retour && (
-          <Ardoise titre={t("regie.studioFeedOff")} texte={t("regie.studioFeedOffHint")}>
-            <Btn variante="leaf" className="mt-1 min-h-9 px-3 py-1.5 text-[0.9rem]" onClick={() => setRetour(true)}>{t("regie.studioFeedShow")}</Btn>
-          </Ardoise>
-        )}
-        {voirRetour && !enLigne && <Ardoise titre={t("regie.studioFeedWaiting")} texte={t("regie.studioFeedWaitingHint")} attente />}
-        {mode !== "preview" && !enLigne && (
-          <Ardoise
-            titre={disponible ? t("regie.connecting") : t("regie.offline")}
-            texte={mode === "none" ? t("regie.noStudioHint") : t("regie.offlineHint")}
-            attente={disponible}
-          />
-        )}
+        {!enLigne && ardoise(disponible)}
       </div>
       <p className="m-0 mt-1 flex min-h-[1.2rem] gap-3 text-[0.78rem] text-night-muted tabular-nums">
         {enLigne && <span>{etat === "webrtc" ? "WebRTC" : "HLS"}</span>}
         {enLigne && h?.online && h.kbps != null && <span>{t("regie.kbps", { n: nombre(h.kbps, i18n.language) })}</span>}
-        {enLigne && h?.online && h.readers != null && mode === "program" && <span>{t("regie.readers", { n: h.readers })}</span>}
+        {enLigne && h?.online && h.readers != null && antenne && <span>{t("regie.readers", { n: h.readers })}</span>}
       </p>
     </figure>
+  );
+}
+
+/** Left: what the Sada Studio gives. On air, the stream it publishes; off air, its picture on demand (it only
+ *  streams it while somebody watches, and nothing of it reaches the public). Without a studio, the raw input of
+ *  a source the server composes itself (OBS, IP camera). */
+function MoniteurStudio({ monitors, studio }: { monitors: Record<string, { available: boolean; health: Health }>; studio: Studio | null }) {
+  const { t } = useTranslation();
+  const [retour, setRetour] = useState(false);
+  const mode: "stream" | "preview" | "source" | "none" = studio?.publishing
+    ? "stream"
+    : studio?.online ? "preview"
+    : monitors.source?.available ? "source" : "none";
+  const voirRetour = mode === "preview" && retour;
+  useDemandeRetour(voirRetour);
+  const which = mode === "preview" ? "preview" : "source";
+  const disponible = mode === "preview" ? voirRetour && !!monitors.preview?.available : mode !== "none" && !!monitors.source?.available;
+  const nom = studio?.name ?? "";
+  return (
+    <Ecran
+      titre={mode === "source" || mode === "none" ? t("regie.preview") : t("regie.studioFeed")}
+      sous={mode === "stream" ? t("regie.studioStreamHint", { name: nom }) : mode === "preview" ? t("regie.studioFeedHint", { name: nom }) : t("regie.previewHint")}
+      which={which}
+      disponible={disponible}
+      actions={voirRetour && <Btn variante="light" className="min-h-8 px-2.5 py-1 text-[0.82rem]" onClick={() => setRetour(false)}>{t("regie.studioFeedStop")}</Btn>}
+      ardoise={(connexion) =>
+        mode === "preview" && !retour ? (
+          <Ardoise titre={t("regie.studioFeedOff")} texte={t("regie.studioFeedOffHint")}>
+            <Btn variante="leaf" className="mt-1 min-h-9 px-3 py-1.5 text-[0.9rem]" onClick={() => setRetour(true)}>{t("regie.studioFeedShow")}</Btn>
+          </Ardoise>
+        ) : mode === "preview" ? (
+          <Ardoise titre={t("regie.studioFeedWaiting")} texte={t("regie.studioFeedWaitingHint")} attente />
+        ) : (
+          <Ardoise titre={connexion ? t("regie.connecting") : t("regie.offline")}
+                   texte={mode === "none" ? t("regie.noStudioHint") : t("regie.offlineHint")} attente={connexion} />
+        )
+      }
+    />
+  );
+}
+
+/** Right: what is sent to the destinations, as the engine relays it. */
+function MoniteurAntenne({ live, monitors }: { live: Live; monitors: Record<string, { available: boolean; health: Health }> }) {
+  const { t } = useTranslation();
+  const disponible = !!monitors.program?.available;
+  return (
+    <Ecran
+      titre={t("regie.program")} sous={t("regie.programHint")} which="program" disponible={disponible} antenne
+      ardoise={(connexion) =>
+        !live.stream_on ? (
+          <Ardoise titre={t("regie.nothingSent")} texte={t("regie.nothingSentHint")} />
+        ) : (
+          <Ardoise titre={connexion ? t("regie.connecting") : t("regie.programWaiting")} texte={t("regie.programWaitingHint")} attente />
+        )
+      }
+    />
   );
 }
 
@@ -418,6 +448,9 @@ function RegieEcran() {
   const nomScene = (sc: SceneInfo) => (sc.custom ? sc.label || sc.id : t(`dashboard.choice.${sc.id}`, { defaultValue: sc.label || sc.id }));
   const genre = (sc: SceneInfo) => sc.scene_kind === "full" ? t("regie.sceneScreen") : sc.scene_kind === "banner" ? t("regie.sceneBanner") : t("regie.sceneCamera");
   const transition = live.transition === "cut" ? "cut" : "fade";
+  // On air without the studio's picture (started before the studio was online, or it was stopped there): "Start"
+  // stays, it orders the studio to publish again.
+  const studioAttend = enDirect && !!studios[0]?.online && !studios[0].publishing;
   // Off air, a scene puts the mosque on air at once (the engine starts the live): never on a single stray click.
   async function prendre(sc: SceneInfo) {
     if (!enDirect && !(await confirm({ message: t("regie.sceneStartsLive", { scene: nomScene(sc) }), action: t("dashboard.cmd.start") }))) return;
@@ -460,16 +493,18 @@ function RegieEcran() {
 
       <StudioBar studios={studios} publisher={editeur} />
 
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
-        <section className={`${panneau} py-3`}>
-          <Moniteur live={live} monitors={moniteurs} studio={studios[0] ?? null} />
-        </section>
+      {/* Monitors: what the Sada Studio gives (left), what goes on air (right). */}
+      <section className={`${panneau} grid gap-4 py-3 md:grid-cols-2`}>
+        <MoniteurStudio monitors={moniteurs} studio={studios[0] ?? null} />
+        <MoniteurAntenne live={live} monitors={moniteurs} />
+      </section>
 
+      <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_minmax(0,1fr)]">
         {/* Transport: start, pause/resume, extend, skip; stop and cancel apart, in red. */}
         <section className={`${panneau} grid content-start gap-2.5`}>
           <h2 className={titreSection}>{t("regie.transport")}</h2>
           <div className="flex flex-wrap gap-2">
-            {a("start") && !enDirect && <BusyBtn variante="leaf" className={petit} busy={enCours("start")} onClick={() => envoyer("start")}>{t("dashboard.cmd.start")}</BusyBtn>}
+            {a("start") && (!enDirect || studioAttend) && <BusyBtn variante="leaf" className={petit} busy={enCours("start")} onClick={() => envoyer("start")}>{t("dashboard.cmd.start")}</BusyBtn>}
             {a("pause") && enDirect && !enPause && <BusyBtn variante="light" className={petit} busy={enCours("pause")} onClick={() => envoyer("pause")}>{t("dashboard.cmd.pause")}</BusyBtn>}
             {a("resume") && enPause && <BusyBtn variante="leaf" className={petit} busy={enCours("resume")} onClick={() => envoyer("resume")}>{t("dashboard.cmd.resume")}</BusyBtn>}
             {enDirect && extend.map((m) => (
@@ -504,9 +539,7 @@ function RegieEcran() {
             </div>
           )}
         </section>
-      </div>
 
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
         {/* Scenes: a click puts the scene on air at once, the studio follows; "Automatic" hands back to the schedule. */}
         <section className={`${panneau} grid content-start gap-2.5`}>
           <div className="flex flex-wrap items-center justify-between gap-2">

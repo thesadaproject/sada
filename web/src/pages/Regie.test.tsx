@@ -102,6 +102,24 @@ describe("Régie (remote control of the Sada Studio)", () => {
     expect(api.regieOverlay).toHaveBeenCalledWith("banner", { visible: true, title: "Collecte", subtitle: "" });
   });
 
+  it("shows what the studio gives next to what goes on air", async () => {
+    await monter({ ...offAir, live: { ...offAir.live, state: "KHUTBA", stream_on: true },
+                   studios: [{ ...offAir.studios[0], publishing: true }] });
+    expect(screen.getByText("regie.studioFeed")).toBeTruthy();
+    expect(screen.getByText("regie.studioStreamHint")).toBeTruthy();
+    expect(screen.getByText("regie.program")).toBeTruthy();
+    expect(screen.getByText("regie.programWaiting")).toBeTruthy();
+  });
+
+  it("on air without the studio's picture, Start orders the studio again and says what happened", async () => {
+    api.liveCommande.mockResolvedValue({ ok: true, message: "ok", studio: "no_studio" });
+    await monter({ ...offAir, live: { ...offAir.live, state: "BEFORE", stream_on: true } });
+    expect(screen.getByText("regie.programWaiting")).toBeTruthy();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "dashboard.cmd.start" })); });
+    expect(api.liveCommande).toHaveBeenCalledWith("start", {});
+    expect(screen.getByRole("status").textContent).toBe("regie.studioNotThere");
+  });
+
   it("says when no studio is paired", async () => {
     await monter({ ...offAir, studios: [] });
     expect(screen.getByText(/regie.noStudio\b(?!Hint)/)).toBeTruthy();

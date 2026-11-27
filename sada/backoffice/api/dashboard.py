@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from starlette.concurrency import run_in_threadpool
 
 from ...i18n import _
-from .. import db, live, orm
+from .. import db, live, orm, studio_service
 from ..context import CtxDep, NotFound, count_clips, imam_filter, live_status
 from ..models import Audit, Khutba, User
 from .common import _ok
@@ -91,10 +91,12 @@ async def live_command(cmd: str, ctx: CtxDep):
             if v
         }
         db.audit(ctx.conn, ctx.mosque["id"], ctx.user["id"], "live.commande", ip=ctx.ip, **details)
+        # the control room is the studio's remote: on air here means the studio publishes, stop here stops it
+        studio = await run_in_threadpool(studio_service.follow_regie, ctx.conn, ctx.mosque, cmd, valeur, ctx.ip)
         # After a command, we want the real state: fresh read, no cache.
         # the orchestrator answers with the state after the command (and its `rev`): no second request then
         etat = live.remember(ctx.mosque, r) or live_status(ctx, forcer=True)
-        return _ok(r.get("message", "ok"), state=r.get("state"), live=etat, rev=etat.get("rev"))
+        return _ok(r.get("message", "ok"), state=r.get("state"), live=etat, rev=etat.get("rev"), studio=studio)
     except live.OrchestratorError as e:
         details = {k: v for k, v in {"commande": cmd, "valeur": valeur, "erreur": str(e)}.items() if v}
         db.audit(ctx.conn, ctx.mosque["id"], ctx.user["id"], "live.echec", ip=ctx.ip, **details)
