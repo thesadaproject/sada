@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.0-alpha.30](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.29...sada-v0.1.0-alpha.30) (2026-11-27)
+
+
+### Bug Fixes
+
+* **encoder:** probe the relay named in the input URL; preprod build refreshes front ends ([#131](https://github.com/thesadaproject/sada/issues/131)) ([6c25934](https://github.com/thesadaproject/sada/commit/6c259348bd46329175f7bbe91ed9a4c8705d5d0d))
+* four low defects seen in preprod (encoder start-up wait, stale message, end screen restart, settings gear) ([#130](https://github.com/thesadaproject/sada/issues/130)) ([6aaa63b](https://github.com/thesadaproject/sada/commit/6aaa63be40c6fe53bcf5f81414c5b13208291ebc))
+* **orchestrator:** a scene taken off air only changes the picture, never starts a live ([#129](https://github.com/thesadaproject/sada/issues/129)) ([3a0e958](https://github.com/thesadaproject/sada/commit/3a0e958822c3b8125baad47e744aeeb7a7e3f238))
+* **preprod:** orchestrator healthcheck probes its own API port ([#133](https://github.com/thesadaproject/sada/issues/133)) ([66a64cb](https://github.com/thesadaproject/sada/commit/66a64cb2c5d8a5c401095c3799dddc146f505cba))
+* **studio-link:** a stale live announcement must not reopen a session after a stop ([#132](https://github.com/thesadaproject/sada/issues/132)) ([e9d670f](https://github.com/thesadaproject/sada/commit/e9d670fb16a125ea6e1d257895c271557f52b078))
+* **studio:** scene never starts a live, precise preview codes, targeted preview writes ([#127](https://github.com/thesadaproject/sada/issues/127)) ([5ecd1b9](https://github.com/thesadaproject/sada/commit/5ecd1b95ed7d29271152b20f0fa928dde061220c))
+
 ## [0.1.0-alpha.29](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.28...sada-v0.1.0-alpha.29) (2026-11-27)
 
 
