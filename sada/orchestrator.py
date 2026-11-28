@@ -685,6 +685,11 @@ class Orchestrator:
                     else None
                 )
                 nxt = self._next_event(now) if m.scene in ("dars_fin", "entracte") else None
+                if m.scene == "entracte" and (wait := m.tarawih_countdown()) is not None:
+                    # the pause before a tarawih is on air: the countdown runs to the tarawih proper
+                    nxt = events_mod.EventInstance(
+                        starts=wait[0], kind="tarawih", title=wait[1].title or events_mod.KIND_LABELS["tarawih"]
+                    )
                 key = (
                     m.scene,
                     m.session,

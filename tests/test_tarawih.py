@@ -139,8 +139,8 @@ def test_appel_aux_dons_diffuse_seulement_avec_l_option():
 
     off = _machine(after_isha=False)
     d = Drv(off, ISHA_END)
-    d.run(10 * 60, voice=True)  # same appeal: not on air
-    assert off.state == State.ARMED and not off.stream_on
+    d.run(10 * 60, voice=True)  # same appeal: the live is on the waiting screen, with the microphone closed
+    assert off.state == State.INTERMISSION and off.scene == "entracte" and SCENES["entracte"].mic is False
     d.until(ISHA_END + dt.timedelta(minutes=20))
     d.run(30, voice=True)  # the tarawih proper
     assert off.state == State.TARAWIH

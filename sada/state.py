@@ -831,6 +831,14 @@ class Machine:
             self._after_end_screen(sig, reason)
         return _("live ended: {reason}", reason=reason)
 
+    def tarawih_countdown(self) -> tuple[dt.datetime, SessionRec] | None:
+        """While the interlude waits for a tarawih: when the tarawih proper starts (end of isha + `offset_min`), and its
+        record. None when the session coming is not a tarawih."""
+        r, s = self.rec, self.session
+        if r is None or s is None or r.kind != "tarawih" or r.status != "pending":
+            return None
+        return s + dt.timedelta(minutes=r.offset_min), r
+
     def end_planned(self, sig: Signals, reason: str) -> str:
         """Ends the planned session on air the way its own end does (prayer screen for a khutba, end screen
         for a dars), for an end decided outside: the studio slot is over."""
@@ -1181,19 +1189,24 @@ class Machine:
             self._go(self._next_session(sig), sig, "fin de la prière (durée prévue)")
 
     def _wait_tarawih(self, sig: Signals, s: dt.datetime) -> None:
-        """Before a tarawih night. `s` is the estimated end of isha: nothing is armed earlier, so
-        isha itself is never on air. Then, if the mosque broadcasts the time after isha
-        (announcements, appeals for donations), sustained voice starts at once; otherwise only
-        from the tarawih proper (`offset_min` later), on sustained voice."""
+        """Before a tarawih night. `s` is the estimated end of isha: nothing is on air earlier, so isha itself is
+        never broadcast. From there the live is on air, continuously: the pause until the tarawih proper
+        (`offset_min` later) is shown on the interlude screen with a countdown, and the tarawih follows in the same
+        stream. The night (its session, hence its import) only begins with the tarawih: the pause is in no session.
+        If the mosque broadcasts the time after isha (announcements, appeals for donations), sustained voice starts
+        the night at once; otherwise only from the tarawih proper, on sustained voice. A prayer at a fixed hour
+        (qiyam) has no such pause: it only listens from its hour."""
         r = self.rec
         assert r is not None
         if self._window_closed(sig):
             return
         if sig.now < s:
             return  # isha in progress: never armed, never broadcast
-        if self.state == State.IDLE:
-            self._go(State.ARMED, sig, f"isha terminée ({s:%H:%M}) : écoute des tarawih")
         start_at = s + dt.timedelta(minutes=r.offset_min)
+        if self.state in (State.IDLE, State.ARMED) and start_at > s:
+            self._go(State.INTERMISSION, sig, f"isha terminée ({s:%H:%M}) : attente des tarawih à l'antenne")
+        elif self.state == State.IDLE:
+            self._go(State.ARMED, sig, f"isha terminée ({s:%H:%M}) : écoute des tarawih")
         if self._voice_ok(sig) and (r.after_isha or sig.now >= start_at):
             why = "voix après l'isha" if sig.now < start_at else "voix (tarawih)"
             self._go(State.TARAWIH, sig, f"{why} {sig.voice_run:.0f}s")

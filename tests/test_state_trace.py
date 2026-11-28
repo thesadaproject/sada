@@ -20,6 +20,10 @@ Re-recorded a second time for the manual live (a `start` nobody planned is manua
 the end of the plan no longer end it): 50 of the 240 traces changed, every one diverging at a `start` that is far from
 a planned session, or at what followed it, and nowhere else.
 
+Re-recorded a third time for the tarawih pause on air (the live goes on air at the end of isha, on the waiting screen,
+instead of listening): 33 of the 240 traces changed, all in the tarawih plans, every one diverging at the very same
+transition (ARMED -> INTERMISSION "isha terminée") and nowhere else.
+
 To re-record both after an INTENDED change (check first where the traces diverge): `python tests/test_state_trace.py`.
 """
 
