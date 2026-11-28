@@ -157,6 +157,7 @@ class Orchestrator:
         self.machine = Machine(sessions, cfg, log=log.info, pos_fn=self.encoder.position, extras=extras)
         # The live stage is the machine and the encoder above; the setup (rehearsal) stage exists only while an
         # operator holds the setup lease (see setup_mode.py).
+        self.machine.fajr_at = self._fajr_at
         self.live_stage = setup_mode.Stage(self.machine, self.encoder)
         self.setup = setup_mode.SetupLease()
         self.rehearsal: setup_mode.Stage | None = None
@@ -507,6 +508,7 @@ class Orchestrator:
         enc.no_fallback = m.state in (State.ENDED, State.DARS_END)
         self._show(self.live_stage)
         self._follow_signal(m, enc)
+        self._watch_night_end(m)
         if m.state != self._notified_state:
             if self._notified_state is not None:
                 self.telemetry.state_changed(self._notified_state.value, m.state.value)
@@ -524,6 +526,28 @@ class Orchestrator:
             log.info(_("Stream stopped. Recordings: {files}", files=[r for r, _x in enc.recordings]))
             self._envoyer_rediffusions()
         self._save_sessions()
+
+    def _fajr_at(self, day: dt.date) -> dt.datetime | None:
+        """Fajr adhan of `day` from the day's prayer times (the ones the plan was made with), None if unknown."""
+        value = self.prayer_times.get("fajr")
+        if not value:
+            return None
+        try:
+            return dt.datetime.combine(day, parse_hhmm(str(value), day).time())
+        except ValueError:
+            return None
+
+    _tarawih_open = False  # a tarawih / qiyam session is on air (see _watch_night_end)
+
+    def _watch_night_end(self, m) -> None:
+        """A night prayer that ended by its own conditions (silence, fajr, stop) is told to the back office, which then
+        closes the Studio's slot: the slot of a night has no fixed end, only this (or the fajr, if nobody answers)."""
+        on = m.live is not None and m.live.kind == "tarawih" and m.live.status == "live"
+        if on:
+            self._tarawih_open = True
+        elif self._tarawih_open:
+            self._tarawih_open = False
+            self.studio_poll.request_end(time.time(), "fin_de_nuit")
 
     @staticmethod
     def _grace(m) -> float:
@@ -553,7 +577,8 @@ class Orchestrator:
                 _("Signal lost for {grace:g} s: {msg}", grace=lost_for, msg=m.end_lost(self.signals(), "signal perdu"))
             )
             # the studio's live is closed at the back office too, or the device would believe it is still on air
-            self.studio_poll.request_end(lost_at)
+            self.studio_poll.request_end(lost_at, "signal_perdu")
+            self._tarawih_open = False  # already told, with the right reason
 
     def _set_compositing(self, stage: setup_mode.Stage | None, mode) -> None:
         """Who composes this stage's picture (see Stage.compositing). A change redraws the stage at the next pass

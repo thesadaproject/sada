@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import math
 import threading
 import time
 from collections.abc import Callable
@@ -190,9 +191,10 @@ KHUTBA_TIMING = SessionParams(
 DARS_TIMING = SessionParams(window_after_min=90.0, max_s=7200.0, silence_stop_s=180.0, grace_s=90.0, ended_hold_s=45.0)
 # Tarawih: no end screen (the stream stops). No fixed end either: the night ends on a silence longer
 # than the pauses between sets of rak'as, with nobody at the front (see Machine._tick_tarawih);
-# max_s is only a safety cap, replaced by the mosque's own.
+# max_s: no limit (a night of 20 rak'as, a qiyam, can last hours); the mosque's own maximum, when it chose one, replaces
+# it. The night ends on a stop, on a silence, on a signal lost for good, or at the fajr adhan (see Machine.fajr_at).
 TARAWIH_TIMING = SessionParams(
-    window_after_min=60.0, max_s=10800.0, silence_stop_s=360.0, grace_s=90.0, ended_hold_s=0.0
+    window_after_min=60.0, max_s=math.inf, silence_stop_s=360.0, grace_s=90.0, ended_hold_s=0.0
 )
 
 
@@ -394,6 +396,9 @@ class Machine:
         # by default: a custom scene without an image would show a stale picture.
         self.custom_known: Callable[[str], bool] = lambda scene: False
         self.mic_muted: bool = False
+        # Fajr adhan of a calendar day (set by the orchestrator from the day's prayer times): a night prayer in
+        # progress ends there, whatever else is going on. None where it is not known.
+        self.fajr_at: Callable[[dt.date], dt.datetime | None] = lambda day: None
         # Revision of what `status()` shows: grows at every change (command, overlay, mute, automatic switch...).
         self.rev_clock: _RevClock = REV_CLOCK
         self.rev: int = self.rev_clock.next()
@@ -1112,6 +1117,11 @@ class Machine:
         timing = self.timing()
         r = self.live or self.rec
         elapsed = sig.t - self.entered_t
+        fajr = self.fajr_at(sig.now.date())
+        if fajr is not None and self.entered_now is not None and self.entered_now < fajr <= sig.now:
+            # the night prayer stops at the fajr adhan: the natural guard of a night with no maximum length
+            self._go(self._after_tarawih(sig), sig, "adhan du fajr")
+            return
         if elapsed >= timing.max_s and sig.t >= self.extend_until_t:
             self._go(self._after_tarawih(sig), sig, "durée maximale (sécurité)")
             return

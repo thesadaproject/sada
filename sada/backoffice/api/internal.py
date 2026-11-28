@@ -280,10 +280,11 @@ async def studio_live_end(request: Request, conn: ConnDep, port: int = 0):
     try:
         body = await request.json()
         lost_at = float(body["lost_at"]) if isinstance(body, dict) and body.get("lost_at") is not None else None
+        reason = str(body.get("reason") or "") if isinstance(body, dict) else ""
     except Exception:  # noqa: BLE001
-        lost_at = None
+        lost_at, reason = None, ""
     mosque = orm.first(conn, Mosque, id=mid)
-    return {"mosque_id": mid, **studio_service.end_lost(conn, mosque, lost_at)}
+    return {"mosque_id": mid, **studio_service.end_lost(conn, mosque, lost_at, reason=reason)}
 
 
 @router.get("/internal/studio-live")

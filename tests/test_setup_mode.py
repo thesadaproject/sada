@@ -201,7 +201,9 @@ def make(monkeypatch, preview="rtmp://receiver:1935/live/x-prog"):
     o.setup = setup_mode.SetupLease()
     o.rehearsal = None
     o.ended_at_back_office = []  # lost-signal ends the poller was asked to report
-    o.studio_poll = SimpleNamespace(request_end=o.ended_at_back_office.append)
+    o.studio_poll = SimpleNamespace(
+        request_end=lambda lost_at, reason="signal_perdu": o.ended_at_back_office.append(lost_at)
+    )
     return o
 
 

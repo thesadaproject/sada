@@ -175,7 +175,12 @@ def stop(conn, mosque: dict, dev: dict, ip: str | None, now: float | None = None
     return {"stopped": stopped} | answer(conn, mosque, dev, now)
 
 
-def end_lost(conn, mosque: dict, lost_at: float | None = None, now: float | None = None) -> dict:
+REASONS = ("signal_perdu", "fin_de_nuit")
+
+
+def end_lost(
+    conn, mosque: dict, lost_at: float | None = None, now: float | None = None, reason: str = "signal_perdu"
+) -> dict:
     """The orchestrator ended the live because the picture never came back (see `studio_link.SIGNAL_GRACE_S`): the
     manual live is closed and the scheduled slot running now is marked as stopped, exactly as a manual stop does, so the
     announcement says `live: false` and the device, at its next heartbeat, goes back to standby and does not restart it.
@@ -184,15 +189,16 @@ def end_lost(conn, mosque: dict, lost_at: float | None = None, now: float | None
     or repeated call. Nothing to close is not an error (the call may be repeated)."""
     now = time.time() if now is None else now
     limit = now if lost_at is None else float(lost_at)
+    reason = reason if reason in REASONS else "signal_perdu"  # the journal only gets what it knows
     ended = []
     run = orm.first(conn, StudioRun, StudioRun.ended_at.is_(None), mosque_id=mosque["id"], origin="manual")
-    if run is not None and run["started_at"] <= limit:
+    if run is not None and run["started_at"] <= limit and reason != "fin_de_nuit":  # a night ending is its slot only
         conn.execute(update(StudioRun).where(StudioRun.id == run["id"]).values(ended_at=now))
         orm.done(conn)
         ended.append("manual")
         db.audit(
             conn, mosque["id"], None, "studio.direct.manuel.fin", "appareil", run["device_id"],
-            motif="signal_perdu", titre=run["title"],
+            motif=reason, titre=run["title"],
         )  # fmt: skip
     order, slots = studio_plan.current_order(conn, mosque, now)
     slot = studio_plan.running_slot(order, slots)
@@ -201,7 +207,7 @@ def end_lost(conn, mosque: dict, lost_at: float | None = None, now: float | None
         ended.append("slot")
         db.audit(
             conn, mosque["id"], None, "studio.creneau.arret", "appareil", None,
-            motif="signal_perdu", creneau=slot.key, titre=slot.title,
+            motif=reason, creneau=slot.key, titre=slot.title,
         )  # fmt: skip
     if ended:
         claim = orm.first(conn, StudioClaim, mosque_id=mosque["id"])

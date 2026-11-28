@@ -35,7 +35,7 @@ from typing import Protocol
 from sqlalchemy import delete, select, update
 
 from .. import events as events_mod
-from .. import prayers, state, studio_link
+from .. import prayers, studio_link
 from ..i18n import _
 from . import db, events_store, orm, prayer_times, tarawih
 from .models import Device, Mosque, StudioRun, StudioSettings
@@ -51,10 +51,11 @@ LIMITS = {
 }
 KINDS = ("khutba", "dars", "conference", "tarawih")
 HORIZON_DAYS = 8
-# A tarawih night has no fixed length: without a maximum chosen by the mosque, its slot lasts as long as the engine lets
-# the night run (its safety cap), not as long as a dars. The device is ordered to stand by when the slot ends, so a slot
-# shorter than the night would cut the broadcast of a 20-rak'a night half way.
-TARAWIH_MIN = state.TARAWIH_TIMING.max_s / 60
+# A night prayer (tarawih, qiyam) has no fixed length: its slot has no fixed end either. It stays live until the
+# orchestrator says the night is over (`studio_service.end_lost`, reason `fin_de_nuit`), and at the latest until the
+# fajr adhan, when the night prayer stops. Without the day's fajr (a source that does not give the next days), the
+# slot lasts this long. A maximum length chosen by the mosque still bounds it.
+TARAWIH_FALLBACK_MIN = 10 * 60
 ONLINE_S = 90  # a device that spoke less than this ago is online (the heartbeat is every 30 s)
 # a manual live whose device is silent this long is over: the same delay as the orchestrator's grace after a signal
 # loss, which depends on the kind of the session (`studio_link.grace_s`): four missed heartbeats (HEARTBEAT_S = 30 in
@@ -194,6 +195,28 @@ class JumuaSource:
         return out
 
 
+def _night_minutes(inst, ctx: SlotContext) -> float:
+    """How long the slot of a night prayer lasts: until the fajr adhan that ends the night (the evening's night: the next
+    morning's; a qiyam after midnight: the same morning's), bounded by the mosque's own maximum if it chose one."""
+    meta = inst.tarawih or {}
+    night = meta.get("night_date")
+    fajr_day = inst.starts.date()
+    if night and inst.starts.date().isoformat() == night:
+        fajr_day += dt.timedelta(days=1)  # began in the evening: the fajr is the next morning
+    minutes = TARAWIH_FALLBACK_MIN
+    fajr = ctx.times(fajr_day)[0].get("fajr")
+    if fajr:
+        try:
+            until = dt.datetime.combine(fajr_day, events_mod.parse_hhmm(str(fajr)))
+            if until > inst.starts:
+                minutes = (until - inst.starts).total_seconds() / 60
+        except ValueError:
+            pass
+    if inst.max_min:
+        minutes = min(minutes, float(inst.max_min) + float(meta.get("offset_min") or 0))
+    return minutes
+
+
 class ProgrammeSource:
     """Dars, conferences and tarawih of the mosque's programme (the same entries the orchestrator plans)."""
 
@@ -211,8 +234,7 @@ class ProgrammeSource:
         for inst in events_mod.instances_on(events, day, ctx.times(day)[0]):
             minutes = inst.max_min or ctx.cfg["dars_min"]
             if inst.kind == "tarawih":
-                # the engine counts the night's maximum from the tarawih proper, `offset_min` after the end of isha
-                minutes = (inst.max_min or TARAWIH_MIN) + float((inst.tarawih or {}).get("offset_min") or 0)
+                minutes = _night_minutes(inst, ctx)
             start = to_utc(inst.starts, ctx.tz)
             out.append(
                 Slot(
@@ -285,15 +307,21 @@ def decide(
             },
             _next(now, slots, stopped_keys, announced, skip_running=False),
         )
+    stopped_now = None
     for s in slots:
         running = s.starts.timestamp() - margin_s <= now < s.ends.timestamp()
         if running and s.key in stopped_keys:
-            return Order(STANDBY, None, "slot_stopped", None, _next(now, slots, stopped_keys, announced, after=s))
+            stopped_now = (
+                stopped_now or s
+            )  # another slot running at the same time (a qiyam inside a night) may still go
+            continue
         if running:
             over = announced.get(s.key) or {}
             cur = s.as_dict(now) | {"source": "schedule"}
             cur["type"], cur["title"] = over.get("kind") or s.kind, over.get("title") or s.title
             return Order(LIVE, "schedule", "slot", cur, _next(now, slots, stopped_keys, announced, after=s))
+    if stopped_now is not None:
+        return Order(STANDBY, None, "slot_stopped", None, _next(now, slots, stopped_keys, announced, after=stopped_now))
     return Order(STANDBY, None, "idle", None, _next(now, slots, stopped_keys, announced))
 
 
