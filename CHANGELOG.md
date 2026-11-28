@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.34](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.33...sada-v0.1.0-alpha.34) (2026-11-28)
+
+
+### Bug Fixes
+
+* **encoder:** the studio passthrough never stays stuck on a server slate ([#140](https://github.com/thesadaproject/sada/issues/140)) ([8086ab9](https://github.com/thesadaproject/sada/commit/8086ab95654fba55d6e3ba656db1d11a28b9d745))
+
 ## [0.1.0-alpha.33](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.32...sada-v0.1.0-alpha.33) (2026-11-28)
 
 
