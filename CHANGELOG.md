@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.36](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.35...sada-v0.1.0-alpha.36) (2026-11-28)
+
+
+### Features
+
+* **live:** a live started by hand stays manual, fajr guard, tarawih night on air from isha ([#144](https://github.com/thesadaproject/sada/issues/144)) ([43c63af](https://github.com/thesadaproject/sada/commit/43c63afe9a34c946ba609a9d8e14361a1b4f5c56))
+
 ## [0.1.0-alpha.35](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.34...sada-v0.1.0-alpha.35) (2026-11-28)
 
 
