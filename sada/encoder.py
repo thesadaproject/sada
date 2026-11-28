@@ -99,7 +99,7 @@ def write_png_atomic(img: Image.Image, path: str) -> None:
 
 
 # tee muxer message when one output (destination or recording) was dropped for good
-SLAVE_FAILED = re.compile(r"Slave muxer #\d+ failed")
+SLAVE_FAILED = re.compile(r"Slave muxer #(\d+) failed")
 
 # an ffmpeg younger than this may simply not have bound its zmq ports yet: never judged stuck
 STUCK_GRACE_S = 20.0
@@ -202,6 +202,10 @@ class Encoder:
         # False for a session that is never clipped (a tarawih night): its recordings need no clean copy, which would
         # double the disk (and the work) of a night of hours. Read when a recording is opened.
         self.clean_wanted = True
+        # Set by the orchestrator's disk probe (see diskwatch.py): too little space left to open a new recording.
+        self.disk_critical = False
+        self.recording_failed = False  # the recording output of the current ffmpeg failed on its own
+        self._rec_slave: int | None = None
         # Set by the orchestrator while the live is being ended on purpose (end screen): never any reconnection screen
         # then, and one that is up is cut at once.
         self.no_fallback = False
@@ -345,7 +349,7 @@ class Encoder:
             "+global_header",
             "-f",
             "tee",
-            self._tee_targets() if rec is None else f"{self._tee_targets()}|[f=matroska]{rec}",
+            self._tee_with_recording(rec),
         ] + out_clean
 
     def fallback_cmd(self, png: str) -> list[str]:
@@ -366,6 +370,15 @@ class Encoder:
             "-c:a", "aac", "-b:a", "128k", "-ar", "48000",
             "-flags", "+global_header", "-f", "tee", self._tee_targets(),
         ]  # fmt: skip
+
+    def _tee_with_recording(self, rec: str | None) -> str:
+        """The tee string of the programme: every destination, then the recording. The recording is `onfail=ignore` like
+        the destinations: a full or failing disk must never cut the live (see `_read_errors`)."""
+        outs = [t for t in self._tee_targets().split("|") if t]
+        self._rec_slave = len(outs) if rec is not None else None  # the number ffmpeg gives that slave in its messages
+        if rec is not None:
+            outs.append(f"[f=matroska:onfail=ignore]{rec}")
+        return "|".join(outs)
 
     def _tee_targets(self) -> str:
         """One tee output per destination: a platform that drops must not interrupt the others."""
@@ -424,6 +437,10 @@ class Encoder:
 
     def _spawn(self):
         rec, clean = (None, None) if self.rehearsal else self.new_recording()
+        self.recording_failed = False
+        if self.disk_critical and not self.rehearsal:
+            rec = clean = None  # no space: the live is broadcast, nothing is recorded (see diskwatch.py)
+            self.log(_("ENCODER: disk space critical, starting ffmpeg without a recording"))
         if self.rehearsal:
             if self.failures == 0:
                 self.log(
@@ -445,7 +462,9 @@ class Encoder:
         self._opened = False
         self._dropped = False
         self._spawned_at = time.monotonic()
-        if rec is not None:
+        if rec is not None or not self.rehearsal:
+            # a launch without a recording still takes a number: the sessions on air in it point at no file, instead of
+            # at the previous recording with this launch's positions
             self.recordings.append((rec, clean))
         self.proc = subprocess.Popen(
             self.ffmpeg_cmd(rec, clean), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1,
@@ -467,7 +486,13 @@ class Encoder:
                 log_file.flush()
             except (OSError, ValueError):
                 pass  # log file closed by a relaunch: keep draining
-            if proc is self.proc and SLAVE_FAILED.search(line):
+            failed = SLAVE_FAILED.search(line) if proc is self.proc else None
+            if failed and self._rec_slave is not None and int(failed.group(1)) == self._rec_slave:
+                # the recording output failed (disk full, folder gone): the live goes on, the destinations stay up
+                if not self.recording_failed:
+                    self.recording_failed = True
+                    self.log(_("ENCODER: the recording stopped (disk?), the live stream goes on without it"))
+            elif failed:
                 self._dropped = True
 
     def _read_progress(self, proc):
@@ -579,6 +604,7 @@ class Encoder:
             self._log_file.close()
         self._log_file = open(self.run_dir / "encoder.log", "ab")
         self._dropped = False
+        self._rec_slave = None
         self._spawned_at = time.monotonic()
         self.proc = subprocess.Popen(
             self.fallback_cmd(self._fallback_png), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,

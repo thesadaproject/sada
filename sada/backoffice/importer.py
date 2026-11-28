@@ -320,13 +320,15 @@ def import_tarawih(conn, mosque: dict, run_id: str, extract_video: bool = True, 
         if not k:
             sdir.mkdir(parents=True, exist_ok=True)
             night = s.get("night")
+            name = (s.get("title") or "").strip() or "Tarawih"  # "Qiyam" for the prayer at a fixed hour
             cur = Khutba(
                 mosque_id=mosque["id"],
                 run_id=run_id,
                 session_index=idx,
-                label=f"Tarawih · {_('night {n}', n=night)}" if night else "Tarawih",
+                label=f"{name} · {_('night {n}', n=night)}" if night else name,
                 planned=s.get("planned") or "",
-                date=runs.run_date(run_id),
+                # a qiyam after midnight belongs to the night that began the evening before, not to the day it is on
+                date=s.get("night_date") or runs.run_date(run_id),
                 start_clock=s.get("start_clock"),
                 end_clock=s.get("end_clock"),
                 duration_s=(end - start) if end is not None else None,
@@ -336,7 +338,7 @@ def import_tarawih(conn, mosque: dict, run_id: str, extract_video: bool = True, 
                 start_pos=start,
                 end_pos=end,
                 kind="tarawih",
-                title="Tarawih",
+                title=name,
                 series=s.get("mode") or "audio",
                 session_no=night,
                 chapters=json.dumps(chapters, ensure_ascii=False),

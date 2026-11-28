@@ -22,6 +22,7 @@ from PIL import Image
 
 from . import (
     destinations,
+    diskwatch,
     gabarit_antenne,
     mawaqit,
     notify,
@@ -99,6 +100,8 @@ def wait_for_backoffice(url: str, limit_s: float, probe=None, sleep=time.sleep, 
 class Orchestrator:
     #: Who composes the rehearsal stage: said by whoever takes the setup lease (see set_setup).
     _setup_compositing = "server"
+    #: Probe of the recording folder's free space (see diskwatch.py); None where the orchestrator is not fully built.
+    diskwatch: diskwatch.DiskWatch | None = None
     #: Scene picked off air from the control room: only the picture shown (Studio, preview), never a live.
     offair_scene: str | None = None
 
@@ -154,6 +157,7 @@ class Orchestrator:
         self.machine = Machine(sessions, cfg, log=log.info, pos_fn=self.encoder.position, extras=extras)
         # The live stage is the machine and the encoder above; the setup (rehearsal) stage exists only while an
         # operator holds the setup lease (see setup_mode.py).
+        self.machine.fajr_at = self._fajr_at
         self.live_stage = setup_mode.Stage(self.machine, self.encoder)
         self.setup = setup_mode.SetupLease()
         self.rehearsal: setup_mode.Stage | None = None
@@ -162,6 +166,7 @@ class Orchestrator:
         self.studio_poll = studio_link.Poller(cfg.backoffice_url if not cfg.sim_start else "", cfg.api_port)
         self.notifier = notify.from_config(cfg, log=log.info)
         self._notified_state = None
+        self.diskwatch = diskwatch.DiskWatch(cfg, self.notifier.send, log=log.warning)
         if self.notifier.enabled:
             log.info(_("Notifications to the imam: {destination}", destination=self.notifier.destination))
         else:
@@ -495,11 +500,15 @@ class Orchestrator:
     def _sync(self):
         """Aligns the live stage on its machine, then the notifications and the stream start/stop."""
         m, enc = self.machine, self.encoder
+        if self.diskwatch is not None:
+            self.diskwatch.poll()
+            enc.disk_critical = self.diskwatch.critical  # read when a recording is opened
         enc.hold = m.state == State.ENDED  # end screen: the stream is about to stop, never relaunch it
         # a live being ended on purpose (end screen) never gets the reconnection screen, and one that is up is cut
         enc.no_fallback = m.state in (State.ENDED, State.DARS_END)
         self._show(self.live_stage)
         self._follow_signal(m, enc)
+        self._watch_night_end(m)
         if m.state != self._notified_state:
             if self._notified_state is not None:
                 self.telemetry.state_changed(self._notified_state.value, m.state.value)
@@ -518,6 +527,34 @@ class Orchestrator:
             self._envoyer_rediffusions()
         self._save_sessions()
 
+    def _fajr_at(self, day: dt.date) -> dt.datetime | None:
+        """Fajr adhan of `day` from the day's prayer times (the ones the plan was made with), None if unknown."""
+        value = self.prayer_times.get("fajr")
+        if not value:
+            return None
+        try:
+            return dt.datetime.combine(day, parse_hhmm(str(value), day).time())
+        except ValueError:
+            return None
+
+    _tarawih_open = False  # a tarawih / qiyam session is on air (see _watch_night_end)
+
+    def _watch_night_end(self, m) -> None:
+        """A night prayer that ended by its own conditions (silence, fajr, stop) is told to the back office, which then
+        closes the Studio's slot: the slot of a night has no fixed end, only this (or the fajr, if nobody answers)."""
+        on = m.live is not None and m.live.kind == "tarawih" and m.live.status == "live"
+        if on:
+            self._tarawih_open = True
+        elif self._tarawih_open:
+            self._tarawih_open = False
+            self.studio_poll.request_end(time.time(), "fin_de_nuit")
+
+    @staticmethod
+    def _grace(m) -> float:
+        """How long the live on air may stay on the reconnection screen: depends on what is on air (`grace_s`)."""
+        playing = m.playing
+        return studio_link.grace_s(playing.kind if playing is not None else None)
+
     def _follow_signal(self, m, enc) -> None:
         """The input of the live is gone (the encoder sends the reconnection screen): a state change for the readers
         (new `rev`), and the live ends like a normal stop once the grace is over, unless the input came back."""
@@ -529,18 +566,19 @@ class Orchestrator:
                 log.warning(
                     _(
                         "Signal lost: the reconnection screen is on air, the live ends in {grace:g} s unless it comes back",
-                        grace=studio_link.SIGNAL_GRACE_S,
+                        grace=self._grace(m),
                     )
                 )
             else:
                 log.info(_("Signal back: the live resumes"))
-        if lost_for is not None and lost_for >= studio_link.SIGNAL_GRACE_S and m.stream_on:
+        if lost_for is not None and lost_for >= self._grace(m) and m.stream_on:
             lost_at = enc.lost_wall
             log.info(
                 _("Signal lost for {grace:g} s: {msg}", grace=lost_for, msg=m.end_lost(self.signals(), "signal perdu"))
             )
             # the studio's live is closed at the back office too, or the device would believe it is still on air
-            self.studio_poll.request_end(lost_at)
+            self.studio_poll.request_end(lost_at, "signal_perdu")
+            self._tarawih_open = False  # already told, with the right reason
 
     def _set_compositing(self, stage: setup_mode.Stage | None, mode) -> None:
         """Who composes this stage's picture (see Stage.compositing). A change redraws the stage at the next pass
@@ -729,6 +767,9 @@ class Orchestrator:
             encoder_alive=self.encoder.alive(),
             encoder_restarts=self.encoder.restarts,
             ingest_connected=self.vad.connected,
+            recording_free_bytes=float(self.diskwatch.free)
+            if self.diskwatch is not None and self.diskwatch.free is not None
+            else -1.0,
         )
 
     # --- setup mode (rehearsal stage) ---------------------------------------
@@ -1005,13 +1046,14 @@ class Orchestrator:
         """Where the grace stands while the reconnection screen is on air: when the signal was lost (epoch s), when the
         live ends if it does not come back, and what remains (the readers count down from it, free of any clock skew)."""
         lost_for = self.encoder.signal_lost_for() if self._signal_lost else None
+        grace = self._grace(self.machine)
         lost = self.encoder.lost_wall if lost_for is not None else None
         if lost_for is None or lost is None:
             return {"signal_lost_since": None, "fallback_until": None, "fallback_remaining_s": None}
         return {
             "signal_lost_since": round(lost, 1),
-            "fallback_until": round(lost + studio_link.SIGNAL_GRACE_S, 1),
-            "fallback_remaining_s": round(max(0.0, studio_link.SIGNAL_GRACE_S - lost_for), 1),
+            "fallback_until": round(lost + grace, 1),
+            "fallback_remaining_s": round(max(0.0, grace - lost_for), 1),
         }
 
     def status(self) -> dict:
@@ -1036,7 +1078,9 @@ class Orchestrator:
                         "recording": self.encoder.current_recording(),
                         "pos_s": round(pos, 1),
                         "fallback": bool(self.encoder.fallback),
+                        "recording_failed": bool(self.encoder.recording_failed),
                     },
+                    "disk": self.diskwatch.status() if self.diskwatch is not None else None,
                     **self._signal_status(),
                     "setup": self.setup_status(),
                     "compositing": self.live_stage.compositing,

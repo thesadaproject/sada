@@ -676,6 +676,19 @@ preview_requests = sa.Table(
     sa.Column("watched_until", sa.Float, nullable=False, server_default="0"),
 )
 
+# What the Tarawih settings gained after the first schema: an optional maximum length chosen by the mosque (NULL: no
+# limit, the night ends on its natural conditions), and a qiyam / tahajjud at a fixed hour on its own period of nights
+# (empty: the tarawih's). Kept apart from `tarawih`, whose `max_min` (default 180) is no longer read.
+tarawih_options = sa.Table(
+    "tarawih_options",
+    metadata,
+    sa.Column("mosque_id", sa.Integer, sa.ForeignKey("mosques.id"), primary_key=True),
+    sa.Column("cap_min", sa.Integer),
+    sa.Column("qiyam_time", sa.Text, nullable=False, server_default=_d("''")),
+    sa.Column("qiyam_start", sa.Text, nullable=False, server_default=_d("''")),
+    sa.Column("qiyam_end", sa.Text, nullable=False, server_default=_d("''")),
+)
+
 # Problems of the studio, as the server sees them from the heartbeat: one row per incident, open until
 # the cause is gone. `open_key` (unique while open, NULL once resolved) keeps a problem from being
 # opened twice, even by two replicas; the mail columns drive the anti-spam (one mail per incident,
@@ -873,6 +886,10 @@ class SetupLease(Base):
 
 class PreviewRequest(Base):
     __table__ = preview_requests
+
+
+class TarawihOptions(Base):
+    __table__ = tarawih_options
 
 
 class StudioIncident(Base):

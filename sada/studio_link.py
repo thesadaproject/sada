@@ -35,6 +35,15 @@ POLL_S = 5.0
 #: ends as a normal stop. One constant for the whole product: the orchestrator's grace after a signal loss, and the
 #: back office's silence delay for a manual live whose device no longer answers (`studio_plan.MANUAL_SILENCE_S`).
 SIGNAL_GRACE_S = 120.0
+#: A night prayer (tarawih, qiyam) is long and recited once: a network that falls for a few minutes must not end it.
+TARAWIH_GRACE_S = 600.0
+
+
+def grace_s(kind: str | None) -> float:
+    """The grace of a session of this kind: the one place that decides it (orchestrator, back office)."""
+    return TARAWIH_GRACE_S if kind == "tarawih" else SIGNAL_GRACE_S
+
+
 TYPES = ("khutba", "dars", "conference")
 PUBLISHERS = ("device", "obs", "regie", "unknown")
 
@@ -111,7 +120,11 @@ def _http_post(url: str, token: str, body: dict) -> dict:  # pragma: no cover (n
 
 
 def end_live(
-    backoffice_url: str, api_port: int, lost_at: float | None, poster: Callable[[str, str, dict], dict] | None = None
+    backoffice_url: str,
+    api_port: int,
+    lost_at: float | None,
+    poster: Callable[[str, str, dict], dict] | None = None,
+    reason: str = "signal_perdu",
 ) -> bool:
     """Tells the back office the live ended because its picture never came back, so it closes the studio's manual live
     and stops the running slot (the announcement then reads `live: false` and the device goes back to standby).
@@ -122,7 +135,7 @@ def end_live(
 
     url = backoffice_url.rstrip("/") + "/api/v1/internal/studio-live/end?" + urlencode({"port": api_port or 0})
     try:
-        (poster or _http_post)(url, token(), {"lost_at": lost_at})
+        (poster or _http_post)(url, token(), {"lost_at": lost_at, "reason": reason})
         return True
     except Exception as e:  # noqa: BLE001 — never a reason to touch the orchestrator
         log.debug("studio-live/end unreachable: %s", e)
@@ -222,6 +235,7 @@ class Poller:
         # Set when the orchestrator ended the live after a signal loss (epoch s of the loss): the back office is told,
         # at each look, until it took note or its announcement no longer says `live` (see `_look`).
         self.end_pending: float | None = None
+        self.end_reason = "signal_perdu"  # why: "signal_perdu" (grace over) or "fin_de_nuit" (a night ended normally)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -238,11 +252,12 @@ class Poller:
         """The last answer (None before the first one, or while the back office is silent)."""
         return self.last
 
-    def request_end(self, lost_at: float | None) -> None:
+    def request_end(self, lost_at: float | None, reason: str = "signal_perdu") -> None:
         """The live was ended because its signal was lost: the back office is told from the polling thread, never
         from the engine's loop, and again at each look while it has not answered and still announces a live."""
         if self.url:
             self.end_pending = lost_at if lost_at is not None else time.time()
+            self.end_reason = reason
 
     def _look(self) -> Announcement | None:
         ann = fetch(self.url, self.port, self.getter)
@@ -250,7 +265,7 @@ class Poller:
         if lost_at is not None:
             if ann is not None and not ann.live:
                 self.end_pending = None  # already over there (stopped by hand meanwhile, silence): nothing to tell
-            elif end_live(self.url, self.port, lost_at, self.poster):
+            elif end_live(self.url, self.port, lost_at, self.poster, self.end_reason):
                 self.end_pending = None
                 log.info(_("Studio live closed at the back office (signal lost)"))
                 ann = fetch(self.url, self.port, self.getter)

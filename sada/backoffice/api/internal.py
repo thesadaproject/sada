@@ -143,8 +143,8 @@ def mosque_events(request: Request, conn: ConnDep, port: int = 0):
     mid = _caller(request, conn, port)
     if isinstance(mid, JSONResponse):
         return mid
-    nightly = tarawih.event(conn, mid)  # built from the Tarawih settings, never kept in the programme
-    return {"mosque_id": mid, "events": events_store.read(conn, mid) + ([nightly] if nightly else [])}
+    nightly = tarawih.events(conn, mid)  # built from the Tarawih settings, never kept in the programme
+    return {"mosque_id": mid, "events": events_store.read(conn, mid) + nightly}
 
 
 @router.get("/internal/times")
@@ -280,10 +280,11 @@ async def studio_live_end(request: Request, conn: ConnDep, port: int = 0):
     try:
         body = await request.json()
         lost_at = float(body["lost_at"]) if isinstance(body, dict) and body.get("lost_at") is not None else None
+        reason = str(body.get("reason") or "") if isinstance(body, dict) else ""
     except Exception:  # noqa: BLE001
-        lost_at = None
+        lost_at, reason = None, ""
     mosque = orm.first(conn, Mosque, id=mid)
-    return {"mosque_id": mid, **studio_service.end_lost(conn, mosque, lost_at)}
+    return {"mosque_id": mid, **studio_service.end_lost(conn, mosque, lost_at, reason=reason)}
 
 
 @router.get("/internal/studio-live")

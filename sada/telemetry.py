@@ -130,6 +130,7 @@ class OrchestratorSnapshot:
     encoder_alive: bool
     encoder_restarts: int
     ingest_connected: bool  # the audio probe on the video input is connected
+    recording_free_bytes: float = -1.0  # free space of the recording folder, -1 when unknown
 
 
 class DisabledTelemetry:
@@ -229,6 +230,7 @@ class Telemetry(DisabledTelemetry):
         gauge("sada.stream.live.duration", "Seconds since the stream started", lambda s: s.stream_live_s, "s")
         gauge("sada.encoder.up", "1 while the encoder process is alive", lambda s: int(s.encoder_alive))
         gauge("sada.encoder.restarts", "Encoder restarts since the orchestrator started", lambda s: s.encoder_restarts)
+        gauge("sada.recording.disk.free", "Free bytes in the recording folder", lambda s: s.recording_free_bytes, "By")
         gauge("sada.ingest.connected", "1 while the video input is readable", lambda s: int(s.ingest_connected))
 
     def instrument_app(self, app) -> None:

@@ -13,7 +13,7 @@ FORM = {"mode": "audio", "start": "2027-02-08", "end": "2027-03-09", "offset_min
 
 def test_valeurs_par_defaut_en_son_seul(env):
     d = client(env, "admin").get("/api/v1/settings").json()["tarawih"]
-    assert d["mode"] == "audio" and d["start"] == "" and d["offset_min"] == 20 and d["max_min"] == 180
+    assert d["mode"] == "audio" and d["start"] == "" and d["offset_min"] == 20 and d["max_min"] is None  # no limit
     assert d["after_isha"] is False and d["silence_end_min"] == 6 and d["reciters"] == []
     assert tarawih.event(env["conn"], env["mid"]) is None  # no period: nothing planned
 
@@ -93,3 +93,78 @@ def test_video_sans_confirmation_en_base_reste_en_son_seul(env):
         end_date="2027-03-09",
     )
     assert tarawih.event(env["conn"], env["mid"])["mode"] == "audio"
+
+
+def test_sans_maximum_la_nuit_n_a_pas_de_limite_et_un_maximum_choisi_est_garde(env):
+    c = client(env, "admin")
+    assert c.ecrire("/settings/tarawih", {**FORM, "max_min": ""}, methode="PUT").status_code == 200
+    raw = tarawih.event(env["conn"], env["mid"])
+    assert "max_min" not in raw  # nothing imposed: the night ends on its own conditions
+    assert c.get("/api/v1/settings").json()["tarawih"]["max_min"] is None
+    assert c.ecrire("/settings/tarawih", {**FORM, "max_min": "150"}, methode="PUT").status_code == 200
+    assert tarawih.event(env["conn"], env["mid"])["max_min"] == 150  # chosen by the mosque: kept
+    assert c.get("/api/v1/settings").json()["tarawih"]["max_min"] == 150
+
+
+QIYAM = {"qiyam_time": "02:30", "qiyam_start": "2027-03-01", "qiyam_end": "2027-03-09"}
+
+
+def test_un_qiyam_a_heure_fixe_est_planifie_apres_minuit_sur_la_nuit_de_la_veille(env):
+    import datetime as dt
+
+    from sada import events
+
+    c = client(env, "admin")
+    r = c.ecrire("/settings/tarawih", {**FORM, **QIYAM, "reciters": ["Imam A"]}, methode="PUT")
+    assert r.status_code == 200, r.text
+    assert r.json()["tarawih"]["qiyam_time"] == "02:30" and r.json()["tarawih"]["qiyam_start"] == "2027-03-01"
+    raws = tarawih.events(env["conn"], env["mid"])
+    assert [e["uid"] for e in raws] == ["tarawih", "qiyam"]
+    q = events.parse(raws[1])
+    assert q.fixed is not None and q.kind == "tarawih" and q.title == "Qiyam"
+    day = dt.date(2027, 3, 2)  # 02:30 on the 2nd is the end of the night of the 1st
+    (i,) = events.instances_on([q], day, {})
+    assert i.starts == dt.datetime(2027, 3, 2, 2, 30)
+    assert i.tarawih["night_date"] == "2027-03-01" and i.tarawih["night"] == 22  # numbered like the tarawih
+    assert events.instances_on([q], dt.date(2027, 3, 1), {}) == []  # nothing at 02:30 on the 1st: its night is 02-28
+    assert events.instances_on([q], dt.date(2027, 3, 10), {})[0].tarawih["night_date"] == "2027-03-09"
+    assert events.instances_on([q], dt.date(2027, 3, 11), {}) == []  # past the last night
+
+
+def test_le_qiyam_prend_la_periode_du_tarawih_sans_dates_propres(env):
+    c = client(env, "admin")
+    r = c.ecrire("/settings/tarawih", {**FORM, "qiyam_time": "03:00"}, methode="PUT")
+    assert r.status_code == 200 and r.json()["tarawih"]["qiyam_start"] == "2027-02-08"
+    assert r.json()["tarawih"]["qiyam_end"] == "2027-03-09"
+
+
+def test_une_heure_de_qiyam_sans_aucune_nuit_est_refusee(env):
+    c = client(env, "admin")
+    r = c.ecrire("/settings/tarawih", {"mode": "audio", "qiyam_time": "03:00"}, methode="PUT")
+    assert r.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [{"qiyam_time": "25:00"}, {"qiyam_time": "2h30"}, {"qiyam_end": ""}, {"qiyam_end": "2027-02-01"}],
+)
+def test_un_qiyam_invalide_est_refuse(env, patch):
+    r = client(env, "admin").ecrire("/settings/tarawih", {**FORM, **QIYAM, **patch}, methode="PUT")
+    assert r.status_code == 422
+
+
+def test_mode_off_ne_planifie_pas_le_qiyam_non_plus(env):
+    c = client(env, "admin")
+    c.ecrire("/settings/tarawih", {**FORM, **QIYAM}, methode="PUT")
+    c.ecrire("/settings/tarawih", {**FORM, **QIYAM, "mode": "off"}, methode="PUT")
+    assert tarawih.events(env["conn"], env["mid"]) == []
+    c.ecrire("/settings/tarawih", {**FORM, "mode": "audio"}, methode="PUT")  # the qiyam hour is dropped with the form
+    assert [e["uid"] for e in tarawih.events(env["conn"], env["mid"])] == ["tarawih"]
+
+
+def test_un_qiyam_peut_etre_une_seule_nuit(env):
+    c = client(env, "admin")
+    one = {"qiyam_time": "01:30", "qiyam_start": "2027-03-05", "qiyam_end": "2027-03-05"}
+    assert c.ecrire("/settings/tarawih", {**FORM, **one}, methode="PUT").status_code == 200
+    q = tarawih.qiyam_event(env["conn"], env["mid"])
+    assert q["period"] == {"from": "2027-03-05", "until": "2027-03-05"}

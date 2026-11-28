@@ -146,7 +146,7 @@ def test_the_poller_tells_the_back_office_once_then_sees_live_false(poller):
     assert p._look().live is True and back.told == []  # nothing to tell while nothing ended
     p.request_end(123.0)
     ann = p._look()
-    assert back.told == [{"lost_at": 123.0}] and ann.live is False and p.end_pending is None
+    assert back.told == [{"lost_at": 123.0, "reason": "signal_perdu"}] and ann.live is False and p.end_pending is None
     p._look()
     assert len(back.told) == 1  # not repeated
 
@@ -157,7 +157,9 @@ def test_a_failed_call_is_retried_at_the_next_look_while_the_announcement_says_l
     back.down = True
     assert p._look() is None and p.end_pending == 5.0  # back office unreachable: nothing lost, nothing raised
     back.down = False
-    assert p._look().live is False and back.told == [{"lost_at": 5.0}] and p.end_pending is None
+    assert (
+        p._look().live is False and back.told == [{"lost_at": 5.0, "reason": "signal_perdu"}] and p.end_pending is None
+    )
 
 
 def test_the_end_is_dropped_once_the_announcement_no_longer_says_live(poller):

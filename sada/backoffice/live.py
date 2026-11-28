@@ -339,6 +339,9 @@ def summarize(st: dict) -> dict:
         "compositing": "studio" if st.get("compositing") == "studio" else "server",
         "playing_event": st.get("playing_event") if isinstance(st.get("playing_event"), dict) else None,
         # signal lost: the reconnection screen is on air until `fallback_until` (epoch s), then the live ends by itself
+        # free space of the orchestrator's recording folder: {level: ok|low|critical, free_gb, low_gb, critical_gb}
+        "disk": st.get("disk") if isinstance(st.get("disk"), dict) else None,
+        "recording_failed": bool((st.get("encoder") or {}).get("recording_failed")),
         "signal_lost_since": _number(st.get("signal_lost_since")),
         "fallback_until": _number(st.get("fallback_until")),
         "fallback_remaining_s": _number(st.get("fallback_remaining_s")),

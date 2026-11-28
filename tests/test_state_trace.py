@@ -39,7 +39,7 @@ NEW_STATUS_KEYS = ("overlays", "transition", "mic_muted")  # added to Machine.st
 # added after both goldens: `rev` is a revision drawn from the wall clock, `playing_event` a derived view
 LATER_STATUS_KEYS = ("rev", "playing_event")
 # keys of each session record added after both goldens (the range of recordings a session spans)
-LATER_SESSION_KEYS = ("end_recording", "end_file_pos")
+LATER_SESSION_KEYS = ("end_recording", "end_file_pos", "night_date")
 PLANS = {
     "khutba2": [("12:30", {}), ("13:30", {})],
     "dars": [("12:30", {"kind": "dars", "title": "T"}), ("13:30", {"kind": "conference"})],

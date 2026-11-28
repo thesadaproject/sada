@@ -118,7 +118,7 @@ class FakeEncoder:
         self.overlay = None
         self.started = self.stopped = 0
         self.restarts = 0
-        self.hold = self.no_fallback = self.fallback = False
+        self.hold = self.no_fallback = self.fallback = self.recording_failed = self.disk_critical = False
         self.lost_wall = None  # epoch s of the signal loss, set by the tests that need one
         self.lost_for: float | None = None  # seconds since it, None while the programme has its input
 
@@ -201,7 +201,9 @@ def make(monkeypatch, preview="rtmp://receiver:1935/live/x-prog"):
     o.setup = setup_mode.SetupLease()
     o.rehearsal = None
     o.ended_at_back_office = []  # lost-signal ends the poller was asked to report
-    o.studio_poll = SimpleNamespace(request_end=o.ended_at_back_office.append)
+    o.studio_poll = SimpleNamespace(
+        request_end=lambda lost_at, reason="signal_perdu": o.ended_at_back_office.append(lost_at)
+    )
     return o
 
 

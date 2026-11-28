@@ -59,7 +59,9 @@ def test_encoder_diffuse_vers_plusieurs_destinations(tmp_path):
     tee = cmd[cmd.index("tee") + 1]
     assert tee.count("[f=flv:onfail=ignore]") == 2
     assert "facebook.com:443/rtmp/CLE-FB" in tee and "youtube.com/live2/CLE-YT" in tee
-    assert tee.split("|")[-1].startswith("[f=matroska]")  # the recording stays in the tee, after the streams
+    assert tee.split("|")[-1].startswith(
+        "[f=matroska:onfail=ignore]"
+    )  # the recording stays in the tee, after the streams, and may fail alone
 
 
 def test_encoder_urls_lues_dans_l_environnement(tmp_path, monkeypatch):
