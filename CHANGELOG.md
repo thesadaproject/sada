@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.35](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.34...sada-v0.1.0-alpha.35) (2026-11-28)
+
+
+### Bug Fixes
+
+* **regie:** a scene picked off air reaches the studio's preview ([#142](https://github.com/thesadaproject/sada/issues/142)) ([4e6088a](https://github.com/thesadaproject/sada/commit/4e6088a7ba3bc58584ccf717487803ca7abf213e))
+
 ## [0.1.0-alpha.34](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.33...sada-v0.1.0-alpha.34) (2026-11-28)
 
 
