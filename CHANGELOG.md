@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.33](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.32...sada-v0.1.0-alpha.33) (2026-11-28)
+
+
+### Features
+
+* **tarawih:** Ramadan-ready nights: qiyam at a fixed hour, no time limit, disk and reconnection safeguards ([#138](https://github.com/thesadaproject/sada/issues/138)) ([81a8d4e](https://github.com/thesadaproject/sada/commit/81a8d4e0740fd32e059edc148850dea98abb5129))
+
 ## [0.1.0-alpha.32](https://github.com/thesadaproject/sada/compare/sada-v0.1.0-alpha.31...sada-v0.1.0-alpha.32) (2026-11-27)
 
 
