@@ -5,7 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (k: string, o?: { time?: string }) => (o?.time ? `${k} ${o.time}` : k), i18n: { language: "fr" } }),
+  useTranslation: () => ({ t: (k: string, o?: { time?: string; free?: string }) => (o?.time ? `${k} ${o.time}` : o?.free ? `${k} ${o.free}` : k), i18n: { language: "fr" } }),
 }));
 const api = vi.hoisted(() => ({
   regie: vi.fn(), regieScene: vi.fn(), regiePreview: vi.fn(), regieOverlay: vi.fn(), regieTransition: vi.fn(),
@@ -82,6 +82,40 @@ describe("Régie (remote control of the Sada Studio)", () => {
     const live = { ...offAir.live, state: "TARAWIH", scene: "tarawih", stream_on: true, fallback_remaining_s: 600, fallback_until: 1, signal_lost_since: 0 };
     await monter({ ...offAir, live });
     expect(screen.getByRole("alert").textContent).toContain("regie.signalLostCountdown 10:00");
+  });
+
+  it("a live started by hand says so, and that only Stop ends it", async () => {
+    const live = { ...offAir.live, state: "BEFORE", scene: "avant", stream_on: true, override: true, manual_live: true };
+    await monter({ ...offAir, live });
+    expect(screen.getByText("regie.manualLive")).toBeTruthy();
+    expect(screen.getByText("regie.manualLiveHintOverride")).toBeTruthy();
+    cleanup();
+    await monter({ ...offAir, live: { ...live, override: false } });
+    expect(screen.getByText("regie.manualLiveHintAuto")).toBeTruthy();
+    cleanup();
+    await monter({ ...offAir, live: { ...live, manual_live: false, override: true } });  // a planned session in override
+    expect(screen.getByText("regie.manualHint")).toBeTruthy();
+  });
+
+  it("disk: a warning when it runs low, a critical one that says the recording stops and the broadcast goes on", async () => {
+    const live = { ...offAir.live, state: "KHUTBA", stream_on: true };
+    await monter({ ...offAir, live: { ...live, disk: { level: "low", free_gb: 9.4, low_gb: 14.2, critical_gb: 2.4 } } });
+    expect(screen.getByRole("alert").getAttribute("data-level")).toBe("low");
+    expect(screen.getByRole("alert").textContent).toContain("regie.diskLow");
+    expect(screen.getByRole("alert").textContent).toContain("regie.diskLowHint");
+    cleanup();
+    await monter({ ...offAir, live: { ...live, disk: { level: "critical", free_gb: 1.2, low_gb: 14.2, critical_gb: 2.4 } } });
+    expect(screen.getByRole("alert").getAttribute("data-level")).toBe("critical");
+    expect(screen.getByRole("alert").textContent).toContain("regie.diskCriticalHint");
+  });
+
+  it("disk: nothing when it is fine, when the server did not give it (null) or when it is absent", async () => {
+    const live = { ...offAir.live, state: "KHUTBA", stream_on: true };
+    for (const disk of [{ level: "ok", free_gb: 80, low_gb: 14.2, critical_gb: 2.4 }, null, undefined]) {
+      await monter({ ...offAir, live: { ...live, disk } });
+      expect(screen.queryByRole("alert")).toBeNull();
+      cleanup();
+    }
   });
 
   it("no banner while the live has its signal, nor off air", async () => {

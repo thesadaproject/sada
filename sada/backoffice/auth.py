@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import secrets
 import threading
 import time
@@ -13,6 +12,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from sqlalchemy import delete, func, or_, select, update
 
+from .. import mode
 from ..i18n import _
 from . import db
 from .models import AuthSession, Membership, Mosque, User
@@ -150,7 +150,7 @@ def _dummy_hash() -> str:
 
 def hosted() -> bool:
     """Hosted mode (SADA_MODE=hosted): signing in never opens a mosque by itself."""
-    return os.environ.get("SADA_MODE", "").strip().lower() == "hosted"
+    return mode.hosted()
 
 
 def mosques_of(conn, user: dict) -> list[dict]:

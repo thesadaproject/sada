@@ -107,6 +107,7 @@ services:
     # the preprod mosque's token is issued by `preprod.sh seed` and kept in deploy/preprod/.env (git-ignored)
     environment:
       TZ: Europe/Paris
+      SADA_MODE: hosted
       SADA_BACKOFFICE_URL: http://backoffice:8090
       SADA_PREVIEW_URL: rtmp://receiver:1935/live/preprod-prog
       SADA_FPS: "15"

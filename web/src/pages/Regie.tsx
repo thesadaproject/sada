@@ -250,7 +250,7 @@ function LiveFacts({ live, lu }: { live: Live; lu: number }) {
         [t("regie.clock"), maintenant != null ? heureDuJour(maintenant) : "—"],
         [t("regie.onAirFor"), duree],
         [t("regie.next"), live.next_session ?? "—"],
-        [t("regie.mode"), live.override ? t("regie.manual") : t("regie.auto")],
+        [t("regie.mode"), live.manual_live ? t("regie.manualLive") : live.override ? t("regie.manual") : t("regie.auto")],
       ].map(([k, v]) => (
         <div key={k} className="flex items-baseline gap-1.5">
           <dt className="text-night-muted">{k}</dt>
@@ -277,6 +277,27 @@ function SignalBanner({ live, lu }: { live: Live; lu: number }) {
         <span aria-hidden="true" className="font-semibold text-[#e2c27a] tabular-nums">{t("regie.signalLostCountdown", { time: hms(Math.ceil(restant)) })}</span>
       </p>
       <p className="m-0 text-[0.88rem] text-night-muted">{t("regie.signalLostHint")}</p>
+    </section>
+  );
+}
+
+/** The recording folder is running out of room (warning), or out (critical): the local recording stops, the live goes on.
+ *  Only shown when the server gave the state: it gives it to the operator (hosted) or the mosque's administrators. */
+function DiskBanner({ live }: { live: Live }) {
+  const { t } = useTranslation();
+  const d = live.disk;
+  if (!d || d.level === "ok") return null;
+  const critique = d.level === "critical";
+  const libre = d.free_gb == null ? "?" : String(d.free_gb);
+  return (
+    <section role="alert" data-level={d.level}
+      className={`flex flex-wrap items-center gap-x-4 gap-y-1 rounded-[10px] border px-4 py-3 text-night-ink ${
+        critique ? "border-[#ff9b94]/60 bg-[#ff9b94]/10" : "border-[#e2c27a]/50 bg-[#e2c27a]/10"}`}>
+      <p className="m-0 flex items-center gap-2.5 text-[1.05rem] font-bold text-white">
+        <span className={`inline-block size-2.5 shrink-0 rounded-full ${critique ? "bg-[#ff9b94]" : "bg-[#e2c27a]"}`} />
+        {critique ? t("regie.diskCritical", { free: libre }) : t("regie.diskLow", { free: libre })}
+      </p>
+      <p className="m-0 text-[0.88rem] text-night-muted">{critique ? t("regie.diskCriticalHint") : t("regie.diskLowHint")}</p>
     </section>
   );
 }
@@ -516,6 +537,7 @@ function RegieEcran() {
       </section>
 
       {!horsService && <SignalBanner live={live} lu={lu} />}
+      {!horsService && <DiskBanner live={live} />}
 
       <StudioBar studios={studios} publisher={editeur} />
 
@@ -605,7 +627,7 @@ function RegieEcran() {
                        disabled={!live.override && !enCours("auto")} onClick={() => envoyer("auto")}>
                 {live.override ? t("regie.autoResume") : t("regie.autoOn")}
               </BusyBtn>
-              <span className="text-[0.8rem] text-night-muted">{live.override ? t("regie.manualHint") : t("regie.autoHint")}</span>
+              <span className="text-[0.8rem] text-night-muted">{live.manual_live ? (live.override ? t("regie.manualLiveHintOverride") : t("regie.manualLiveHintAuto")) : live.override ? t("regie.manualHint") : t("regie.autoHint")}</span>
             </div>
           )}
         </section>

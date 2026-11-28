@@ -318,6 +318,7 @@ def summarize(st: dict) -> dict:
         "has_sessions": bool(planned),
         "next_session": st.get("next_session"),
         "stream_on": bool(st.get("stream_on")),
+        "manual_live": bool(st.get("manual_live")),  # started by hand: only a stop ends it
         "mic": bool(st.get("mic")),
         "override": bool(st.get("override")),
         "paused": bool(st.get("paused")),
@@ -346,6 +347,11 @@ def summarize(st: dict) -> dict:
         "fallback_until": _number(st.get("fallback_until")),
         "fallback_remaining_s": _number(st.get("fallback_remaining_s")),
     }
+
+
+def without_disk(status: dict) -> dict:
+    """The status with the disk state left out (`disk: None`): what a person who may not see it is given."""
+    return {**status, "disk": None} if status.get("disk") is not None else status
 
 
 def _number(value) -> float | None:

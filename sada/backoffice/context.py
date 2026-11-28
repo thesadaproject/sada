@@ -222,7 +222,23 @@ def clip_or_404(ctx: Ctx, cid: int) -> tuple[dict, dict]:
     return c, khutba_or_404(ctx, c["khutba_id"])
 
 
+def sees_disk(ctx: Ctx) -> bool:
+    """The free space of the recording folder is for whoever runs the server: the operator (platform administrator)
+    on a hosted platform, where the mosque has no hold on it, and the mosque's administrators on its own server."""
+    if ctx.user is None:
+        return False
+    if auth.hosted():
+        return auth.PLATFORM in auth.permissions(ctx.user)
+    return ctx.can("admin")
+
+
+def for_viewer(ctx: Ctx, status: dict) -> dict:
+    """A live status as this person may see it: the disk state is only given to who may see it (decided here, on the
+    server, not by the front end)."""
+    return status if sees_disk(ctx) else live.without_disk(status)
+
+
 def live_status(ctx: Ctx, forcer: bool = False) -> dict:
     """Live status for display, served from a snapshot: a powered-off orchestrator must not
     make each page wait several seconds."""
-    return live.status_cached(ctx.mosque, forcer=forcer)
+    return for_viewer(ctx, live.status_cached(ctx.mosque, forcer=forcer))

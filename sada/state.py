@@ -280,6 +280,10 @@ class MachineParams:
     dars: SessionParams = field(default_factory=lambda: replace(DARS_TIMING))
     tarawih: SessionParams = field(default_factory=lambda: replace(TARAWIH_TIMING))
     tarawih_min_s: float = 1200.0  # a tarawih night never ends by itself before this
+    # Any live still on air this long after the fajr adhan it began before is ended (see Machine._fajr_due): the
+    # night is over, nothing planned or manual goes on into the morning. 5 minutes: the times are computed (the plan
+    # keeps the ones it was made with, a minute or two off), and a prayer that finishes at the adhan has its last du'a.
+    fajr_margin_min: float = 5.0
 
 
 @dataclass
@@ -396,9 +400,17 @@ class Machine:
         # by default: a custom scene without an image would show a stale picture.
         self.custom_known: Callable[[str], bool] = lambda scene: False
         self.mic_muted: bool = False
+        # A live started by hand (`start` with nothing planned to start, or a Studio manual live) is manual until it is
+        # stopped on purpose: "auto", the end of the plan, silence, presence, the end of a slot never end it (see
+        # `_tick_manual`). Not the same as a planned session put in `override` by picking a scene.
+        self.manual_live = False
         # Fajr adhan of a calendar day (set by the orchestrator from the day's prayer times): a night prayer in
         # progress ends there, whatever else is going on. None where it is not known.
         self.fajr_at: Callable[[dt.date], dt.datetime | None] = lambda day: None
+        self._on_since: dt.datetime | None = None  # mosque clock when the stream went on (None while it is off)
+        self.fajr_end_pending = (
+            False  # the last live was ended by the fajr guard: the orchestrator tells the back office
+        )
         # Revision of what `status()` shows: grows at every change (command, overlay, mute, automatic switch...).
         self.rev_clock: _RevClock = REV_CLOCK
         self.rev: int = self.rev_clock.next()
@@ -479,7 +491,10 @@ class Machine:
         old = self.state
         if old == new:
             return
+        if new in (State.IDLE, State.STOPPED):
+            self.manual_live = False  # the stream is off: nothing manual left
         self.state = new
+        self._on_since = (self._on_since or sig.now) if self.stream_on else None
         self.held = False
         self.entered_t = sig.t
         self.entered_now = sig.now
@@ -628,12 +643,17 @@ class Machine:
     # ------------------------------------------------------------------- replan
     def engaged(self) -> bool:
         """A session is open or about to be: the plan must not be swapped under it."""
-        return self.live is not None or self.state in (
-            State.ARMED,
-            State.BEFORE,
-            State.INTERMISSION,
-            *SESSION_STATES,
-            State.PRAYER,
+        return (
+            self.live is not None
+            or self.manual_live
+            or self.state
+            in (
+                State.ARMED,
+                State.BEFORE,
+                State.INTERMISSION,
+                *SESSION_STATES,
+                State.PRAYER,
+            )
         )
 
     def new_day(self, sessions: list[dt.datetime], extras: list[dict] | None, sig: Signals) -> bool:
@@ -706,15 +726,35 @@ class Machine:
             self.touch()  # even a refused or idle command: its answer carries a revision newer than any poll before it
 
     def _start(self, sig, arg):
+        was_on = self.stream_on
+        pending = self.rec if self.rec is not None and self.rec.status == "pending" else None
+        due = (
+            pending is not None
+            and self.session is not None
+            and self.session - dt.timedelta(minutes=self.p.arm_before_min) <= sig.now <= self._window_end()
+        )
         self.override = True
-        st = self._entry_state()
+        if pending is not None and not due and not was_on:
+            # a planned session is still far (or already past): this start is a live nobody planned, it must not use
+            # that session up. It opens its own manual session, in the default (khutba) screen.
+            self._adhoc = self._extra("manuel", sig)
+            st = State.KHUTBA
+        else:
+            st = self._entry_state()
         self._go(st, sig, "commande start")
+        if not was_on:
+            # the start of a planned session (its window is open) is that session, in override; any other start is a
+            # live nobody planned: it stays manual until it is stopped
+            self.manual_live = not (pending is not None and due and st in SESSION_STATES and self.live is pending)
         sc = self.scene
         return _("stream started, scene {scene} (auto suspended: “auto” to resume)", scene=sc)
 
     def _stop(self, sig, arg):
         self.override = True
         self.held = False  # already on the end screen picked by hand: "stop" lets it run out
+        if self.manual_live:
+            self.manual_live = False
+            self._adhoc_over = True  # a live nobody planned: the plan, if any is left, goes on after it
         self._go(self._end_state(), sig, "commande stop")
         return _("end screen, then the stream stops")
 
@@ -752,16 +792,19 @@ class Machine:
         self.records.append(r)
         self._adhoc = r
         self.override = True
+        self.manual_live = True
         self._go(POLICIES.get(kind, DEFAULT_POLICY).entry, sig, "direct Studio manuel")
         return _("studio live started: {kind}", kind=kind)
 
     def end_adhoc(self, sig: Signals) -> str:
         """Ends the off-programme session on air: end screen, then the stream stops, the plan goes on."""
-        if not self.adhoc_on_air:
+        if not (self.adhoc_on_air or self.manual_live):
             return _("no studio live on air")
+        kind = self.live.kind if self.live is not None else "khutba"
+        self.manual_live = False
         self._adhoc_over = True
         self.override = True
-        self._go(State.ENDED if self.live.kind == "khutba" else State.DARS_END, sig, "fin du direct Studio")
+        self._go(State.ENDED if kind == "khutba" else State.DARS_END, sig, "fin du direct Studio")
         return _("end screen, then the stream stops")
 
     def end_lost(self, sig: Signals, reason: str) -> str:
@@ -771,6 +814,7 @@ class Machine:
         if not self.stream_on:
             return _("no live on air")
         planned = not self.adhoc_on_air and self.rec is not None and self.live is self.rec
+        self.manual_live = False
         self._adhoc_over = True
         self.override = True
         self.paused_from = None
@@ -787,11 +831,25 @@ class Machine:
             self._after_end_screen(sig, reason)
         return _("live ended: {reason}", reason=reason)
 
+    def tarawih_countdown(self) -> tuple[dt.datetime, SessionRec] | None:
+        """While the interlude waits for a tarawih: when the tarawih proper starts (end of isha + `offset_min`), and its
+        record. None when the session coming is not a tarawih."""
+        r, s = self.rec, self.session
+        if r is None or s is None or r.kind != "tarawih" or r.status != "pending":
+            return None
+        return s + dt.timedelta(minutes=r.offset_min), r
+
     def end_planned(self, sig: Signals, reason: str) -> str:
         """Ends the planned session on air the way its own end does (prayer screen for a khutba, end screen
         for a dars), for an end decided outside: the studio slot is over."""
         r = self.live
-        if r is None or r.status != "live" or self.adhoc_on_air or self.state not in (State.KHUTBA, State.DARS):
+        if (
+            r is None
+            or r.status != "live"
+            or self.adhoc_on_air
+            or self.manual_live
+            or self.state not in (State.KHUTBA, State.DARS)
+        ):
             return _("no planned session to end")
         if self.state == State.KHUTBA:
             self._go(State.PRAYER, sig, reason)
@@ -818,7 +876,10 @@ class Machine:
         if self.paused_from is not None:
             self._go(self.paused_from, sig, "commande auto (fin de pause)")
         if self.state == State.JANAZA:  # end of the janaza: the remaining sessions resume automatically
-            self._go(State.INTERMISSION if self.session else self._end_state(), sig, "commande auto (fin de janaza)")
+            after = State.INTERMISSION if self.session else self._end_state()
+            if self.manual_live:
+                after = self._entry_state()  # a live by hand is not ended by "auto": it goes back to its own screen
+            self._go(after, sig, "commande auto (fin de janaza)")
         self.override = False
         self.held = False
         return _("automatic mode resumed")
@@ -879,6 +940,7 @@ class Machine:
                 r.status = "skipped"
                 r.end_reason = "annulé"
         self.idx = len(self.sessions)  # ENDED first if the stream is running: nothing left to come from now on
+        self.manual_live = False  # cancel is an explicit end
         self.override = False
         self._go(self._end_state(), sig, "live du jour annulé")
         return _("today's live stream cancelled")
@@ -958,7 +1020,43 @@ class Machine:
     }
 
     # --------------------------------------------------------------------- tick
+    def _tick_manual(self, sig: Signals) -> None:
+        """A live started by hand: nothing automatic ends it, whatever the mode. In automatic mode only, a planned session
+        whose window opens takes over in the same stream: the manual session is closed and the machine waits for it as
+        for any session (INTERMISSION), without any cut."""
+        if self.override or self.held:
+            return
+        s = self.session
+        if s is None or self.rec is None or self.rec.status != "pending":
+            return
+        if sig.now >= s - dt.timedelta(minutes=self.p.arm_before_min):
+            self.manual_live = False
+            self.log(_("planned session at {time}: the plan takes over the live", time=f"{s:%H:%M}"))
+            self._go(State.INTERMISSION, sig, "session planifiée : le planning reprend la main")
+
+    def _fajr_due(self, sig: Signals) -> bool:
+        """The live on air began before the fajr adhan of this calendar day and `fajr_margin_min` have passed since it:
+        the night is over. A live that began after the fajr belongs to the day; no known fajr: nothing."""
+        if not self.stream_on or self._on_since is None or self.state in (State.ENDED, State.DARS_END):
+            return False
+        fajr = self.fajr_at(sig.now.date())
+        if fajr is None:
+            return False
+        return self._on_since < fajr and sig.now >= fajr + dt.timedelta(minutes=self.p.fajr_margin_min)
+
     def tick(self, sig: Signals) -> None:
+        if self._fajr_due(sig):
+            # the natural guard of every live, a manual one in override or a pause included: the same clean end as a
+            # stop that nobody has to ask for (the plan, if any is left, goes on)
+            self.log(_("fajr adhan passed: the live ends"))
+            self.end_lost(sig, "adhan du fajr")
+            self.fajr_end_pending = True
+            self.observe()
+            return
+        if self.manual_live and self.stream_on:
+            self._tick_manual(sig)
+            self.observe()
+            return
         handler = self._TICK.get(self.state)
         if handler is None:
             return  # JANAZA (manual only) and STOPPED: nothing moves by itself
@@ -1091,19 +1189,24 @@ class Machine:
             self._go(self._next_session(sig), sig, "fin de la prière (durée prévue)")
 
     def _wait_tarawih(self, sig: Signals, s: dt.datetime) -> None:
-        """Before a tarawih night. `s` is the estimated end of isha: nothing is armed earlier, so
-        isha itself is never on air. Then, if the mosque broadcasts the time after isha
-        (announcements, appeals for donations), sustained voice starts at once; otherwise only
-        from the tarawih proper (`offset_min` later), on sustained voice."""
+        """Before a tarawih night. `s` is the estimated end of isha: nothing is on air earlier, so isha itself is
+        never broadcast. From there the live is on air, continuously: the pause until the tarawih proper
+        (`offset_min` later) is shown on the interlude screen with a countdown, and the tarawih follows in the same
+        stream. The night (its session, hence its import) only begins with the tarawih: the pause is in no session.
+        If the mosque broadcasts the time after isha (announcements, appeals for donations), sustained voice starts
+        the night at once; otherwise only from the tarawih proper, on sustained voice. A prayer at a fixed hour
+        (qiyam) has no such pause: it only listens from its hour."""
         r = self.rec
         assert r is not None
         if self._window_closed(sig):
             return
         if sig.now < s:
             return  # isha in progress: never armed, never broadcast
-        if self.state == State.IDLE:
-            self._go(State.ARMED, sig, f"isha terminée ({s:%H:%M}) : écoute des tarawih")
         start_at = s + dt.timedelta(minutes=r.offset_min)
+        if self.state in (State.IDLE, State.ARMED) and start_at > s:
+            self._go(State.INTERMISSION, sig, f"isha terminée ({s:%H:%M}) : attente des tarawih à l'antenne")
+        elif self.state == State.IDLE:
+            self._go(State.ARMED, sig, f"isha terminée ({s:%H:%M}) : écoute des tarawih")
         if self._voice_ok(sig) and (r.after_isha or sig.now >= start_at):
             why = "voix après l'isha" if sig.now < start_at else "voix (tarawih)"
             self._go(State.TARAWIH, sig, f"{why} {sig.voice_run:.0f}s")
@@ -1117,11 +1220,6 @@ class Machine:
         timing = self.timing()
         r = self.live or self.rec
         elapsed = sig.t - self.entered_t
-        fajr = self.fajr_at(sig.now.date())
-        if fajr is not None and self.entered_now is not None and self.entered_now < fajr <= sig.now:
-            # the night prayer stops at the fajr adhan: the natural guard of a night with no maximum length
-            self._go(self._after_tarawih(sig), sig, "adhan du fajr")
-            return
         if elapsed >= timing.max_s and sig.t >= self.extend_until_t:
             self._go(self._after_tarawih(sig), sig, "durée maximale (sécurité)")
             return
@@ -1217,6 +1315,7 @@ class Machine:
             "override": self.override,
             "paused": self.paused_from is not None,
             "stream_on": self.stream_on,
+            "manual_live": self.manual_live,
             "next_session": s.strftime("%H:%M") if s else None,
             "last_reason": self.last_reason,
             "janaza_name": self.janaza_name,

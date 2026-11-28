@@ -218,10 +218,10 @@ class Follower:
         return _("Studio live: announcement attached to the session ({kind}, “{title}”)", kind=kind, title=r.title)
 
     def _off(self, machine, sig) -> str | None:
-        if self.owned and machine.adhoc_on_air:
+        if self.owned and (machine.adhoc_on_air or machine.manual_live):
             self.owned = False
             return _("Studio live over: {msg}", msg=machine.end_adhoc(sig))
-        if not machine.adhoc_on_air:
+        if not (machine.adhoc_on_air or machine.manual_live):
             self.owned = False
         return None
 

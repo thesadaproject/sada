@@ -223,5 +223,7 @@
   "Disk space is running low on the recording folder: {free:.1f} GB left, about {nights:.1f} night(s) of 3 hours. Free some space; the live stream is not affected.": "L'espace disque baisse sur le dossier d'enregistrement : {free:.1f} Go restants, soit environ {nights:.1f} nuit(s) de 3 heures. Libérez de l'espace ; le direct n'est pas affecté.",
   "Disk space back to normal: {free:.1f} GB free": "Espace disque revenu à la normale : {free:.1f} Go libres",
   "ENCODER: the recording stopped (disk?), the live stream goes on without it": "ENCODEUR : l'enregistrement s'est arrêté (disque ?), le direct continue sans lui",
-  "ENCODER: disk space critical, starting ffmpeg without a recording": "ENCODEUR : espace disque critique, démarrage de ffmpeg sans enregistrement"
+  "ENCODER: disk space critical, starting ffmpeg without a recording": "ENCODEUR : espace disque critique, démarrage de ffmpeg sans enregistrement",
+  "fajr adhan passed: the live ends": "adhan du fajr passé : le live se termine",
+  "planned session at {time}: the plan takes over the live": "session planifiée à {time} : le planning reprend la main sur le live"
 }

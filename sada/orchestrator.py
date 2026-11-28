@@ -25,6 +25,7 @@ from . import (
     diskwatch,
     gabarit_antenne,
     mawaqit,
+    mode,
     notify,
     prayers,
     runs,
@@ -97,6 +98,13 @@ def wait_for_backoffice(url: str, limit_s: float, probe=None, sleep=time.sleep, 
         delay = min(delay * 2, 10.0)
 
 
+def disk_alert_channel(notifier):
+    """Where the disk alert goes: to the mosque on its own server; nowhere on a hosted platform, where the disk is the
+    operator's (it still reaches the log and the `sada.recording.disk.free` gauge, which is the operator's channel:
+    no operator mail or webhook exists to send it to)."""
+    return (lambda _text: None) if mode.hosted() else notifier.send
+
+
 class Orchestrator:
     #: Who composes the rehearsal stage: said by whoever takes the setup lease (see set_setup).
     _setup_compositing = "server"
@@ -166,7 +174,9 @@ class Orchestrator:
         self.studio_poll = studio_link.Poller(cfg.backoffice_url if not cfg.sim_start else "", cfg.api_port)
         self.notifier = notify.from_config(cfg, log=log.info)
         self._notified_state = None
-        self.diskwatch = diskwatch.DiskWatch(cfg, self.notifier.send, log=log.warning)
+        # The disk of a hosted platform is the operator's, not the mosque's: no alert goes to the mosque there (the log
+        # and the telemetry gauge are the operator's channels); on a mosque's own server the mosque is told.
+        self.diskwatch = diskwatch.DiskWatch(cfg, disk_alert_channel(self.notifier), log=log.warning)
         if self.notifier.enabled:
             log.info(_("Notifications to the imam: {destination}", destination=self.notifier.destination))
         else:
@@ -542,6 +552,12 @@ class Orchestrator:
     def _watch_night_end(self, m) -> None:
         """A night prayer that ended by its own conditions (silence, fajr, stop) is told to the back office, which then
         closes the Studio's slot: the slot of a night has no fixed end, only this (or the fajr, if nobody answers)."""
+        if m.fajr_end_pending:
+            # any live ended by the fajr guard (a manual one too): the Studio's run or slot is closed, it goes to standby
+            m.fajr_end_pending = False
+            self._tarawih_open = False
+            self.studio_poll.request_end(time.time(), "adhan_du_fajr")
+            return
         on = m.live is not None and m.live.kind == "tarawih" and m.live.status == "live"
         if on:
             self._tarawih_open = True
@@ -669,6 +685,11 @@ class Orchestrator:
                     else None
                 )
                 nxt = self._next_event(now) if m.scene in ("dars_fin", "entracte") else None
+                if m.scene == "entracte" and (wait := m.tarawih_countdown()) is not None:
+                    # the pause before a tarawih is on air: the countdown runs to the tarawih proper
+                    nxt = events_mod.EventInstance(
+                        starts=wait[0], kind="tarawih", title=wait[1].title or events_mod.KIND_LABELS["tarawih"]
+                    )
                 key = (
                     m.scene,
                     m.session,
