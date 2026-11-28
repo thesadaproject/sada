@@ -280,6 +280,10 @@ class MachineParams:
     dars: SessionParams = field(default_factory=lambda: replace(DARS_TIMING))
     tarawih: SessionParams = field(default_factory=lambda: replace(TARAWIH_TIMING))
     tarawih_min_s: float = 1200.0  # a tarawih night never ends by itself before this
+    # Any live still on air this long after the fajr adhan it began before is ended (see Machine._fajr_due): the
+    # night is over, nothing planned or manual goes on into the morning. 5 minutes: the times are computed (the plan
+    # keeps the ones it was made with, a minute or two off), and a prayer that finishes at the adhan has its last du'a.
+    fajr_margin_min: float = 5.0
 
 
 @dataclass
@@ -403,6 +407,10 @@ class Machine:
         # Fajr adhan of a calendar day (set by the orchestrator from the day's prayer times): a night prayer in
         # progress ends there, whatever else is going on. None where it is not known.
         self.fajr_at: Callable[[dt.date], dt.datetime | None] = lambda day: None
+        self._on_since: dt.datetime | None = None  # mosque clock when the stream went on (None while it is off)
+        self.fajr_end_pending = (
+            False  # the last live was ended by the fajr guard: the orchestrator tells the back office
+        )
         # Revision of what `status()` shows: grows at every change (command, overlay, mute, automatic switch...).
         self.rev_clock: _RevClock = REV_CLOCK
         self.rev: int = self.rev_clock.next()
@@ -486,6 +494,7 @@ class Machine:
         if new in (State.IDLE, State.STOPPED):
             self.manual_live = False  # the stream is off: nothing manual left
         self.state = new
+        self._on_since = (self._on_since or sig.now) if self.stream_on else None
         self.held = False
         self.entered_t = sig.t
         self.entered_now = sig.now
@@ -1017,7 +1026,25 @@ class Machine:
             self.log(_("planned session at {time}: the plan takes over the live", time=f"{s:%H:%M}"))
             self._go(State.INTERMISSION, sig, "session planifiée : le planning reprend la main")
 
+    def _fajr_due(self, sig: Signals) -> bool:
+        """The live on air began before the fajr adhan of this calendar day and `fajr_margin_min` have passed since it:
+        the night is over. A live that began after the fajr belongs to the day; no known fajr: nothing."""
+        if not self.stream_on or self._on_since is None or self.state in (State.ENDED, State.DARS_END):
+            return False
+        fajr = self.fajr_at(sig.now.date())
+        if fajr is None:
+            return False
+        return self._on_since < fajr and sig.now >= fajr + dt.timedelta(minutes=self.p.fajr_margin_min)
+
     def tick(self, sig: Signals) -> None:
+        if self._fajr_due(sig):
+            # the natural guard of every live, a manual one in override or a pause included: the same clean end as a
+            # stop that nobody has to ask for (the plan, if any is left, goes on)
+            self.log(_("fajr adhan passed: the live ends"))
+            self.end_lost(sig, "adhan du fajr")
+            self.fajr_end_pending = True
+            self.observe()
+            return
         if self.manual_live and self.stream_on:
             self._tick_manual(sig)
             self.observe()
@@ -1180,11 +1207,6 @@ class Machine:
         timing = self.timing()
         r = self.live or self.rec
         elapsed = sig.t - self.entered_t
-        fajr = self.fajr_at(sig.now.date())
-        if fajr is not None and self.entered_now is not None and self.entered_now < fajr <= sig.now:
-            # the night prayer stops at the fajr adhan: the natural guard of a night with no maximum length
-            self._go(self._after_tarawih(sig), sig, "adhan du fajr")
-            return
         if elapsed >= timing.max_s and sig.t >= self.extend_until_t:
             self._go(self._after_tarawih(sig), sig, "durée maximale (sécurité)")
             return

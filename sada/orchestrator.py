@@ -542,6 +542,12 @@ class Orchestrator:
     def _watch_night_end(self, m) -> None:
         """A night prayer that ended by its own conditions (silence, fajr, stop) is told to the back office, which then
         closes the Studio's slot: the slot of a night has no fixed end, only this (or the fajr, if nobody answers)."""
+        if m.fajr_end_pending:
+            # any live ended by the fajr guard (a manual one too): the Studio's run or slot is closed, it goes to standby
+            m.fajr_end_pending = False
+            self._tarawih_open = False
+            self.studio_poll.request_end(time.time(), "adhan_du_fajr")
+            return
         on = m.live is not None and m.live.kind == "tarawih" and m.live.status == "live"
         if on:
             self._tarawih_open = True

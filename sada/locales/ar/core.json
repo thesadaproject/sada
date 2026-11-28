@@ -224,5 +224,6 @@
   "Disk space back to normal: {free:.1f} GB free": "عادت مساحة القرص إلى وضعها الطبيعي: {free:.1f} غ.ب حرة",
   "ENCODER: the recording stopped (disk?), the live stream goes on without it": "المُرمِّز: توقف التسجيل (القرص؟)، يستمر البث بدونه",
   "ENCODER: disk space critical, starting ffmpeg without a recording": "المُرمِّز: مساحة القرص حرجة، بدء ffmpeg دون تسجيل",
+  "fajr adhan passed: the live ends": "انقضى أذان الفجر: ينتهي البث",
   "planned session at {time}: the plan takes over the live": "جلسة مجدولة في {time}: يتولى الجدول البث"
 }

@@ -59,24 +59,24 @@ def test_the_night_ends_at_the_fajr_adhan_even_with_a_voice_and_people_in_the_ro
     m = night()
     tick(m, 3600.0, D.replace(hour=23, minute=30))  # before midnight: the fajr of that same day is behind
     assert m.state == State.TARAWIH
-    tick(m, 30000.0, D + dt.timedelta(days=1, hours=5, minutes=28))
-    assert m.state == State.TARAWIH  # fajr of the 3rd is 05:29
-    tick(m, 30100.0, D + dt.timedelta(days=1, hours=5, minutes=29))
+    tick(m, 30000.0, D + dt.timedelta(days=1, hours=5, minutes=33))
+    assert m.state == State.TARAWIH  # fajr of the 3rd is 05:29, and the guard has its 5 minutes
+    tick(m, 30100.0, D + dt.timedelta(days=1, hours=5, minutes=34))
     assert m.state != State.TARAWIH and m.last_reason == "adhan du fajr" and m.records[0].status == "done"
 
 
 def test_the_fajr_wins_over_an_extension():
     m = night()
     m.extend_until_t = 10**9  # "extend" asked by the control room
-    tick(m, 30100.0, D + dt.timedelta(days=1, hours=5, minutes=30))
+    tick(m, 30100.0, D + dt.timedelta(days=1, hours=5, minutes=35))
     assert m.state != State.TARAWIH
 
 
 def test_a_qiyam_after_midnight_ends_at_the_fajr_of_that_same_morning():
     m = night(start=(2, 30))
-    tick(m, 3000.0, D.replace(hour=5, minute=29))
+    tick(m, 3000.0, D.replace(hour=5, minute=34))
     assert m.state == State.TARAWIH
-    tick(m, 3100.0, D.replace(hour=5, minute=30))
+    tick(m, 3100.0, D.replace(hour=5, minute=35))
     assert m.state != State.TARAWIH and m.last_reason == "adhan du fajr"
 
 
@@ -179,5 +179,5 @@ def test_a_stopped_night_slot_does_not_hide_the_qiyam_that_starts_inside_it():
 def test_the_two_ends_share_the_reasons_the_back_office_knows():
     from sada.backoffice import studio_service
 
-    assert set(studio_service.REASONS) == {"signal_perdu", "fin_de_nuit"}
+    assert set(studio_service.REASONS) == {"signal_perdu", "fin_de_nuit", "adhan_du_fajr"}
     assert studio_link.grace_s("tarawih") == 600

@@ -175,7 +175,7 @@ def stop(conn, mosque: dict, dev: dict, ip: str | None, now: float | None = None
     return {"stopped": stopped} | answer(conn, mosque, dev, now)
 
 
-REASONS = ("signal_perdu", "fin_de_nuit")
+REASONS = ("signal_perdu", "fin_de_nuit", "adhan_du_fajr")
 
 
 def end_lost(
