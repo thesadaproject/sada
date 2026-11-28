@@ -128,6 +128,13 @@ RETURN_PROBES = 2  # consecutive probes that must see the input again before the
 FALLBACK_RETRY_S = 2.0  # relaunch delay of a reconnection ffmpeg that died (no exponential backoff: it must stay up)
 
 
+# The graph is a state machine driven by ZeroMQ commands that nobody acknowledges: a command lost to a restart, a
+# graph that ffmpeg rebuilds on its own (the source changed its parameters: every filter goes back to the value it
+# had on the command line) or two overlapping changes leave the picture different from `Encoder.levels`, and nothing
+# would ever notice. So the levels are re-asserted while the graph is idle (same values: invisible when all is well).
+RECONCILE_EVERY_S = 2.0
+
+
 def backoff_delay(failures: int) -> float:
     """Delay before relaunch number `failures` (1 = first consecutive failure): 1, 2, 4, ... capped at 30 s."""
     return min(BACKOFF_MAX_S, BACKOFF_MIN_S * 2 ** max(0, failures - 1))
@@ -143,6 +150,14 @@ def rehearsal_input(cfg) -> list[str]:
     """ffmpeg input options of the rehearsal source, sized and paced like the real programme."""
     graph = f"color=c={REHEARSAL_BG}:s={cfg.width}x{cfg.height}:r={cfg.fps}[out0];anullsrc=r=48000:cl=stereo[out1]"
     return ["-re", "-f", "lavfi", "-i", graph]
+
+
+def is_blank(img) -> bool:
+    """True for a fully transparent picture: a scene that lays nothing over the stream (see Encoder.show)."""
+    try:
+        return img.convert("RGBA").getchannel("A").getextrema() == (0, 0)
+    except Exception:  # noqa: BLE001
+        return False
 
 
 class Encoder:
@@ -219,6 +234,8 @@ class Encoder:
         self._probe_at = 0.0
         self._back = 0  # consecutive probes that saw the input published again
         self._fallback_png: str | None = None
+        self._reveals = 0  # background reveals (show_image) not finished: the levels are not final yet
+        self._reconciler: threading.Thread | None = None
         self.clock = time.monotonic  # injectable (tests)
         self.wall = time.time
 
@@ -414,6 +431,9 @@ class Encoder:
             else:
                 self._spawn()
         threading.Thread(target=self._watch, daemon=True, name="encoder-watch").start()
+        if self._reconciler is None or not self._reconciler.is_alive():
+            self._reconciler = threading.Thread(target=self._reconcile_loop, daemon=True, name="encoder-reconcile")
+            self._reconciler.start()
 
     def _source_pending(self) -> bool:
         """True while the relay does not publish the input yet (caller holds the lock). Gives up after
@@ -776,6 +796,8 @@ class Encoder:
                 write_png_atomic(content, self.layer_png[self.active])
                 self.shown, self.full = (scene, self.active), full
                 self.levels.update({"fond": 1.0 if full else 0.0, f"a_{self.active}": 1.0})
+                if not full and is_blank(content):
+                    self._bare_levels(scene)
                 return
             self._pending = (scene, full, content, mode)
             self._ensure_worker()
@@ -801,6 +823,8 @@ class Encoder:
             was_full, self.full = self.full, full
             self.levels.update({"fond": 1.0 if full else 0.0, f"a_{self.active}": 0.0})
             running = self.alive()
+            if running:
+                self._reveals += 1
         if running:
             # The levels above only seed a (re)start. A running graph keeps its opacities until they are driven:
             # without this, a template screen replacing the camera (khutba -> prayer) is written but never shown.
@@ -810,18 +834,34 @@ class Encoder:
 
     def _reveal_background(self, scene: str, cle: str, was_full: bool, full: bool) -> None:
         """Waits for ffmpeg to re-read the new background, then sets the layer opacities with a cut (the content
-        layers are empty: the active layer simply swaps, as after any transition)."""
-        time.sleep(tr.DELAI_CHARGEMENT)
-        with self._anim:
-            p = tr.plan(self.active, was_full, full, scale=self.cfg.height / 720, mode="cut")
-            frames = self._animate(p)
-            self.log(
-                _("TRANSITION -> {scene} (layer {layer}, {frames} frames)", scene=scene, layer=p.dst, frames=frames)
-            )
+        layers are empty: the active layer simply swaps, as after any transition).
+
+        Only if this screen is still the one on air: a transition that took over meanwhile (typically the studio's
+        passthrough) owns the layers and its own final state, which a late reveal must not overwrite."""
+        try:
+            time.sleep(tr.DELAI_CHARGEMENT)
+            with self._anim:
+                with self._mx:
+                    if not (self.shown and self.shown[0] == scene and len(self.shown) > 2 and self.shown[2] == cle):
+                        return
+                    active = self.active
+                p = tr.plan(active, was_full, full, scale=self.cfg.height / 720, mode="cut")
+                frames = self._animate(p)
+                self.log(
+                    _(
+                        "TRANSITION -> {scene} (layer {layer}, {frames} frames)",
+                        scene=scene,
+                        layer=p.dst,
+                        frames=frames,
+                    )
+                )
+                with self._mx:
+                    self.active, self.full = p.dst, full
+                    if self.shown and self.shown[0] == scene:
+                        self.shown = (scene, p.dst, cle)  # type: ignore[assignment]
+        finally:
             with self._mx:
-                self.active = p.dst
-                if self.shown and self.shown[0] == scene:
-                    self.shown = (scene, p.dst, cle)  # type: ignore[assignment]
+                self._reveals -= 1
 
     def _ensure_worker(self):
         if self._worker is None or not self._worker.is_alive():
@@ -861,10 +901,68 @@ class Encoder:
                 mode = job[3] if len(job) > 3 else tr.DEFAULT_TRANSITION
                 p = tr.plan(src, self.full, job[1], scale=self.cfg.height / 720, mode=mode)
                 frames = self._animate(p)
-                self.active, self.full = dst, job[1]
+                with self._mx:
+                    self.active, self.full = dst, job[1]
+                    if not job[1] and is_blank(job[2]) and self.shown and self.shown[0] == job[0]:
+                        self._bare_levels(job[0])
                 self.log(
                     _("TRANSITION -> {scene} (layer {layer}, {frames} frames)", scene=job[0], layer=dst, frames=frames)
                 )
+
+    def _bare_levels(self, scene: str) -> None:
+        """A scene that lays nothing over the stream is on (the Studio composes the picture itself): the shared
+        background and both content layers are emptied and their opacities set to zero, so that whatever the graph
+        still holds of an earlier screen (a mosque template, a banner) cannot show through. Caller holds `_mx`."""
+        vide = Image.new("RGBA", (int(self.cfg.width), int(self.cfg.height)), (0, 0, 0, 0))
+        for k in ("fond", "a", "b"):
+            write_png_atomic(vide, self.layer_png[k])
+        self.levels.update({"fond": 0.0, "a_a": 0.0, "a_b": 0.0, "x_a": 0.0, "y_a": 0.0, "x_b": 0.0, "y_b": 0.0})
+        self.full = False
+
+    def _reconcile_loop(self) -> None:
+        while True:
+            time.sleep(RECONCILE_EVERY_S)
+            if not self.wanted:
+                return
+            try:
+                self.reconcile()
+            except Exception as e:  # noqa: BLE001 — never takes the supervision down
+                self.log(_("ZMQ attempt {attempt} failed ({message}): {error}", attempt=1, message="levels", error=e))
+
+    def reconcile(self) -> bool:
+        """Sets every layer of the running graph to `levels` (absolute values). True when the graph answered.
+
+        Left alone while a change is under way (a transition, a pending scene, a background being revealed): the
+        levels are not final then."""
+        if not self.graph_up() or not self._opened or time.monotonic() - self._spawned_at < 1.0:
+            return False
+        if not self._anim.acquire(blocking=False):
+            return False
+        try:
+            with self._mx:
+                if self._pending is not None or self._reveals > 0:
+                    return False
+                levels = dict(self.levels)
+            return self._send_levels(levels)
+        finally:
+            self._anim.release()
+
+    def _send_levels(self, levels: dict[str, float]) -> bool:
+        ctx = zmq.Context.instance()
+        s = ctx.socket(zmq.REQ)
+        s.setsockopt(zmq.LINGER, 0)
+        s.setsockopt(zmq.RCVTIMEO, 2000)
+        s.setsockopt(zmq.SNDTIMEO, 2000)
+        s.connect(f"tcp://127.0.0.1:{self.zmq_vports[0]}")
+        try:
+            for k, v in levels.items():
+                s.send_string(f"{self._TARGET[k]} {round(v, 3):g}")
+                s.recv_string()  # one command per frame: the next goes out once this one was handled
+            return True
+        except zmq.ZMQError:
+            return False  # not answering (source gone, graph starting): the next pass tries again
+        finally:
+            s.close()
 
     # ZeroMQ channel (port) per animated parameter: one zmq filter per channel on the camera chain
     _TARGET = {
