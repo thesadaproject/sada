@@ -26,6 +26,8 @@ export type Live = {
   tarawih?: { night?: number | null; mode?: string; reciters: string[]; reciter?: string | null } | null;
   rev?: number;
   compositing?: "studio" | "server";
+  /** A live started by hand: only a stop ends it ("auto" never does). */
+  manual_live?: boolean;
   /** Signal lost: the reconnection screen is on air; the live ends by itself after `fallback_remaining_s` (read at `selectReadAt`). */
   signal_lost_since?: number | null; fallback_until?: number | null; fallback_remaining_s?: number | null;
   transition?: string | null;

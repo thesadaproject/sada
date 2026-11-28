@@ -84,6 +84,19 @@ describe("Régie (remote control of the Sada Studio)", () => {
     expect(screen.getByRole("alert").textContent).toContain("regie.signalLostCountdown 10:00");
   });
 
+  it("a live started by hand says so, and that only Stop ends it", async () => {
+    const live = { ...offAir.live, state: "BEFORE", scene: "avant", stream_on: true, override: true, manual_live: true };
+    await monter({ ...offAir, live });
+    expect(screen.getByText("regie.manualLive")).toBeTruthy();
+    expect(screen.getByText("regie.manualLiveHintOverride")).toBeTruthy();
+    cleanup();
+    await monter({ ...offAir, live: { ...live, override: false } });
+    expect(screen.getByText("regie.manualLiveHintAuto")).toBeTruthy();
+    cleanup();
+    await monter({ ...offAir, live: { ...live, manual_live: false, override: true } });  // a planned session in override
+    expect(screen.getByText("regie.manualHint")).toBeTruthy();
+  });
+
   it("no banner while the live has its signal, nor off air", async () => {
     await monter({ ...offAir, live: { ...offAir.live, state: "KHUTBA", stream_on: true, fallback_remaining_s: null } });
     expect(screen.queryByRole("alert")).toBeNull();

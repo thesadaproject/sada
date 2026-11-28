@@ -250,7 +250,7 @@ function LiveFacts({ live, lu }: { live: Live; lu: number }) {
         [t("regie.clock"), maintenant != null ? heureDuJour(maintenant) : "—"],
         [t("regie.onAirFor"), duree],
         [t("regie.next"), live.next_session ?? "—"],
-        [t("regie.mode"), live.override ? t("regie.manual") : t("regie.auto")],
+        [t("regie.mode"), live.manual_live ? t("regie.manualLive") : live.override ? t("regie.manual") : t("regie.auto")],
       ].map(([k, v]) => (
         <div key={k} className="flex items-baseline gap-1.5">
           <dt className="text-night-muted">{k}</dt>
@@ -605,7 +605,7 @@ function RegieEcran() {
                        disabled={!live.override && !enCours("auto")} onClick={() => envoyer("auto")}>
                 {live.override ? t("regie.autoResume") : t("regie.autoOn")}
               </BusyBtn>
-              <span className="text-[0.8rem] text-night-muted">{live.override ? t("regie.manualHint") : t("regie.autoHint")}</span>
+              <span className="text-[0.8rem] text-night-muted">{live.manual_live ? (live.override ? t("regie.manualLiveHintOverride") : t("regie.manualLiveHintAuto")) : live.override ? t("regie.manualHint") : t("regie.autoHint")}</span>
             </div>
           )}
         </section>

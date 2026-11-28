@@ -318,6 +318,7 @@ def summarize(st: dict) -> dict:
         "has_sessions": bool(planned),
         "next_session": st.get("next_session"),
         "stream_on": bool(st.get("stream_on")),
+        "manual_live": bool(st.get("manual_live")),  # started by hand: only a stop ends it
         "mic": bool(st.get("mic")),
         "override": bool(st.get("override")),
         "paused": bool(st.get("paused")),

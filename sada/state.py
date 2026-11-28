@@ -396,6 +396,10 @@ class Machine:
         # by default: a custom scene without an image would show a stale picture.
         self.custom_known: Callable[[str], bool] = lambda scene: False
         self.mic_muted: bool = False
+        # A live started by hand (`start` with nothing planned to start, or a Studio manual live) is manual until it is
+        # stopped on purpose: "auto", the end of the plan, silence, presence, the end of a slot never end it (see
+        # `_tick_manual`). Not the same as a planned session put in `override` by picking a scene.
+        self.manual_live = False
         # Fajr adhan of a calendar day (set by the orchestrator from the day's prayer times): a night prayer in
         # progress ends there, whatever else is going on. None where it is not known.
         self.fajr_at: Callable[[dt.date], dt.datetime | None] = lambda day: None
@@ -479,6 +483,8 @@ class Machine:
         old = self.state
         if old == new:
             return
+        if new in (State.IDLE, State.STOPPED):
+            self.manual_live = False  # the stream is off: nothing manual left
         self.state = new
         self.held = False
         self.entered_t = sig.t
@@ -628,12 +634,17 @@ class Machine:
     # ------------------------------------------------------------------- replan
     def engaged(self) -> bool:
         """A session is open or about to be: the plan must not be swapped under it."""
-        return self.live is not None or self.state in (
-            State.ARMED,
-            State.BEFORE,
-            State.INTERMISSION,
-            *SESSION_STATES,
-            State.PRAYER,
+        return (
+            self.live is not None
+            or self.manual_live
+            or self.state
+            in (
+                State.ARMED,
+                State.BEFORE,
+                State.INTERMISSION,
+                *SESSION_STATES,
+                State.PRAYER,
+            )
         )
 
     def new_day(self, sessions: list[dt.datetime], extras: list[dict] | None, sig: Signals) -> bool:
@@ -706,15 +717,35 @@ class Machine:
             self.touch()  # even a refused or idle command: its answer carries a revision newer than any poll before it
 
     def _start(self, sig, arg):
+        was_on = self.stream_on
+        pending = self.rec if self.rec is not None and self.rec.status == "pending" else None
+        due = (
+            pending is not None
+            and self.session is not None
+            and self.session - dt.timedelta(minutes=self.p.arm_before_min) <= sig.now <= self._window_end()
+        )
         self.override = True
-        st = self._entry_state()
+        if pending is not None and not due and not was_on:
+            # a planned session is still far (or already past): this start is a live nobody planned, it must not use
+            # that session up. It opens its own manual session, in the default (khutba) screen.
+            self._adhoc = self._extra("manuel", sig)
+            st = State.KHUTBA
+        else:
+            st = self._entry_state()
         self._go(st, sig, "commande start")
+        if not was_on:
+            # the start of a planned session (its window is open) is that session, in override; any other start is a
+            # live nobody planned: it stays manual until it is stopped
+            self.manual_live = not (pending is not None and due and st in SESSION_STATES and self.live is pending)
         sc = self.scene
         return _("stream started, scene {scene} (auto suspended: “auto” to resume)", scene=sc)
 
     def _stop(self, sig, arg):
         self.override = True
         self.held = False  # already on the end screen picked by hand: "stop" lets it run out
+        if self.manual_live:
+            self.manual_live = False
+            self._adhoc_over = True  # a live nobody planned: the plan, if any is left, goes on after it
         self._go(self._end_state(), sig, "commande stop")
         return _("end screen, then the stream stops")
 
@@ -752,16 +783,19 @@ class Machine:
         self.records.append(r)
         self._adhoc = r
         self.override = True
+        self.manual_live = True
         self._go(POLICIES.get(kind, DEFAULT_POLICY).entry, sig, "direct Studio manuel")
         return _("studio live started: {kind}", kind=kind)
 
     def end_adhoc(self, sig: Signals) -> str:
         """Ends the off-programme session on air: end screen, then the stream stops, the plan goes on."""
-        if not self.adhoc_on_air:
+        if not (self.adhoc_on_air or self.manual_live):
             return _("no studio live on air")
+        kind = self.live.kind if self.live is not None else "khutba"
+        self.manual_live = False
         self._adhoc_over = True
         self.override = True
-        self._go(State.ENDED if self.live.kind == "khutba" else State.DARS_END, sig, "fin du direct Studio")
+        self._go(State.ENDED if kind == "khutba" else State.DARS_END, sig, "fin du direct Studio")
         return _("end screen, then the stream stops")
 
     def end_lost(self, sig: Signals, reason: str) -> str:
@@ -771,6 +805,7 @@ class Machine:
         if not self.stream_on:
             return _("no live on air")
         planned = not self.adhoc_on_air and self.rec is not None and self.live is self.rec
+        self.manual_live = False
         self._adhoc_over = True
         self.override = True
         self.paused_from = None
@@ -791,7 +826,13 @@ class Machine:
         """Ends the planned session on air the way its own end does (prayer screen for a khutba, end screen
         for a dars), for an end decided outside: the studio slot is over."""
         r = self.live
-        if r is None or r.status != "live" or self.adhoc_on_air or self.state not in (State.KHUTBA, State.DARS):
+        if (
+            r is None
+            or r.status != "live"
+            or self.adhoc_on_air
+            or self.manual_live
+            or self.state not in (State.KHUTBA, State.DARS)
+        ):
             return _("no planned session to end")
         if self.state == State.KHUTBA:
             self._go(State.PRAYER, sig, reason)
@@ -818,7 +859,10 @@ class Machine:
         if self.paused_from is not None:
             self._go(self.paused_from, sig, "commande auto (fin de pause)")
         if self.state == State.JANAZA:  # end of the janaza: the remaining sessions resume automatically
-            self._go(State.INTERMISSION if self.session else self._end_state(), sig, "commande auto (fin de janaza)")
+            after = State.INTERMISSION if self.session else self._end_state()
+            if self.manual_live:
+                after = self._entry_state()  # a live by hand is not ended by "auto": it goes back to its own screen
+            self._go(after, sig, "commande auto (fin de janaza)")
         self.override = False
         self.held = False
         return _("automatic mode resumed")
@@ -879,6 +923,7 @@ class Machine:
                 r.status = "skipped"
                 r.end_reason = "annulé"
         self.idx = len(self.sessions)  # ENDED first if the stream is running: nothing left to come from now on
+        self.manual_live = False  # cancel is an explicit end
         self.override = False
         self._go(self._end_state(), sig, "live du jour annulé")
         return _("today's live stream cancelled")
@@ -958,7 +1003,25 @@ class Machine:
     }
 
     # --------------------------------------------------------------------- tick
+    def _tick_manual(self, sig: Signals) -> None:
+        """A live started by hand: nothing automatic ends it, whatever the mode. In automatic mode only, a planned session
+        whose window opens takes over in the same stream: the manual session is closed and the machine waits for it as
+        for any session (INTERMISSION), without any cut."""
+        if self.override or self.held:
+            return
+        s = self.session
+        if s is None or self.rec is None or self.rec.status != "pending":
+            return
+        if sig.now >= s - dt.timedelta(minutes=self.p.arm_before_min):
+            self.manual_live = False
+            self.log(_("planned session at {time}: the plan takes over the live", time=f"{s:%H:%M}"))
+            self._go(State.INTERMISSION, sig, "session planifiée : le planning reprend la main")
+
     def tick(self, sig: Signals) -> None:
+        if self.manual_live and self.stream_on:
+            self._tick_manual(sig)
+            self.observe()
+            return
         handler = self._TICK.get(self.state)
         if handler is None:
             return  # JANAZA (manual only) and STOPPED: nothing moves by itself
@@ -1217,6 +1280,7 @@ class Machine:
             "override": self.override,
             "paused": self.paused_from is not None,
             "stream_on": self.stream_on,
+            "manual_live": self.manual_live,
             "next_session": s.strftime("%H:%M") if s else None,
             "last_reason": self.last_reason,
             "janaza_name": self.janaza_name,

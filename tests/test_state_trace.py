@@ -16,6 +16,10 @@ Two golden files:
 * `state_trace_custom_golden.json` records the same days with the `custom:` scene commands mixed in (a custom
   scene is known to the machine), so the new behaviour is pinned without touching the old proof.
 
+Re-recorded a second time for the manual live (a `start` nobody planned is manual until stopped; "auto", silence and
+the end of the plan no longer end it): 50 of the 240 traces changed, every one diverging at a `start` that is far from
+a planned session, or at what followed it, and nowhere else.
+
 To re-record both after an INTENDED change (check first where the traces diverge): `python tests/test_state_trace.py`.
 """
 
@@ -37,7 +41,7 @@ SCENES = ("avant", "khutba", "priere", "entracte", "termine", "dars", "dars_fin"
 CUSTOM_SCENES = (*SCENES, "custom:attente")
 NEW_STATUS_KEYS = ("overlays", "transition", "mic_muted")  # added to Machine.status() after the old golden
 # added after both goldens: `rev` is a revision drawn from the wall clock, `playing_event` a derived view
-LATER_STATUS_KEYS = ("rev", "playing_event")
+LATER_STATUS_KEYS = ("rev", "playing_event", "manual_live")
 # keys of each session record added after both goldens (the range of recordings a session spans)
 LATER_SESSION_KEYS = ("end_recording", "end_file_pos", "night_date")
 PLANS = {
