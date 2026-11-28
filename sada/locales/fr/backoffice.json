@@ -229,5 +229,10 @@
   "image dimensions too large": "dimensions de l'image trop grandes",
   "setup mode is held by another device": "le mode réglage est tenu par un autre appareil",
   "database {path} has tables but no schema version: refusing to touch it": "la base {path} contient des tables mais aucune version de schéma : elle n'est pas touchée",
-  "database {path} is at version {version} of the former migrations: update it with 0.1.0-alpha.22 first": "la base {path} est en version {version} des anciennes migrations : mettez-la d'abord à jour avec la 0.1.0-alpha.22"
+  "database {path} is at version {version} of the former migrations: update it with 0.1.0-alpha.22 first": "la base {path} est en version {version} des anciennes migrations : mettez-la d'abord à jour avec la 0.1.0-alpha.22",
+  "Give both the first and the last night of the qiyam.": "Indiquez la première et la dernière nuit du qiyam.",
+  "Give the nights of the qiyam, or the period of the tarawih.": "Indiquez les nuits du qiyam, ou la période des tarawih.",
+  "Invalid time: {time} (expected HH:MM).": "Heure invalide : {time} (attendu HH:MM).",
+  "Maximum length: from {min} to {max} minutes, or empty for none.": "Durée maximale : de {min} à {max} minutes, ou vide pour aucune limite.",
+  "{where}: invalid time {time}": "{where} : heure invalide {time}"
 }

@@ -143,8 +143,8 @@ def mosque_events(request: Request, conn: ConnDep, port: int = 0):
     mid = _caller(request, conn, port)
     if isinstance(mid, JSONResponse):
         return mid
-    nightly = tarawih.event(conn, mid)  # built from the Tarawih settings, never kept in the programme
-    return {"mosque_id": mid, "events": events_store.read(conn, mid) + ([nightly] if nightly else [])}
+    nightly = tarawih.events(conn, mid)  # built from the Tarawih settings, never kept in the programme
+    return {"mosque_id": mid, "events": events_store.read(conn, mid) + nightly}
 
 
 @router.get("/internal/times")

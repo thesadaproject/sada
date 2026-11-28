@@ -42,6 +42,8 @@ TARAWIH_GRACE_S = 600.0
 def grace_s(kind: str | None) -> float:
     """The grace of a session of this kind: the one place that decides it (orchestrator, back office)."""
     return TARAWIH_GRACE_S if kind == "tarawih" else SIGNAL_GRACE_S
+
+
 TYPES = ("khutba", "dars", "conference")
 PUBLISHERS = ("device", "obs", "regie", "unknown")
 

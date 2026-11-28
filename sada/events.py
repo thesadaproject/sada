@@ -41,6 +41,8 @@ from .text import JOURS
 
 KINDS = {"khutba", "dars", "conference", "tarawih"}
 PRAYERS = ("dhuhr", "asr", "maghrib", "isha")
+#: A tarawih at a fixed hour before this one is the end of the night that began the evening before (see Event.night_of).
+AFTER_MIDNIGHT_BEFORE = dt.time(12, 0)
 KIND_LABELS = {"khutba": "Khutba", "dars": "Dars", "conference": "Conférence", "tarawih": "Tarawih"}
 #: How a tarawih is broadcast: `audio` = sound with a fixed full screen (the default), `video` =
 #: camera and sound (chosen deliberately), `off` = not broadcast (never sent to the engine).
@@ -142,9 +144,17 @@ class Event:
     mode: str = ""
     period: tuple[dt.date, dt.date] | None = None  # first and last day (tarawih)
     isha_min: float = ISHA_DEFAULT_MIN  # tarawih: estimated length of isha
+    fixed: dt.time | None = None  # tarawih at a fixed hour (qiyam, tahajjud) instead of after the end of isha
+
+    def night_of(self, day: dt.date) -> dt.date:
+        """The night a tarawih on calendar day `day` belongs to. A prayer at a fixed hour before noon (qiyam, tahajjud:
+        01:30, 03:00) is the end of the night that began the evening before: it belongs to the previous day."""
+        if self.kind == "tarawih" and self.fixed is not None and self.fixed < AFTER_MIDNIGHT_BEFORE:
+            return day - dt.timedelta(days=1)
+        return day
 
     def occurs_on(self, day: dt.date) -> bool:
-        if self.period is not None and not (self.period[0] <= day <= self.period[1]):
+        if self.period is not None and not (self.period[0] <= self.night_of(day) <= self.period[1]):
             return False
         if self.date is not None:
             return self.date == day
@@ -161,6 +171,8 @@ class Event:
         if rec is None:
             return None
         if self.kind == "tarawih":
+            if self.fixed is not None:
+                return dt.datetime.combine(day, self.fixed)
             return isha_end(day, times, self.isha_min)
         if rec.time:
             return dt.datetime.combine(day, parse_hhmm(rec.time))
@@ -193,13 +205,22 @@ class Event:
         """What a tarawih night carries to the engine: start rules, night number, reciters (the
         night's own list when the mosque set one, otherwise the roster, in order)."""
         raw = self.raw
+        night = self.night_of(day)
         nights = raw.get("nights") if isinstance(raw.get("nights"), dict) else {}
-        reciters = nights.get(day.isoformat()) or raw.get("reciters") or []
+        reciters = nights.get(night.isoformat()) or raw.get("reciters") or []
+        origin = self.period[0] if self.period else None
+        if raw.get("night_origin"):  # a qiyam counts its nights like the tarawih of the same Ramadan
+            try:
+                origin = dt.date.fromisoformat(str(raw["night_origin"]))
+            except ValueError:
+                pass
         return {
-            "after_isha": bool(raw.get("after_isha")),
+            # a prayer at a fixed hour starts on the voice as soon as it is the time: nothing precedes it
+            "after_isha": bool(raw.get("after_isha")) or self.fixed is not None,
             "offset_min": float(self.recurrence.offset_min if self.recurrence else 0.0),
             "silence_end_min": float(raw["silence_end_min"]) if raw.get("silence_end_min") else None,
-            "night": (day - self.period[0]).days + 1 if self.period else None,
+            "night": (night - origin).days + 1 if origin else None,
+            "night_date": night.isoformat(),
             "reciters": [str(n).strip() for n in reciters if str(n).strip()],
         }
 
@@ -298,6 +319,13 @@ def _parse_tarawih(raw: dict, idx: int, where: str) -> Event:
     r = raw.get("recurrence") or {}
     offset = float(r.get("offset_min", 0) or 0) if isinstance(r, dict) else 0.0
     isha_min = float(raw.get("isha_min") or ISHA_DEFAULT_MIN)
+    fixed = None
+    if raw.get("time"):  # qiyam / tahajjud: a fixed hour on each night of the period, instead of the end of isha
+        try:
+            fixed = parse_hhmm(str(raw["time"]))
+        except ValueError as e:
+            raise ValueError(_("{where}: invalid time {time}", where=where, time=repr(raw["time"]))) from e
+        offset = 0.0
     if offset < 0 or isha_min < 5:
         raise ValueError(_("{where}: a tarawih starts after isha (positive offset)", where=where))
     return Event(
@@ -307,11 +335,17 @@ def _parse_tarawih(raw: dict, idx: int, where: str) -> Event:
         speaker=str(raw.get("speaker", "") or "").strip(),
         max_min=float(raw["max_min"]) if raw.get("max_min") else None,
         publish=bool(raw.get("publish", True)),
-        recurrence=Recurrence(weekday=None, after="isha", offset_min=offset),
+        recurrence=Recurrence(
+            weekday=None,
+            time=fixed.strftime("%H:%M") if fixed else None,
+            after=None if fixed else "isha",
+            offset_min=offset,
+        ),
         uid=uid_of(raw, idx),
         mode=mode,
         period=(first, last),
         isha_min=isha_min,
+        fixed=fixed,
     )
 
 

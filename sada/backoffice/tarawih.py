@@ -12,8 +12,11 @@ year. Nothing is armed before the end of isha (its iqama, else the adhan plus a 
 plus ``isha_min``): isha itself is never broadcast. Then, with ``after_isha`` on, sustained voice
 starts the broadcast at once (announcements, appeals for donations); otherwise only from the tarawih
 proper, ``offset_min`` later. There is no fixed end: a silence longer than the pauses between sets
-of rak'as (``silence_end_min``) with nobody at the front ends the night; ``max_min`` is only a
-safety cap. A night usually has several reciters: an ordered roster, optionally replaced for a
+of rak'as (``silence_end_min``) with nobody at the front ends the night, or a stop, or a signal
+lost for good, or at the fajr adhan at the latest; a maximum length (``max_min``) exists only when
+the mosque chose one. A qiyam / tahajjud at a fixed hour (``qiyam_time``) is planned on its own
+period of nights, like the tarawih; at an hour before noon it is the end of the night that began the
+evening before. A night usually has several reciters: an ordered roster, optionally replaced for a
 given night; the control room says who recites (never guessed).
 """
 
@@ -21,21 +24,25 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 
 from ..events import TARAWIH_MODES
 from ..i18n import _
 from . import db, orm
-from .models import Tarawih
+from .models import Tarawih, TarawihOptions
 
 DEFAULT_MODE = "audio"
 DEFAULT_OFFSET_MIN, MIN_OFFSET_MIN, MAX_OFFSET_MIN = 20, 5, 120
-DEFAULT_MAX_MIN, MIN_MAX_MIN, MAX_MAX_MIN = 180, 30, 300
+LEGACY_MAX_MIN = 180  # what the old `max_min` column is still given (never read): a cap exists only in the options
+MIN_MAX_MIN, MAX_MAX_MIN = 30, 720
+HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 DEFAULT_ISHA_MIN, MIN_ISHA_MIN, MAX_ISHA_MIN = 10, 5, 30
 DEFAULT_SILENCE_MIN, MIN_SILENCE_MIN, MAX_SILENCE_MIN = 6, 3, 30
 MAX_PERIOD_DAYS = 31  # a Ramadan, with a day of margin for the moon sighting
 MAX_IMAM_LEN = 80
 MAX_RECITERS = 8
 UID = "tarawih"
+QIYAM_UID = "qiyam"
 
 
 class InvalidTarawih(ValueError):
@@ -44,6 +51,10 @@ class InvalidTarawih(ValueError):
 
 def _row(conn, mosque_id: int) -> dict:
     return orm.first(conn, Tarawih, mosque_id=mosque_id) or {}
+
+
+def _options(conn, mosque_id: int) -> dict:
+    return orm.first(conn, TarawihOptions, mosque_id=mosque_id) or {}
 
 
 def _json(text, default):
@@ -57,12 +68,16 @@ def _json(text, default):
 def view(conn, mosque_id: int) -> dict:
     """What the Settings tab shows: saved values (defaults when nothing is saved) and the bounds."""
     r = _row(conn, mosque_id)
+    o = _options(conn, mosque_id)
     return {
         "mode": r.get("mode") or DEFAULT_MODE,
         "start": r.get("start_date") or "",
         "end": r.get("end_date") or "",
         "offset_min": r.get("offset_min") or DEFAULT_OFFSET_MIN,
-        "max_min": r.get("max_min") or DEFAULT_MAX_MIN,
+        "max_min": o.get("cap_min"),  # None: no limit
+        "qiyam_time": o.get("qiyam_time") or "",
+        "qiyam_start": o.get("qiyam_start") or "",
+        "qiyam_end": o.get("qiyam_end") or "",
         "after_isha": bool(r.get("after_isha")),
         "isha_min": r.get("isha_min") or DEFAULT_ISHA_MIN,
         "silence_end_min": r.get("silence_end_min") or DEFAULT_SILENCE_MIN,
@@ -141,6 +156,47 @@ def _nights(value, start: dt.date | None, end: dt.date | None) -> dict[str, list
     return out
 
 
+def _cap(value) -> int | None:
+    """The maximum length of a night when the mosque chose one; empty: no limit."""
+    if not str(value if value is not None else "").strip():
+        return None
+    return _int(
+        value,
+        MIN_MAX_MIN,
+        MAX_MAX_MIN,
+        0,
+        _("Maximum length: from {min} to {max} minutes, or empty for none.", min=MIN_MAX_MIN, max=MAX_MAX_MIN),
+    )
+
+
+def _qiyam(form: dict, start: dt.date | None, end: dt.date | None) -> dict:
+    """Validated qiyam / tahajjud: {time, start, end} ("" when there is none). Its nights default to the tarawih's."""
+    t = str(form.get("qiyam_time") or "").strip()
+    if not t:
+        return {"time": "", "start": "", "end": ""}
+    if not HHMM.match(t):
+        raise InvalidTarawih(_("Invalid time: {time} (expected HH:MM).", time=t))
+    qs, qe = _date(form.get("qiyam_start")), _date(form.get("qiyam_end"))
+    if (qs is None) != (qe is None):
+        raise InvalidTarawih(_("Give both the first and the last night of the qiyam."))
+    if qs is None:
+        if start is None or end is None:
+            raise InvalidTarawih(_("Give the nights of the qiyam, or the period of the tarawih."))
+        qs, qe = start, end
+    if qe < qs:
+        raise InvalidTarawih(_("The period ends before it starts."))
+    if (qe - qs).days + 1 > MAX_PERIOD_DAYS:
+        raise InvalidTarawih(_("The period cannot exceed {days} nights.", days=MAX_PERIOD_DAYS))
+    return {"time": t, "start": qs.isoformat(), "end": qe.isoformat()}
+
+
+def _span(start: dt.date | None, end: dt.date | None, qiyam: dict) -> tuple[dt.date | None, dt.date | None]:
+    """The nights a per-night reciter list may name: those of the tarawih and of the qiyam together."""
+    firsts = [d for d in (start, _date(qiyam["start"])) if d]
+    lasts = [d for d in (end, _date(qiyam["end"])) if d]
+    return (min(firsts), max(lasts)) if firsts and lasts else (None, None)
+
+
 def check(form: dict) -> dict:
     """Validated values of a form (text values, as the API receives them). Raises InvalidTarawih."""
     mode = str(form.get("mode") or DEFAULT_MODE).strip().lower()
@@ -159,8 +215,11 @@ def check(form: dict) -> dict:
         if (end - start).days + 1 > MAX_PERIOD_DAYS:
             raise InvalidTarawih(_("The period cannot exceed {days} nights.", days=MAX_PERIOD_DAYS))
     reciters = _names(form.get("reciters"))
-    nights = _nights(form.get("nights"), start, end)
+    qiyam = _qiyam(form, start, end)
+    nights = _nights(form.get("nights"), *_span(start, end, qiyam))
     return {
+        "qiyam": qiyam,
+        "cap_min": _cap(form.get("max_min")),
         "mode": mode,
         "start_date": start.isoformat() if start else "",
         "end_date": end.isoformat() if end else "",
@@ -171,13 +230,7 @@ def check(form: dict) -> dict:
             DEFAULT_OFFSET_MIN,
             _("Delay after isha: from {min} to {max} minutes.", min=MIN_OFFSET_MIN, max=MAX_OFFSET_MIN),
         ),
-        "max_min": _int(
-            form.get("max_min"),
-            MIN_MAX_MIN,
-            MAX_MAX_MIN,
-            DEFAULT_MAX_MIN,
-            _("Safety cap: from {min} to {max} minutes.", min=MIN_MAX_MIN, max=MAX_MAX_MIN),
-        ),
+        "max_min": LEGACY_MAX_MIN,
         "after_isha": 1 if _yes(form.get("after_isha")) else 0,
         "isha_min": _int(
             form.get("isha_min"),
@@ -200,6 +253,7 @@ def check(form: dict) -> dict:
 
 def save(conn, mosque: dict, form: dict, user: dict | None, ip: str | None = None) -> dict:
     vals = check(form)
+    qiyam, cap = vals.pop("qiyam"), vals.pop("cap_min")
     before = _row(conn, mosque["id"])
     now = db.now_iso()
     video = vals["mode"] == "video"
@@ -214,6 +268,16 @@ def save(conn, mosque: dict, form: dict, user: dict | None, ip: str | None = Non
         video_confirmed_at=(before.get("video_confirmed_at") if keep else now) if video else None,
         updated_at=now,
     )
+    orm.upsert(
+        conn,
+        TarawihOptions,
+        ("mosque_id",),
+        mosque_id=mosque["id"],
+        cap_min=cap,
+        qiyam_time=qiyam["time"],
+        qiyam_start=qiyam["start"],
+        qiyam_end=qiyam["end"],
+    )
     db.audit(
         conn,
         mosque["id"],
@@ -227,30 +291,67 @@ def save(conn, mosque: dict, form: dict, user: dict | None, ip: str | None = Non
         debut=vals["start_date"],
         fin=vals["end_date"],
         video_confirmee=video,
+        qiyam=qiyam["time"],
+        maximum=cap,
     )
     return view(conn, mosque["id"])
+
+
+def _mode(r: dict) -> str:
+    mode = r.get("mode") or DEFAULT_MODE
+    if mode == "video" and not r.get("video_confirmed_at"):
+        mode = "audio"  # never filmed without a recorded confirmation
+    return mode
 
 
 def event(conn, mosque_id: int) -> dict | None:
     """The nightly tarawih as a raw programme entry for the engine (`sada.events`), or None when
     nothing is to be broadcast (mode off, no period)."""
     r = _row(conn, mosque_id)
-    mode = r.get("mode") or DEFAULT_MODE
-    if mode == "off" or not r.get("start_date") or not r.get("end_date"):
+    if (r.get("mode") or DEFAULT_MODE) == "off" or not r.get("start_date") or not r.get("end_date"):
         return None
-    if mode == "video" and not r.get("video_confirmed_at"):
-        mode = "audio"  # never filmed without a recorded confirmation
-    return {
+    cap = _options(conn, mosque_id).get("cap_min")
+    out = {
         "uid": UID,
         "kind": "tarawih",
         "title": "Tarawih",
-        "mode": mode,
+        "mode": _mode(r),
         "period": {"from": r["start_date"], "until": r["end_date"]},
         "recurrence": {"after": "isha", "offset_min": r.get("offset_min") or DEFAULT_OFFSET_MIN},
-        "max_min": r.get("max_min") or DEFAULT_MAX_MIN,
         "after_isha": bool(r.get("after_isha")),
         "isha_min": r.get("isha_min") or DEFAULT_ISHA_MIN,
         "silence_end_min": r.get("silence_end_min") or DEFAULT_SILENCE_MIN,
         "reciters": _json(r.get("reciters"), []),
         "nights": _json(r.get("nights"), {}),
     }
+    if cap:  # only a maximum the mosque chose: a night has no other limit than its own ending
+        out["max_min"] = cap
+    return out
+
+
+def qiyam_event(conn, mosque_id: int) -> dict | None:
+    """The qiyam / tahajjud at a fixed hour, as a raw programme entry (a tarawih with a `time`), or None."""
+    r, o = _row(conn, mosque_id), _options(conn, mosque_id)
+    if (r.get("mode") or DEFAULT_MODE) == "off" or not o.get("qiyam_time") or not o.get("qiyam_start"):
+        return None
+    out = {
+        "uid": QIYAM_UID,
+        "kind": "tarawih",
+        "title": "Qiyam",
+        "mode": _mode(r),
+        "time": o["qiyam_time"],
+        "period": {"from": o["qiyam_start"], "until": o["qiyam_end"]},
+        "silence_end_min": r.get("silence_end_min") or DEFAULT_SILENCE_MIN,
+        "reciters": _json(r.get("reciters"), []),
+        "nights": _json(r.get("nights"), {}),
+    }
+    if r.get("start_date"):
+        out["night_origin"] = r["start_date"]  # its nights are numbered like the tarawih's of the same Ramadan
+    if o.get("cap_min"):
+        out["max_min"] = o["cap_min"]
+    return out
+
+
+def events(conn, mosque_id: int) -> list[dict]:
+    """Every raw entry the Tarawih settings give the engine: the nightly tarawih and the qiyam."""
+    return [e for e in (event(conn, mosque_id), qiyam_event(conn, mosque_id)) if e]

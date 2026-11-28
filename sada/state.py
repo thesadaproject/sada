@@ -307,6 +307,7 @@ class SessionRec:
     offset_min: float = 0.0  # tarawih: from the end of isha to the tarawih proper
     silence_end_min: float | None = None  # tarawih: silence that ends the night
     night: int | None = None  # tarawih: night number in the period
+    night_date: str | None = None  # tarawih: the evening the night began (a qiyam after midnight: the day before)
     reciters: list[str] = field(default_factory=list)  # tarawih: the night's reciters, in order
     reciter: str | None = None  # tarawih: current reciter, only when known (never guessed)
     reciter_marks: list[dict] = field(default_factory=list)  # tarawih: {"at": s from start, "name"}
@@ -415,6 +416,7 @@ class Machine:
             offset_min=float(meta.get("offset_min") or 0.0),
             silence_end_min=meta.get("silence_end_min"),
             night=meta.get("night"),
+            night_date=meta.get("night_date"),
             reciters=list(meta.get("reciters") or []),
             # a lone reciter is known; with several, nobody is shown until the control room says who
             reciter=(meta.get("reciters") or [None])[0] if len(meta.get("reciters") or []) == 1 else None,

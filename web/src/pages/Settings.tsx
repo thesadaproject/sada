@@ -40,6 +40,7 @@ const CHAMPS_MOSQUEE = ["name", "timezone"] as const;
 const CHAMPS_TARAWIH = [
   "tw_mode", "tw_start", "tw_end", "tw_offset", "tw_max", "tw_confirm",
   "tw_after_isha", "tw_isha", "tw_silence", "tw_reciters", "tw_nights",
+  "tw_qiyam_time", "tw_qiyam_start", "tw_qiyam_end",
 ] as const;
 const MODES_TARAWIH = ["off", "audio", "video"] as const;
 const SOUS_TARAWIH = ["broadcast", "times", "reciters"] as const;
@@ -55,7 +56,10 @@ function depuisServeur(d: any): Record<string, string> {
   f.tw_start = tw.start ?? "";
   f.tw_end = tw.end ?? "";
   f.tw_offset = String(tw.offset_min ?? 20);
-  f.tw_max = String(tw.max_min ?? 180);
+  f.tw_max = tw.max_min ? String(tw.max_min) : "";  // empty: no limit
+  f.tw_qiyam_time = tw.qiyam_time ?? "";
+  f.tw_qiyam_start = tw.qiyam_start ?? "";
+  f.tw_qiyam_end = tw.qiyam_end ?? "";
   f.tw_after_isha = tw.after_isha ? "1" : "0";
   f.tw_isha = String(tw.isha_min ?? 10);
   f.tw_silence = String(tw.silence_end_min ?? 6);
@@ -177,6 +181,7 @@ export default function Settings() {
         await api.tarawih({ mode: f.tw_mode, start: f.tw_start, end: f.tw_end, offset_min: f.tw_offset,
           max_min: f.tw_max, confirm_video: f.tw_confirm, after_isha: f.tw_after_isha === "1",
           isha_min: f.tw_isha, silence_end_min: f.tw_silence,
+          qiyam_time: f.tw_qiyam_time, qiyam_start: f.tw_qiyam_start, qiyam_end: f.tw_qiyam_end,
           reciters: JSON.parse(f.tw_reciters || "[]"), nights: JSON.parse(f.tw_nights || "{}") });
       }
       if (["q_height", "q_kbps", "q_fps"].some((k) => f[k] !== avant[k])) {
@@ -443,8 +448,24 @@ export default function Settings() {
               </Field>
               <Field label={t("settings.tarawihMax")}>
                 <input className={inputClass} type="number" inputMode="numeric"
-                  min={d.tarawih?.bounds?.max_min?.[0] ?? 30} max={d.tarawih?.bounds?.max_min?.[1] ?? 300}
-                  value={f.tw_max} onChange={maj("tw_max")} />
+                  min={d.tarawih?.bounds?.max_min?.[0] ?? 30} max={d.tarawih?.bounds?.max_min?.[1] ?? 720}
+                  placeholder={t("settings.tarawihMaxNone")} value={f.tw_max} onChange={maj("tw_max")} />
+              </Field>
+            </div>
+            <p className="m-0 max-w-[90ch] text-[0.82rem] leading-snug text-muted">{t("settings.tarawihMaxHelp")}</p>
+            <h3 className="m-0 mt-2 text-[0.95rem] font-semibold text-deep">{t("settings.qiyamTitle")}</h3>
+            <p className="m-0 max-w-[90ch] text-[0.82rem] leading-snug text-muted">{t("settings.qiyamHelp")}</p>
+            <div className="grid gap-x-3 gap-y-2 sm:grid-cols-3">
+              <Field label={t("settings.qiyamTime")}>
+                <input className={inputClass} type="time" value={f.tw_qiyam_time} onChange={maj("tw_qiyam_time")} />
+              </Field>
+              <Field label={t("settings.qiyamStart")}>
+                <input className={inputClass} type="date" value={f.tw_qiyam_start} max={f.tw_qiyam_end || undefined}
+                  disabled={!f.tw_qiyam_time} placeholder={f.tw_start} onChange={maj("tw_qiyam_start")} />
+              </Field>
+              <Field label={t("settings.qiyamEnd")}>
+                <input className={inputClass} type="date" value={f.tw_qiyam_end} min={f.tw_qiyam_start || undefined}
+                  disabled={!f.tw_qiyam_time} onChange={maj("tw_qiyam_end")} />
               </Field>
             </div>
           </>}

@@ -37,7 +37,7 @@ from sqlalchemy import delete, select, update
 from .. import events as events_mod
 from .. import prayers, state, studio_link
 from ..i18n import _
-from . import db, events_store, orm, prayer_times
+from . import db, events_store, orm, prayer_times, tarawih
 from .models import Device, Mosque, StudioRun, StudioSettings
 
 UTC = dt.UTC
@@ -199,7 +199,10 @@ class ProgrammeSource:
 
     def slots_on(self, day: dt.date, ctx: SlotContext) -> list[Slot]:
         events = []
-        for i, raw in enumerate(events_store.read(ctx.conn, ctx.mosque["id"])):
+        # the programme, then what the Tarawih settings plan every night (tarawih, qiyam): never kept in the programme,
+        # so the device is told to broadcast them too
+        raws = [*events_store.read(ctx.conn, ctx.mosque["id"]), *tarawih.events(ctx.conn, ctx.mosque["id"])]
+        for i, raw in enumerate(raws):
             try:
                 events.append(events_mod.parse(raw, i))
             except ValueError:

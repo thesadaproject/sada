@@ -65,7 +65,7 @@ def test_init_est_rejouable(tmp_path):
 
 # Tables created by a migration after the baseline: the former system never had them. A later migration that
 # changes a baseline table (a column) makes the models drift further: freeze that table's former shape here then.
-APRES_LA_BASE = {"preview_requests"}
+APRES_LA_BASE = {"preview_requests", "tarawih_options"}
 
 
 def _schema_de_l_ancien_systeme(conn) -> None:
