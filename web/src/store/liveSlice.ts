@@ -28,6 +28,10 @@ export type Live = {
   compositing?: "studio" | "server";
   /** A live started by hand: only a stop ends it ("auto" never does). */
   manual_live?: boolean;
+  /** Free space of the recording folder: only given to who may see it (the operator when hosted, the mosque's
+   *  administrators otherwise); null for anyone else. */
+  disk?: { level: "ok" | "low" | "critical"; free_gb: number | null; low_gb: number; critical_gb: number } | null;
+  recording_failed?: boolean;
   /** Signal lost: the reconnection screen is on air; the live ends by itself after `fallback_remaining_s` (read at `selectReadAt`). */
   signal_lost_since?: number | null; fallback_until?: number | null; fallback_remaining_s?: number | null;
   transition?: string | null;

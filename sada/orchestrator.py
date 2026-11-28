@@ -25,6 +25,7 @@ from . import (
     diskwatch,
     gabarit_antenne,
     mawaqit,
+    mode,
     notify,
     prayers,
     runs,
@@ -97,6 +98,13 @@ def wait_for_backoffice(url: str, limit_s: float, probe=None, sleep=time.sleep, 
         delay = min(delay * 2, 10.0)
 
 
+def disk_alert_channel(notifier):
+    """Where the disk alert goes: to the mosque on its own server; nowhere on a hosted platform, where the disk is the
+    operator's (it still reaches the log and the `sada.recording.disk.free` gauge, which is the operator's channel:
+    no operator mail or webhook exists to send it to)."""
+    return (lambda _text: None) if mode.hosted() else notifier.send
+
+
 class Orchestrator:
     #: Who composes the rehearsal stage: said by whoever takes the setup lease (see set_setup).
     _setup_compositing = "server"
@@ -166,7 +174,9 @@ class Orchestrator:
         self.studio_poll = studio_link.Poller(cfg.backoffice_url if not cfg.sim_start else "", cfg.api_port)
         self.notifier = notify.from_config(cfg, log=log.info)
         self._notified_state = None
-        self.diskwatch = diskwatch.DiskWatch(cfg, self.notifier.send, log=log.warning)
+        # The disk of a hosted platform is the operator's, not the mosque's: no alert goes to the mosque there (the log
+        # and the telemetry gauge are the operator's channels); on a mosque's own server the mosque is told.
+        self.diskwatch = diskwatch.DiskWatch(cfg, disk_alert_channel(self.notifier), log=log.warning)
         if self.notifier.enabled:
             log.info(_("Notifications to the imam: {destination}", destination=self.notifier.destination))
         else:

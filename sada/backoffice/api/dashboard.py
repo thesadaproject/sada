@@ -9,7 +9,7 @@ from starlette.concurrency import run_in_threadpool
 
 from ...i18n import _
 from .. import db, live, orm, studio_service
-from ..context import CtxDep, NotFound, count_clips, imam_filter, live_status
+from ..context import CtxDep, NotFound, count_clips, for_viewer, imam_filter, live_status
 from ..models import Audit, Khutba, User
 from .common import _ok
 
@@ -95,7 +95,8 @@ async def live_command(cmd: str, ctx: CtxDep):
         studio = await run_in_threadpool(studio_service.follow_regie, ctx.conn, ctx.mosque, cmd, valeur, ctx.ip)
         # After a command, we want the real state: fresh read, no cache.
         # the orchestrator answers with the state after the command (and its `rev`): no second request then
-        etat = live.remember(ctx.mosque, r) or live_status(ctx, forcer=True)
+        etat = live.remember(ctx.mosque, r)
+        etat = for_viewer(ctx, etat) if etat is not None else live_status(ctx, forcer=True)
         return _ok(r.get("message", "ok"), state=r.get("state"), live=etat, rev=etat.get("rev"), studio=studio)
     except live.OrchestratorError as e:
         details = {k: v for k, v in {"commande": cmd, "valeur": valeur, "erreur": str(e)}.items() if v}

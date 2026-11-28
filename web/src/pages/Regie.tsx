@@ -281,6 +281,27 @@ function SignalBanner({ live, lu }: { live: Live; lu: number }) {
   );
 }
 
+/** The recording folder is running out of room (warning), or out (critical): the local recording stops, the live goes on.
+ *  Only shown when the server gave the state: it gives it to the operator (hosted) or the mosque's administrators. */
+function DiskBanner({ live }: { live: Live }) {
+  const { t } = useTranslation();
+  const d = live.disk;
+  if (!d || d.level === "ok") return null;
+  const critique = d.level === "critical";
+  const libre = d.free_gb == null ? "?" : String(d.free_gb);
+  return (
+    <section role="alert" data-level={d.level}
+      className={`flex flex-wrap items-center gap-x-4 gap-y-1 rounded-[10px] border px-4 py-3 text-night-ink ${
+        critique ? "border-[#ff9b94]/60 bg-[#ff9b94]/10" : "border-[#e2c27a]/50 bg-[#e2c27a]/10"}`}>
+      <p className="m-0 flex items-center gap-2.5 text-[1.05rem] font-bold text-white">
+        <span className={`inline-block size-2.5 shrink-0 rounded-full ${critique ? "bg-[#ff9b94]" : "bg-[#e2c27a]"}`} />
+        {critique ? t("regie.diskCritical", { free: libre }) : t("regie.diskLow", { free: libre })}
+      </p>
+      <p className="m-0 text-[0.88rem] text-night-muted">{critique ? t("regie.diskCriticalHint") : t("regie.diskLowHint")}</p>
+    </section>
+  );
+}
+
 /** Which Sada Studio this page drives, and whether it is there: the first thing to know from afar. */
 function StudioBar({ studios, publisher }: { studios: Studio[]; publisher: { source: string; text: string } | null }) {
   const { t, i18n } = useTranslation();
@@ -516,6 +537,7 @@ function RegieEcran() {
       </section>
 
       {!horsService && <SignalBanner live={live} lu={lu} />}
+      {!horsService && <DiskBanner live={live} />}
 
       <StudioBar studios={studios} publisher={editeur} />
 

@@ -59,6 +59,9 @@ spec:
           env:
             - name: TZ
               value: {{ $.Values.timezone | quote }}
+            # The cluster is the hosted platform: the disk is the operator's concern, not the mosque's (no alert to it).
+            - name: SADA_MODE
+              value: hosted
             - name: SADA_BACKOFFICE_URL
               value: {{ $.Values.orchestrator.backofficeUrl | default "http://backoffice:8090" | quote }}
             - name: SADA_PREVIEW_URL

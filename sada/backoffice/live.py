@@ -349,5 +349,10 @@ def summarize(st: dict) -> dict:
     }
 
 
+def without_disk(status: dict) -> dict:
+    """The status with the disk state left out (`disk: None`): what a person who may not see it is given."""
+    return {**status, "disk": None} if status.get("disk") is not None else status
+
+
 def _number(value) -> float | None:
     return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else None

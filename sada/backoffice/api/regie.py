@@ -36,7 +36,7 @@ from .. import (
     studio_token,
 )
 from .. import screens as screens_mod
-from ..context import CtxDep, NotFound
+from ..context import CtxDep, NotFound, for_viewer
 from ..models import Device
 from ..studio_auth import Actor, ActorDep, DeviceDep
 
@@ -306,7 +306,7 @@ def regie(ctx: CtxDep):
     paths = {w: live_watch.path_of(ctx.conn, mosque, w) for w in live_watch.SOURCES}
     health = {w: live_watch.health(p) for w, p in paths.items()}
     holder = studio_publisher.current(ctx.conn, mosque)
-    live_st = live.status_cached(mosque, ttl=STATUS_TTL)
+    live_st = for_viewer(ctx, live.status_cached(mosque, ttl=STATUS_TTL))
     tr_mode = live_st.get("transition") if live_st.get("transition") in transitions.TRANSITIONS else None
     if tr_mode is None:
         tr_mode = _saved_transition(mosque)
