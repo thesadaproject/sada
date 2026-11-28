@@ -110,17 +110,34 @@ _SETUP_KEYS = ("state", "scene", "override", "transition", "overlays", "mic_mute
 
 
 def flat(st: dict, setup: bool = False) -> dict:
-    """A summarized status (live.summarize) in the flat shape of `live_flat`."""
+    """A summarized status (live.summarize) in the flat shape of `live_flat`.
+
+    Priority of the picture shown: the rehearsal first (a caller in setup mode sees the rehearsal stage, whose
+    scene is its own), then, off air, the scene picked from the control room (`preview_scene`), then the machine's
+    scene. In a live nothing changes: the scene on air is the machine's, `preview_scene` is then null.
+
+    The studio only composes what it is told to compose: it reads `scene`, which is null off air, and draws it
+    only when `compositing` is "studio". A scene picked off air is a picture only the studio can show, so it is
+    reported as the scene, with its kind, and the picture is the studio's to compose."""
     block = st.get("setup")
-    if setup and isinstance(block, dict) and block.get("active") and not block.get("live"):
+    rehearsal = setup and isinstance(block, dict) and block.get("active") and not block.get("live")
+    if rehearsal:
         st = {**st, **{k: block[k] for k in _SETUP_KEYS if k in block}}
     ok = bool(st.get("ok"))
+    preview = st.get("preview_scene") if isinstance(st.get("preview_scene"), str) else None
+    if st.get("stream_on"):
+        preview = None  # a live is on air: the machine's scene is the picture
+    scene = st.get("scene")
+    composing = "studio" if st.get("compositing") == "studio" else "server"
+    if preview and not rehearsal:
+        scene, composing = preview, "studio"
     return {
         "ok": ok,
         "reachable": ok,
         "state": st.get("state"),
-        "scene": st.get("scene"),
-        "scene_kind": scenes.scene_kind(st.get("scene")),
+        "scene": scene,
+        "scene_kind": scenes.scene_kind(scene),
+        "preview_scene": preview,
         "override": bool(st.get("override")),
         "transition": st.get("transition"),
         "overlays": st.get("overlays"),
@@ -129,7 +146,7 @@ def flat(st: dict, setup: bool = False) -> dict:
         "audio_level_db": st.get("audio_level_db"),
         "message": st.get("error") or st.get("last_reason") or "",
         "rev": st.get("rev") if isinstance(st.get("rev"), int) else None,
-        "compositing": "studio" if st.get("compositing") == "studio" else "server",
+        "compositing": composing,
     }
 
 
